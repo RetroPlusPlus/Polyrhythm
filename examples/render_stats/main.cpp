@@ -38,12 +38,23 @@
 //
 // Art is generated — see assets/gen_render_stats_assets.py. Motion advances on the sim tick, so the
 // load is the same on any display.
+//
+// CAPTURE MODE. `retropp-render_stats-demo <seconds> [out.csv] [sprites]` runs the bench for a fixed
+// time and writes one CSV row per frame — the same phase split and issued/skipped counters the readout
+// shows, recorded per frame rather than watched on screen. Rows buffer in memory and the file is written
+// once at exit, because a write per frame perturbs what is being measured. The sprite count is pinned
+// from the command line and recorded in every row, so two captures taken for comparison run identical
+// work and can be shown to have done so; the rest of the deck stays live. With no arguments the demo
+// runs interactively and records nothing.
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
 #include <span>
 #include <string>
 #include <vector>
@@ -67,6 +78,65 @@ using namespace retropp;
 
 constexpr int kViewW = 1920, kViewH = 1080;
 constexpr int kTilePx = 8;
+
+// One frame's sample in capture mode. Plain values, so the run reserves once and never reallocates
+// while it is measuring.
+struct CaptureRow {
+    std::uint64_t frame          = 0;
+    std::uint64_t tNs            = 0;
+    std::uint64_t ticks          = 0;
+    std::uint64_t tickCount      = 0;
+    double        acquireMs      = 0.0;
+    double        interpMs       = 0.0;
+    double        composeMs      = 0.0;
+    double        presentMs      = 0.0;
+    int           presented      = 0;
+    int           composeSkipped = 0;
+    std::uint64_t presentPasses  = 0;
+    std::uint64_t presentSkips   = 0;
+    std::uint64_t composePasses  = 0;
+    std::uint64_t composeSkips   = 0;
+    std::uint64_t tilemapUploads = 0;
+    std::uint64_t spriteUploads  = 0;
+    std::uint64_t scene          = 0;
+    double        simMs          = 0.0;
+    int           sprites        = 0;   // the dominant load knob, recorded so two runs are comparable
+};
+
+// Write the buffered rows once. The column order matches the frame-pacing captures the analysis
+// scripts read, so a run compares directly against an earlier one; append columns, never reorder.
+void writeCapture(const std::string& path, const std::vector<CaptureRow>& rows) {
+    std::FILE* out = std::fopen(path.c_str(), "w");
+    if (out == nullptr) {
+        std::fprintf(stderr, "render_stats: cannot open %s for writing\n", path.c_str());
+        return;
+    }
+    std::fprintf(out,
+                 "frame,t_ns,ticks,tick_count,acquire_ms,interp_ms,compose_ms,present_ms,presented,"
+                 "compose_skipped,present_passes,present_skips,compose_passes,compose_skips,"
+                 "tilemap_uploads,sprite_uploads,scene,sim_ms,sprites\n");
+    for (const CaptureRow& r : rows) {
+        std::fprintf(out,
+                     "%llu,%llu,%llu,%llu,%.6f,%.6f,%.6f,%.6f,%d,%d,%llu,%llu,%llu,%llu,%llu,%llu,"
+                     "%llu,%.6f,%d\n",
+                     static_cast<unsigned long long>(r.frame),
+                     static_cast<unsigned long long>(r.tNs),
+                     static_cast<unsigned long long>(r.ticks),
+                     static_cast<unsigned long long>(r.tickCount),
+                     r.acquireMs, r.interpMs, r.composeMs, r.presentMs,
+                     r.presented, r.composeSkipped,
+                     static_cast<unsigned long long>(r.presentPasses),
+                     static_cast<unsigned long long>(r.presentSkips),
+                     static_cast<unsigned long long>(r.composePasses),
+                     static_cast<unsigned long long>(r.composeSkips),
+                     static_cast<unsigned long long>(r.tilemapUploads),
+                     static_cast<unsigned long long>(r.spriteUploads),
+                     static_cast<unsigned long long>(r.scene),
+                     r.simMs, r.sprites);
+    }
+    std::fclose(out);
+    std::fprintf(stderr, "render_stats: wrote %zu rows to %s\n", rows.size(), path.c_str());
+}
 
 // Authored cell sizes, and the 8px-tile stride each sheet stamps at (sheet width / 8).
 constexpr int kGlyphPx = 16, kGlyphStride = 128 / kTilePx;   // font.png is 128 wide
@@ -159,7 +229,21 @@ struct Load {
 
 }  // namespace
 
-int main() {
+int main(int argc, char** argv) {
+    // Capture mode: `render_stats <seconds> [out.csv]` runs the bench for a fixed time, records one row
+    // per frame in memory, writes the file once at exit and closes itself. With no arguments the demo is
+    // exactly what it is interactively, and records nothing.
+    const double            capSeconds = (argc > 1) ? std::strtod(argv[1], nullptr) : 0.0;
+    const std::string       capPath    = (argc > 2) ? argv[2] : "render_stats_capture.csv";
+    const int               capSprites = (argc > 3) ? static_cast<int>(std::strtol(argv[3], nullptr, 10))
+                                                    : -1;
+    const bool              capturing  = capSeconds > 0.0;
+    std::vector<CaptureRow> capRows;
+    if (capturing) capRows.reserve(static_cast<std::size_t>(capSeconds * 70.0) + 64);
+    const auto    capStart     = std::chrono::steady_clock::now();
+    std::uint64_t capLastTicks = 0;
+    double        capSimMs     = 0.0;
+
     const EngineConfig config{
         .identity = {.organization = "Retro++", .application = "RenderStats"},
         .window   = {.title = "Polyrhythm — render stats (1080p load bench)"},
@@ -331,6 +415,9 @@ int main() {
     };
 
     Load        load;
+    // A capture pins the dominant load knob from the command line, so a control run and a later
+    // comparison do identical work rather than whatever the deck happened to be left on.
+    if (capturing && capSprites >= 0) load.sprites = std::clamp(capSprites, 0, kMaxSprites);
     std::size_t pick = 0;         // the control the keyboard / pad cursor is on
     int         dragging = -1;    // the rotary the mouse is turning, or -1
     float       dragAccum = 0.0f;
@@ -366,6 +453,20 @@ int main() {
     };
 
     loop.simTick([&](const InputState& in) {
+        // Adds this tick's own cost to the pending frame's sim_ms on the way out, whatever path the body
+        // takes.
+        struct TickCost {
+            std::chrono::steady_clock::time_point t0;
+            double&                               out;
+            ~TickCost() {
+                out += std::chrono::duration<double, std::milli>(
+                           std::chrono::steady_clock::now() - t0).count();
+            }
+        } const capCost{std::chrono::steady_clock::now(), capSimMs};
+
+        if (capturing && std::chrono::duration<double>(capCost.t0 - capStart).count() >= capSeconds)
+            loop.exitRequest();
+
         ++tick;
         if (in.justPressed(Action::Up))   pick = (pick + kCtlCount - 1) % kCtlCount;
         if (in.justPressed(Action::Down)) pick = (pick + 1) % kCtlCount;
@@ -643,9 +744,40 @@ int main() {
         }
 
         renderer.renderFrame(frame);
+
+        // Read the stats for the frame that just went out, while it is still the last one.
+        if (capturing && capRows.size() < capRows.capacity()) {
+            const Renderer::RenderStats s = renderer.renderStats();
+            const std::uint64_t         t = loop.tickCount();
+            capRows.push_back(CaptureRow{
+                .frame          = static_cast<std::uint64_t>(capRows.size()),
+                .tNs            = static_cast<std::uint64_t>(
+                    std::chrono::duration_cast<std::chrono::nanoseconds>(
+                        std::chrono::steady_clock::now() - capStart).count()),
+                .ticks          = t - capLastTicks,
+                .tickCount      = t,
+                .acquireMs      = s.lastFrame.acquireMs,
+                .interpMs       = s.lastFrame.interpMs,
+                .composeMs      = s.lastFrame.composeMs,
+                .presentMs      = s.lastFrame.presentMs,
+                .presented      = s.lastFrame.presented ? 1 : 0,
+                .composeSkipped = s.lastFrame.composeSkipped ? 1 : 0,
+                .presentPasses  = s.presentPasses,
+                .presentSkips   = s.presentSkips,
+                .composePasses  = s.composePasses,
+                .composeSkips   = s.composeSkips,
+                .tilemapUploads = s.tilemapUploads,
+                .spriteUploads  = s.spriteUploads,
+                .scene          = 0,
+                .simMs          = capSimMs,
+                .sprites        = load.sprites});
+            capLastTicks = t;
+            capSimMs     = 0.0;
+        }
     });
 
     WindowedHost host{loop, platform};
     host.run();
+    if (capturing) writeCapture(capPath, capRows);
     return 0;
 }
