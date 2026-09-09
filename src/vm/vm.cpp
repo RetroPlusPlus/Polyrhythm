@@ -240,6 +240,127 @@ struct Vm::Impl {
     std::vector<PendingWatchChange> pendingWatches;
     bool                            watchSinkInstalled = false;
 
+    // The machine's picture, in three buffers so the thread that draws and the thread that composes
+    // never touch one at the same time:
+    //
+    //   filling  the frame sink's own, written wherever the machine is stepped
+    //   ready    the hand-off slot, exchanged under `mx`
+    //   shown    the game thread's own — what picture() answers with
+    //
+    // A completed frame goes filling → ready under the lock; a latch takes ready → shown under it. The
+    // lock is never held across a copy, only across a swap of vector handles, so a machine drawing on
+    // its own thread never waits on the game's compose and the game never waits on the machine.
+    //
+    // WHERE THE LATCH HAPPENS IS WHAT EACH CLOCK OFFERS. A tick-advanced machine latches at the tick
+    // boundary, so a frame finishing part-way through a tick waits there the way a queued write does. A
+    // machine on a clock of its own has no such boundary — it does not take advanceTick at all — so it
+    // latches when the game asks, and what it answers with is the newest frame it has finished. Nothing
+    // downstream tells the two apart: both report a generation, and that is the whole signal.
+    struct Picture {
+        std::mutex                mx;       // guards ready + its dimensions + `completed`, nothing else
+        std::vector<std::uint8_t> filling;  // the machine's own; no lock, one thread
+        std::vector<std::uint8_t> ready;    // the hand-off slot
+        int              readyWidth  = 0;
+        int              readyHeight = 0;
+        GuestPixelFormat readyFormat = GuestPixelFormat::Rgba8888;
+        bool             readyHeld   = false;  // `ready` holds a frame nothing has latched yet
+
+        std::vector<std::uint8_t> shown;  // the game thread's own
+        int              width  = 0;
+        int              height = 0;
+        GuestPixelFormat format = GuestPixelFormat::Rgba8888;
+        // How many frames the machine has finished. Written by the drawing thread under `mx` and read
+        // into `shownGeneration` at a latch, so the game sees it advance only where it latches — by one
+        // per frame, or by several when several landed between two latches.
+        std::uint64_t completed = 0;
+        std::uint64_t shownGeneration = 0;
+        // Whether the machine draws. Read on the game thread by picture(), written on whichever thread
+        // applies the change — the game's own for a parked machine, the machine's own for a running one.
+        std::atomic<bool> on{false};
+        // A picture(bool) issued while the machine runs, waiting for a step boundary to be applied on
+        // the machine's own thread. Guarded by `mx`.
+        bool pendingChange     = false;
+        bool pendingChangeWant = false;
+    };
+    Picture picture;
+
+    // Install or detach the frame sink and turn the backend's pixel output on or off. Touches the
+    // machine, so it runs on whichever thread owns it: the game's for a parked machine, and the
+    // machine's own — from a step boundary — for a running one. Installing a sink from the game thread
+    // while the machine's own thread is calling it is a race, which is the whole reason for the queue.
+    void applyPicture(bool drawing) {
+        if (!drawing) {
+            backend->setPictureEnabled(false);
+            backend->setFrameSink({});
+            picture.on.store(false, std::memory_order_relaxed);
+            return;
+        }
+        // The sink fires on whatever thread steps the machine — the game's own under Advance::OnTick,
+        // the machine's own under Advance::Continuously. It copies the finished frame into the buffer
+        // it owns and hands it over; the hand-off is the only thing the two threads share.
+        backend->setFrameSink([impl = this](std::span<const std::uint8_t> pixels, int width, int height,
+                                            GuestPixelFormat format) {
+            impl->picture.filling.assign(pixels.begin(), pixels.end());
+            const std::lock_guard guard{impl->picture.mx};
+            impl->picture.filling.swap(impl->picture.ready);
+            impl->picture.readyWidth  = width;
+            impl->picture.readyHeight = height;
+            impl->picture.readyFormat = format;
+            impl->picture.readyHeld   = true;
+            ++impl->picture.completed;
+        });
+        backend->setPictureEnabled(true);
+        picture.on.store(true, std::memory_order_relaxed);
+    }
+
+    // Whether this machine has been asked to draw — counting a request that has not reached a step
+    // boundary yet. A game that asks a running machine to draw and reads its picture in the same breath
+    // is early, not wrong: it gets the empty picture it would get before the first frame, and the answer
+    // fills in once the machine has drawn one.
+    [[nodiscard]] bool drawingOrAsked() {
+        if (picture.on.load(std::memory_order_relaxed)) {
+            return true;
+        }
+        const std::lock_guard guard{picture.mx};
+        return picture.pendingChange && picture.pendingChangeWant;
+    }
+
+    // The step boundary's picture step: apply a change the game asked for while the machine was
+    // running, on the thread that owns the machine.
+    void drainPictureChange() {
+        bool wanted = false;
+        {
+            const std::lock_guard guard{picture.mx};
+            if (!picture.pendingChange) {
+                return;
+            }
+            wanted = picture.pendingChangeWant;
+        }
+        applyPicture(wanted);
+        // Cleared only AFTER the change has landed, so a reader is never caught between the request
+        // being taken and the machine reporting that it draws — it sees one or the other, never a gap.
+        const std::lock_guard guard{picture.mx};
+        picture.pendingChange = false;
+    }
+
+    // Take the newest completed frame, if one is waiting. Called at the tick boundary for a machine the
+    // game advances, and from picture() for one advancing on a clock of its own.
+    void latchPicture() {
+        if (!picture.on.load(std::memory_order_relaxed)) {
+            return;
+        }
+        const std::lock_guard guard{picture.mx};
+        if (!picture.readyHeld) {
+            return;
+        }
+        picture.shown.swap(picture.ready);
+        picture.width           = picture.readyWidth;
+        picture.height          = picture.readyHeight;
+        picture.format          = picture.readyFormat;
+        picture.shownGeneration = picture.completed;
+        picture.readyHeld       = false;
+    }
+
     // Whether a guest hook holds the machine right now — set for the length of a dispatch, restored
     // afterwards. A call into the guest asks it whose stack to use: an escape or a watch holds a
     // guest that is mid-instruction, with a live stack to push onto.
@@ -839,6 +960,7 @@ struct Vm::Impl {
             drainRegionWrites();
             drainEscapeChanges();
             drainWatchChanges();
+            drainPictureChange();
         });
         runner->afterEachStep([this] { publishStep(); });
         romRun.runner = std::move(runner);
@@ -916,6 +1038,7 @@ void Vm::advanceTick(std::chrono::nanoseconds enginePeriod) {
         // The step: the queued writes and switches land, the machine runs the tick's worth, and the
         // declared regions publish — the same step boundary the other clock steps through.
         impl_->romRun.runner->stepOnce(impl_->tickBudget(enginePeriod));
+        impl_->latchPicture();
         return;
     }
     // The carry rides on the VM, so consecutive ticks compose: the fraction of a cycle this tick
@@ -926,6 +1049,7 @@ void Vm::advanceTick(std::chrono::nanoseconds enginePeriod) {
     if (draw.cycles != 0) {
         impl_->backend->advanceClock(draw.cycles);
     }
+    impl_->latchPicture();
 }
 
 void Vm::advanceTick() { advanceTick(impl_->timing.tickPeriod()); }
@@ -983,6 +1107,38 @@ void Vm::run(Advance how) {
                                                  : vm::VmRunner::Mode::Threaded);
 }
 
+void Vm::picture(bool drawing) {
+    if (impl_->running()) {
+        // The machine owns itself while it runs: installing the sink here would be writing the very
+        // function its own thread is calling. Queue it for the next step boundary, where every other
+        // change issued to a running machine lands.
+        const std::lock_guard guard{impl_->picture.mx};
+        impl_->picture.pendingChange     = true;
+        impl_->picture.pendingChangeWant = drawing;
+        return;
+    }
+    impl_->applyPicture(drawing);
+}
+
+GuestFrameContent Vm::picture() const {
+    if (!impl_->drawingOrAsked()) {
+        throw std::logic_error("picture: this machine draws nothing — picture(true) first");
+    }
+    // A machine on a clock of its own has no tick boundary to have latched at, so asking is the latch.
+    // One advanced by the game latched at its boundary and this changes nothing — which is what makes
+    // two reads in one frame answer the same on either clock.
+    if (impl_->running() && impl_->romRun.runner->mode() != vm::VmRunner::Mode::Inline) {
+        impl_->latchPicture();
+    }
+    return GuestFrameContent{
+        .pixels     = impl_->picture.shown,
+        .width      = impl_->picture.width,
+        .height     = impl_->picture.height,
+        .format     = impl_->picture.format,
+        .generation = impl_->picture.shownGeneration,
+    };
+}
+
 void Vm::speed(std::uint32_t num, std::uint32_t den) {
     impl_->ensureGovernor().setFactor(num, den);
     if (impl_->running()) {
@@ -1010,6 +1166,7 @@ void Vm::stop() {
     impl_->drainRegionWrites();
     impl_->drainEscapeChanges();
     impl_->drainWatchChanges();
+    impl_->drainPictureChange();
 }
 
 std::vector<std::uint8_t> Vm::read(const MemoryRegion& where, std::uint32_t index) {

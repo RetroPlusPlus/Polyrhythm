@@ -30,6 +30,7 @@
 #include "shaders/generated/colorfill_gather_frag.h"
 #include "shaders/generated/displace_frag.h"
 #include "shaders/generated/gleam_frag.h"
+#include "shaders/generated/guest_frame_frag.h"
 #include "shaders/generated/postprocess_vert.h"
 #include "shaders/generated/region_batch_vert.h"
 #include "shaders/generated/region_select_curve_frag.h"
@@ -282,14 +283,33 @@ template <class T>
     h = foldValue(h, l.transform);
     h = foldValue(h, l.transformEdge);
     h = foldValue(h, l.advancesEvery.value_or(0u));  // 0 stands for "unset" — never a valid declaration
-    if (contentKind(l.content) == LayerContentKind::Tiles) {
-        h = foldValue(h, static_cast<std::uint8_t>(0));
-        h = foldTiles(h, std::get<TileContent>(l.content));
-    } else {
-        h = foldValue(h, static_cast<std::uint8_t>(1));
-        const SpriteContent& sc = std::get<SpriteContent>(l.content);
-        for (const Sprite& s : sc.sprites) h = foldSprite(h, s);
-        h = foldValue(h, sc.sprites.size());
+    switch (contentKind(l.content)) {
+        case LayerContentKind::Tiles: {
+            h = foldValue(h, static_cast<std::uint8_t>(0));
+            h = foldTiles(h, std::get<TileContent>(l.content));
+            break;
+        }
+        case LayerContentKind::Sprites: {
+            h = foldValue(h, static_cast<std::uint8_t>(1));
+            const SpriteContent& sc = std::get<SpriteContent>(l.content);
+            for (const Sprite& s : sc.sprites) h = foldSprite(h, s);
+            h = foldValue(h, sc.sprites.size());
+            break;
+        }
+        case LayerContentKind::GuestFrame: {
+            // Everything about the picture EXCEPT its pixels: a machine's raster is full-colour and
+            // differs every time it draws, so folding it in would cost more than the recompose the
+            // fingerprint exists to skip. The generation stands in for them exactly — a new picture is
+            // a new number — so the fingerprint SEES a machine draw without reading a byte of it, and
+            // this content type needs no declared-dirty escape hatch the way a declared tilemap does.
+            h = foldValue(h, static_cast<std::uint8_t>(2));
+            const GuestFrameContent& gc = std::get<GuestFrameContent>(l.content);
+            h = foldValue(h, gc.width);
+            h = foldValue(h, gc.height);
+            h = foldValue(h, gc.format);
+            h = foldValue(h, gc.generation);
+            break;
+        }
     }
     for (const ScreenSpaceEffect& e : l.effects) h = foldEffect(h, e);
     h = foldValue(h, l.effects.size());
@@ -299,7 +319,8 @@ template <class T>
 
 // Whether any tile layer declares contentChanged == true (the huge-map path saying "these cells changed").
 // hashFrameStructure deliberately does not read a declared map's cells, so the renderer forces a recompose on
-// a `true` rather than trusting the fingerprint.
+// a `true` rather than trusting the fingerprint. A guest-frame layer needs nothing here — its generation is
+// folded into the fingerprint, so a machine that drew is already visible to it.
 [[nodiscard]] bool frameDeclaredDirty(const FrameDrawState& frame) noexcept {
     for (const DrawLayer& l : frame.layers) {
         if (contentKind(l.content) != LayerContentKind::Tiles) continue;
@@ -315,6 +336,25 @@ using detail::kPaletteStoreWidth;  // the palette store's row width, in colours 
 // its own atlas + palette handle directly, so there is no per-layer palette-set or atlas-set table:
 // the palette handle IS the flat offset, and the atlas handle indexes the global atlas-region store
 // texture both frag stages bind.
+// Per-layer uniform block for a hosted machine's picture — must match guest_frame.frag.hlsl's
+// GuestFrameUniforms cbuffer exactly (std140-style 16-byte-register packing; no member straddles a
+// 16-byte boundary). The picture is addressed directly, so there is no atlas, palette or cell handle
+// here — its dimensions are the whole of what the fragment needs to find a pixel.
+struct GuestFrameUniforms {
+    float scrollX, scrollY;      // register 0
+    float layerW, layerH;
+    float pictureW, pictureH;    // register 1: the machine's own picture dimensions, pixels
+    float alpha, composeScale;
+    float snap;                  // register 2: 1 = snap the transform's destination pixel to the grid
+    float pad0, pad1, pad2;
+    float invRow0[4];            // inverse transform homography, rows 0..2 (registers 3..5)
+    float invRow1[4];
+    float invRow2[4];
+    std::uint32_t hasTransform;  // register 6: x = hasTransform (0/1)
+    std::uint32_t transformEdge; //              y = footprint edge (0 Blank / 1 Stretch)
+    std::uint32_t pad3, pad4;    //              z, w pad
+};
+
 struct TileUniforms {
     float scrollX, scrollY;      // register 0
     float layerW, layerH;
@@ -1062,6 +1102,42 @@ Renderer::Renderer(SDL_GPUDevice* device, SDL_Window* window, ViewportResolution
         SDL_ReleaseGPUShader(device_, vertex);
         SDL_ReleaseGPUShader(device_, fragment);
         if (!tile_) fail("SDL_CreateGPUGraphicsPipeline (tile) failed");
+    }
+
+    // Guest-frame compositor pipeline: a hosted machine's picture into the same offscreen viewport
+    // target with the same alpha blend, so a machine's screen composites back-to-front with tiles and
+    // sprites by z. The fragment shader binds ONE read-only storage texture (the picture, t0 space2)
+    // plus one uniform buffer, and no sampler — one integer Load per pixel, so the picture reaches the
+    // screen at exactly the texels the machine drew.
+    {
+        SDL_GPUShader* vertex   = createShader(device_, SDL_GPU_SHADERSTAGE_VERTEX, shaders::tile_vert, 0, 0, 0);
+        SDL_GPUShader* fragment = createShader(device_, SDL_GPU_SHADERSTAGE_FRAGMENT, shaders::guest_frame_frag, 0, 1, 1);
+
+        SDL_GPUColorTargetDescription colorTarget{};
+        colorTarget.format                            = kViewportColorFormat;
+        colorTarget.blend_state.enable_blend          = true;
+        colorTarget.blend_state.src_color_blendfactor = SDL_GPU_BLENDFACTOR_SRC_ALPHA;
+        colorTarget.blend_state.dst_color_blendfactor = SDL_GPU_BLENDFACTOR_ONE_MINUS_SRC_ALPHA;
+        colorTarget.blend_state.color_blend_op        = SDL_GPU_BLENDOP_ADD;
+        colorTarget.blend_state.src_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ONE;
+        colorTarget.blend_state.dst_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ONE_MINUS_SRC_ALPHA;
+        colorTarget.blend_state.alpha_blend_op        = SDL_GPU_BLENDOP_ADD;
+
+        SDL_GPUGraphicsPipelineCreateInfo pipeline{};
+        pipeline.vertex_shader                         = vertex;
+        pipeline.fragment_shader                       = fragment;
+        pipeline.primitive_type                        = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
+        pipeline.rasterizer_state.fill_mode            = SDL_GPU_FILLMODE_FILL;
+        pipeline.rasterizer_state.cull_mode            = SDL_GPU_CULLMODE_NONE;
+        pipeline.rasterizer_state.front_face           = SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE;
+        pipeline.multisample_state.sample_count        = SDL_GPU_SAMPLECOUNT_1;
+        pipeline.target_info.color_target_descriptions = &colorTarget;
+        pipeline.target_info.num_color_targets         = 1;
+        guestFrame_ = SDL_CreateGPUGraphicsPipeline(device_, &pipeline);
+
+        SDL_ReleaseGPUShader(device_, vertex);
+        SDL_ReleaseGPUShader(device_, fragment);
+        if (!guestFrame_) fail("SDL_CreateGPUGraphicsPipeline (guest frame) failed");
     }
 
     // Sprite compositor pipeline: instanced per-sprite quads (TRIANGLELIST, 6 verts × N
@@ -2288,6 +2364,7 @@ int Renderer::resolveComposeScale() const {
 
 Renderer::~Renderer() {
     releaseSpriteBuffers();
+    releaseGuestFrames();
     releaseTilemaps();
     releaseAtlases();
     for (CurveMaskEntry& m : curveMasks_)
@@ -2334,6 +2411,7 @@ Renderer::~Renderer() {
     if (sprite_)        SDL_ReleaseGPUGraphicsPipeline(device_, sprite_);
     if (spriteEmission_) SDL_ReleaseGPUGraphicsPipeline(device_, spriteEmission_);
     if (spriteBelow_)   SDL_ReleaseGPUGraphicsPipeline(device_, spriteBelow_);
+    if (guestFrame_)    SDL_ReleaseGPUGraphicsPipeline(device_, guestFrame_);
     if (tile_)          SDL_ReleaseGPUGraphicsPipeline(device_, tile_);
     if (bilinear_)      SDL_ReleaseGPUSampler(device_, bilinear_);
     if (sampler_)       SDL_ReleaseGPUSampler(device_, sampler_);
@@ -2365,6 +2443,14 @@ void Renderer::releaseTilemaps() {
         if (entry.second.transfer) SDL_ReleaseGPUTransferBuffer(device_, entry.second.transfer);
     }
     tilemaps_.clear();
+}
+
+void Renderer::releaseGuestFrames() {
+    for (auto& entry : guestFrames_) {
+        if (entry.second.texture) SDL_ReleaseGPUTexture(device_, entry.second.texture);
+        if (entry.second.transfer) SDL_ReleaseGPUTransferBuffer(device_, entry.second.transfer);
+    }
+    guestFrames_.clear();
 }
 
 void Renderer::releaseSpriteBuffers() {
@@ -3317,14 +3403,22 @@ SDL_GPUTexture* Renderer::composeViewport(SDL_GPUCommandBuffer* cmd, const Frame
     // deque; its GPU resource is queued into `scratch` at the end for post-submit release) so two colliding
     // keys never share a slot. `tileSlot`/`spriteSlot` bridge this copy pass to the composite: drawLayer
     // reads each layer position's resolved slot from here (the cache is keyed by identity, not by position).
-    std::unordered_set<std::string> seenTileKeys, seenSpriteKeys;
-    std::deque<TilemapTex>          transientTiles;
-    std::deque<SpriteBuf>           transientSprites;
-    std::vector<const TilemapTex*>  tileSlot(frame.layers.size(), nullptr);
-    std::vector<const SpriteBuf*>   spriteSlot(frame.layers.size(), nullptr);
+    std::unordered_set<std::string>   seenTileKeys, seenSpriteKeys, seenGuestFrameKeys;
+    std::deque<TilemapTex>            transientTiles;
+    std::deque<SpriteBuf>             transientSprites;
+    std::deque<GuestFrameTex>         transientGuestFrames;
+    std::vector<const TilemapTex*>    tileSlot(frame.layers.size(), nullptr);
+    std::vector<const SpriteBuf*>     spriteSlot(frame.layers.size(), nullptr);
+    std::vector<const GuestFrameTex*> guestFrameSlot(frame.layers.size(), nullptr);
     auto tileCacheSlot = [&](std::string_view key) -> TilemapTex& {
         if (key.empty() || !seenTileKeys.emplace(key).second) return transientTiles.emplace_back();
         return tilemaps_[std::string(key)];
+    };
+    auto guestFrameCacheSlot = [&](std::string_view key) -> GuestFrameTex& {
+        if (key.empty() || !seenGuestFrameKeys.emplace(key).second) {
+            return transientGuestFrames.emplace_back();
+        }
+        return guestFrames_[std::string(key)];
     };
     auto spriteCacheSlot = [&](std::string_view key) -> SpriteBuf& {
         if (key.empty() || !seenSpriteKeys.emplace(key).second) return transientSprites.emplace_back();
@@ -3527,6 +3621,85 @@ SDL_GPUTexture* Renderer::composeViewport(SDL_GPUCommandBuffer* cmd, const Frame
         region.d       = 1;
         SDL_UploadToGPUTexture(copy, &src, &region, false);
         ++renderStats_.tilemapUploads;
+        // slot.transfer is pooled — NOT pushed to scratch.transfers (that list is per-frame release).
+    }
+
+    // Each GUEST-FRAME layer's picture, on the same terms: a per-key persistent texture, recreated when
+    // the machine's dimensions or pixel layout change, uploaded when the machine finished a new frame.
+    // There is no hash on this path and never will be — a full-colour raster differs every time the
+    // machine draws, so hashing one to decide costs more than the upload it could save. The machine
+    // already said whether a frame arrived, and that answer is the whole decision.
+    for (const std::size_t idx : order) {
+        const DrawLayer& layer = frame.layers[idx];
+        if (contentKind(layer.content) != LayerContentKind::GuestFrame) continue;
+        const GuestFrameContent& gc = std::get<GuestFrameContent>(layer.content);
+        if (gc.width <= 0 || gc.height <= 0) continue;
+        const std::size_t needed = static_cast<std::size_t>(gc.width) *
+                                   static_cast<std::size_t>(gc.height) * bytesPerPixel(gc.format);
+        if (gc.pixels.size() < needed) continue;  // a picture short of its own dimensions is not whole
+
+        GuestFrameTex& slot = guestFrameCacheSlot(layer.key);
+        guestFrameSlot[idx] = &slot;   // resolved BEFORE any skip — the composite reads this slot either way
+        if (!slot.texture || slot.width != gc.width || slot.height != gc.height ||
+            slot.format != gc.format) {
+            if (slot.texture) SDL_ReleaseGPUTexture(device_, slot.texture);
+            SDL_GPUTextureCreateInfo ti{};
+            ti.type                 = SDL_GPU_TEXTURETYPE_2D;
+            ti.format               = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;  // GuestPixelFormat::Rgba8888
+            ti.usage                = SDL_GPU_TEXTUREUSAGE_GRAPHICS_STORAGE_READ;
+            ti.width                = static_cast<Uint32>(gc.width);
+            ti.height               = static_cast<Uint32>(gc.height);
+            ti.layer_count_or_depth = 1;
+            ti.num_levels           = 1;
+            ti.sample_count         = SDL_GPU_SAMPLECOUNT_1;
+            slot.texture = SDL_CreateGPUTexture(device_, &ti);
+            if (!slot.texture) fail("SDL_CreateGPUTexture (guest frame) failed");
+            slot.width  = gc.width;
+            slot.height = gc.height;
+            slot.format = gc.format;
+            // The pooled transfer is sized to the old dimensions — drop it so it is recreated at the new
+            // size, and clear the skip state so the fresh texture is never skipped while it holds nothing.
+            if (slot.transfer) { SDL_ReleaseGPUTransferBuffer(device_, slot.transfer); slot.transfer = nullptr; }
+            slot.uploadedGeneration = 0;  // a fresh texture holds nothing, whatever it held before
+        }
+
+        // The only question worth asking: is the picture already on the GPU the one being submitted. A
+        // generation the slot has not seen means the machine drew; the same one means it did not, and
+        // what is resident is still the picture. Generation 0 is a machine that has finished nothing,
+        // which no slot can be holding — so a first submission always uploads.
+        if (gc.generation != 0 && gc.generation == slot.uploadedGeneration) {
+            ++renderStats_.guestFrameSkips;
+            continue;
+        }
+
+        if (!slot.transfer) {
+            SDL_GPUTransferBufferCreateInfo tbInfo{};
+            tbInfo.usage  = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
+            tbInfo.size   = static_cast<Uint32>(needed);
+            slot.transfer = SDL_CreateGPUTransferBuffer(device_, &tbInfo);
+            if (!slot.transfer) fail("SDL_CreateGPUTransferBuffer (guest frame) failed");
+        }
+
+        // cycle=true: the pooled buffer may still be in-flight from a prior frame's copy.
+        void* dst = SDL_MapGPUTransferBuffer(device_, slot.transfer, true);
+        if (!dst) fail("SDL_MapGPUTransferBuffer (guest frame) failed");
+        std::memcpy(dst, gc.pixels.data(), needed);
+        SDL_UnmapGPUTransferBuffer(device_, slot.transfer);
+
+        if (!copy) copy = SDL_BeginGPUCopyPass(cmd);
+        SDL_GPUTextureTransferInfo src{};
+        src.transfer_buffer = slot.transfer;
+        src.offset          = 0;
+        src.pixels_per_row  = static_cast<Uint32>(gc.width);
+        src.rows_per_layer  = static_cast<Uint32>(gc.height);
+        SDL_GPUTextureRegion region{};
+        region.texture = slot.texture;
+        region.w       = static_cast<Uint32>(gc.width);
+        region.h       = static_cast<Uint32>(gc.height);
+        region.d       = 1;
+        SDL_UploadToGPUTexture(copy, &src, &region, false);
+        slot.uploadedGeneration = gc.generation;
+        ++renderStats_.guestFrameUploads;
         // slot.transfer is pooled — NOT pushed to scratch.transfers (that list is per-frame release).
     }
 
@@ -4443,6 +4616,12 @@ SDL_GPUTexture* Renderer::composeViewport(SDL_GPUCommandBuffer* cmd, const Frame
         if (it->second.transfer) SDL_ReleaseGPUTransferBuffer(device_, it->second.transfer);
         it = spriteBufs_.erase(it);
     }
+    for (auto it = guestFrames_.begin(); it != guestFrames_.end();) {
+        if (seenGuestFrameKeys.count(it->first) != 0) { ++it; continue; }
+        if (it->second.texture) SDL_ReleaseGPUTexture(device_, it->second.texture);
+        if (it->second.transfer) SDL_ReleaseGPUTransferBuffer(device_, it->second.transfer);
+        it = guestFrames_.erase(it);
+    }
 
     // ── Viewport composite (segmented for per-layer screen-space effects) ───────────────────────
     // Layers composite back-to-front into target_. A layer with NO effect draws straight into the
@@ -4508,6 +4687,48 @@ SDL_GPUTexture* Renderer::composeViewport(SDL_GPUCommandBuffer* cmd, const Frame
             SDL_GPUTexture* storageTextures[4] = {atlasStore_, slot.texture, paletteStore_, atlasRegionStore_};
             SDL_BindGPUGraphicsPipeline(pass, tile_);
             SDL_BindGPUFragmentStorageTextures(pass, 0, storageTextures, 4);
+            SDL_PushGPUFragmentUniformData(cmd, 0, &u, sizeof(u));
+            SDL_DrawGPUPrimitives(pass, 3, 1, 0, 0);  // one fullscreen triangle
+        } else if (contentKind(layer.content) == LayerContentKind::GuestFrame) {
+            const GuestFrameContent& gc = std::get<GuestFrameContent>(layer.content);
+            if (gc.width <= 0 || gc.height <= 0) return;
+            const GuestFrameTex* slotP = guestFrameSlot[idx];
+            if (!slotP || !slotP->texture || slotP->uploadedGeneration == 0) return;  // nothing resident
+            const GuestFrameTex& slot = *slotP;
+
+            GuestFrameUniforms u{};
+            // Scroll places at the eased float on the interpolation path, exactly as a tile layer's
+            // does — a machine's picture is placed in the scene like any other content.
+            float scrollX = static_cast<float>(layer.scroll.x);
+            float scrollY = static_cast<float>(layer.scroll.y);
+            if (interpolate) {
+                if (const auto ls = interp_.interpolatedLayerScroll(layer.key, timing)) {
+                    scrollX = ls->x;
+                    scrollY = ls->y;
+                }
+            }
+            u.scrollX      = scrollX;
+            u.scrollY      = scrollY;
+            u.layerW       = static_cast<float>(composeW_);   // compose grid (output res on the interp path)
+            u.layerH       = static_cast<float>(composeH_);
+            u.pictureW     = static_cast<float>(gc.width);
+            u.pictureH     = static_cast<float>(gc.height);
+            u.alpha        = clampAlpha(layer.alpha);
+            u.composeScale = static_cast<float>(composeScale_);
+            u.snap         = snapF;
+
+            u.hasTransform  = layer.transform.isIdentity() ? 0u : 1u;
+            u.transformEdge = static_cast<std::uint32_t>(layer.transformEdge);
+            const Transform inv = layer.transform.inverse();
+            u.invRow0[0] = inv.m00; u.invRow0[1] = inv.m01; u.invRow0[2] = inv.m02; u.invRow0[3] = 0.0f;
+            u.invRow1[0] = inv.m10; u.invRow1[1] = inv.m11; u.invRow1[2] = inv.m12; u.invRow1[3] = 0.0f;
+            u.invRow2[0] = inv.m20; u.invRow2[1] = inv.m21; u.invRow2[2] = inv.m22; u.invRow2[3] = 0.0f;
+
+            // One read-only storage texture — the picture itself — and no sampler: the fragment Loads
+            // the texel the machine drew.
+            SDL_GPUTexture* storageTextures[1] = {slot.texture};
+            SDL_BindGPUGraphicsPipeline(pass, guestFrame_);
+            SDL_BindGPUFragmentStorageTextures(pass, 0, storageTextures, 1);
             SDL_PushGPUFragmentUniformData(cmd, 0, &u, sizeof(u));
             SDL_DrawGPUPrimitives(pass, 3, 1, 0, 0);  // one fullscreen triangle
         } else {  // LayerContentKind::Sprites

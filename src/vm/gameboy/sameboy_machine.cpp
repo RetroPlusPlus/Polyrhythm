@@ -94,6 +94,13 @@ struct SameBoyMachine::Impl {
     // Audio: the sink the APU sample callback forwards each frame to.
     SameBoyMachine::SampleSink sampleSink;
 
+    // Picture: the buffer the PPU draws into (one RGBA word per pixel, screen-sized once drawing is
+    // on, empty while it is off), the sink each finished frame is reported to, and whether drawing
+    // was turned on at all.
+    std::vector<std::uint32_t> pixels;
+    SameBoyMachine::FrameSink  frameSink;
+    bool                       pictureOn = false;
+
     // Watched addresses, sorted so the per-instruction check is a binary search, and the sink each
     // one reports to. Both are read by the execution callback below.
     std::vector<std::uint16_t> armedEscapes;
@@ -276,6 +283,37 @@ void sampleCallback(GB_gameboy_t* gb, GB_sample_t* sample) {
     }
 }
 
+// How the PPU writes a colour into the pixel buffer: one word per pixel whose BYTES are red, green,
+// blue, alpha in memory order — GuestPixelFormat::Rgba8888 — since every target is little-endian.
+// Alpha is opaque, because a console's picture carries no transparency of its own.
+std::uint32_t rgbEncodeCallback(GB_gameboy_t*, std::uint8_t r, std::uint8_t g, std::uint8_t b) {
+    return static_cast<std::uint32_t>(r) | (static_cast<std::uint32_t>(g) << 8) |
+           (static_cast<std::uint32_t>(b) << 16) | 0xFF000000u;
+}
+
+// Fires when the PPU finishes a frame — the one moment the buffer holds a whole picture rather than a
+// raster part-way down. A REPEAT frame is one the hardware would not have redrawn: the screen keeps
+// what it is showing, so nothing is reported and nothing downstream re-uploads.
+void vblankCallback(GB_gameboy_t* gb, GB_vblank_type_t type) {
+    if (type == GB_VBLANK_TYPE_REPEAT) {
+        return;
+    }
+    auto* impl = static_cast<SameBoyMachine::Impl*>(GB_get_user_data(gb));
+    if (impl == nullptr || !impl->frameSink) {
+        return;
+    }
+    const int         width  = static_cast<int>(GB_get_screen_width(&impl->gb));
+    const int         height = static_cast<int>(GB_get_screen_height(&impl->gb));
+    const std::size_t bytes  = static_cast<std::size_t>(width) * static_cast<std::size_t>(height) *
+                              sizeof(std::uint32_t);
+    if (bytes > impl->pixels.size() * sizeof(std::uint32_t)) {
+        return;  // a screen larger than the buffer drawing was enabled for; nothing whole to report
+    }
+    impl->frameSink(
+        std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(impl->pixels.data()), bytes),
+        width, height);
+}
+
 // Step the CPU until the frame's landing is fetched or its cap is spent. The jump back out lands
 // here, which is why this is its own function: `frame` belongs to the caller and the reference to it
 // never changes, so everything read after the jump belongs to the caller too.
@@ -409,6 +447,36 @@ void SameBoyMachine::enableAudio(unsigned sampleRate) {
 }
 
 void SameBoyMachine::setSampleSink(SampleSink sink) { impl_->sampleSink = std::move(sink); }
+
+void SameBoyMachine::setFrameSink(FrameSink sink) { impl_->frameSink = std::move(sink); }
+
+void SameBoyMachine::setPictureEnabled(bool enabled) {
+    if (!enabled) {
+        // Suppress pixel output again. The buffer and the callbacks stay where they are, so turning
+        // drawing back on costs nothing beyond the flag.
+        GB_set_rendering_disabled(&impl_->gb, true);
+        impl_->pictureOn = false;
+        return;
+    }
+    if (impl_->pictureOn) {
+        return;
+    }
+    // The encoding first: the PPU asks for it as it draws, and the palettes it has already resolved
+    // are re-encoded through it here.
+    GB_set_rgb_encode_callback(&impl_->gb, &rgbEncodeCallback);
+    const std::size_t count = static_cast<std::size_t>(GB_get_screen_width(&impl_->gb)) *
+                              static_cast<std::size_t>(GB_get_screen_height(&impl_->gb));
+    impl_->pixels.assign(count, 0);
+    GB_set_pixels_output(&impl_->gb, impl_->pixels.data());
+    GB_set_vblank_callback(&impl_->gb, &vblankCallback);
+    // Everything the PPU needs is in place, so the pixels the ctor suppressed can be produced. The
+    // buffer, the encoding and this flag all live in the region GB_reset preserves, so a machine that
+    // is reset — by hosting a cartridge, or on its own — keeps drawing.
+    GB_set_rendering_disabled(&impl_->gb, false);
+    impl_->pictureOn = true;
+}
+
+bool SameBoyMachine::pictureEnabled() const { return impl_->pictureOn; }
 
 std::uint64_t SameBoyMachine::runForCycles(std::uint64_t ticks8MHz) {
     // Step the CPU in raw GB_run increments (each returns the 8 MHz ticks that instruction took)

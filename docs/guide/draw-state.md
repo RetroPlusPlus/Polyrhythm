@@ -7,7 +7,7 @@ sprites, plus whole-frame colour and screen-space effects. The colour *model* (i
 [rendering.md](rendering.md).
 
 ```cpp
-#include "retropp/draw_state.h"   // FrameDrawState, DrawLayer, TileContent, SpriteContent, …
+#include "retropp/draw_state.h"   // FrameDrawState, DrawLayer, TileContent, SpriteContent, GuestFrameContent, …
 ```
 
 ## Contents
@@ -62,7 +62,7 @@ struct DrawLayer {
     LayerScroll       scroll{};    // independent scroll offset {x, y}
     float             alpha = 1.0f;// [0,1], default opaque
     BlendMode         blend = BlendMode::Normal;  // how this layer composites over the accumulator; Normal = alpha-over
-    LayerContent      content{ TileContent{} };  // tiles OR sprites
+    LayerContent      content{ TileContent{} };  // tiles, sprites, or a hosted machine's picture
     std::vector<ScreenSpaceEffect> effects;  // per-layer whole-layer effect chain; empty by default (each: scope Layer / Below)
     std::vector<Region> regions;   // per-layer shape-confined effects (additive; see below)
     Transform         transform{}; // per-layer geometric transform; identity by default (see Transforms)
@@ -113,17 +113,18 @@ static_assert(layerKeysAreUnique(kMyFixedLayers), "z/key collision in layer stac
 the boolean form for `static_assert`. For runtime-built layer stacks the renderer calls
 `layerDrawOrder` for you each frame.
 
-## Layer content: tiles or sprites
+## Layer content: tiles, sprites, or a hosted machine's picture
 
 ```cpp
-enum class LayerContentKind : std::uint8_t { Tiles, Sprites };
-using LayerContent = std::variant<TileContent, SpriteContent>;
+enum class LayerContentKind : std::uint8_t { Tiles, Sprites, GuestFrame };
+using LayerContent = std::variant<TileContent, SpriteContent, GuestFrameContent>;
 constexpr LayerContentKind contentKind(const LayerContent&) noexcept;
 ```
 
-A layer carries exactly one content alternative — a tile map or a set of sprites. Tile and sprite
-layers **interleave freely by `z`** in one compositing pass, so a sprite layer can sit between two
-tile layers or vice versa, entirely the consumer's choice.
+A layer carries exactly one content alternative — a tile map, a set of sprites, or the picture a
+hosted machine drew. Layers **interleave freely by `z`** in one compositing pass whatever they carry,
+so a sprite layer can sit between two tile layers, or a native layer over a machine's screen, entirely
+the consumer's choice.
 
 ### `TileContent` — a scrolling tile map
 
@@ -212,6 +213,52 @@ The blend grammar and the Below-scope lens are in [blend-modes.md](blend-modes.m
 (hierarchies, joints, anchors) is in [anchors-and-articulation.md](anchors-and-articulation.md); the effect
 *kinds* a sprite's `effects` / `regions` carry are the same ones under
 [Screen-space effects](#screen-space-effects) below.
+
+### `GuestFrameContent` — a hosted machine's picture
+
+```cpp
+struct GuestFrameContent {
+    std::span<const std::uint8_t> pixels;  // row-major, width * height * bytesPerPixel(format)
+    int              width  = 0;
+    int              height = 0;
+    GuestPixelFormat format = GuestPixelFormat::Rgba8888;
+    std::uint64_t    generation = 0;       // how many frames this machine has finished
+};
+
+enum class GuestPixelFormat : std::uint8_t { Rgba8888 };
+constexpr std::size_t bytesPerPixel(GuestPixelFormat) noexcept;
+```
+
+A layer whose content is the last complete frame a hosted machine drew. Ask the machine for it and
+hand it straight to a layer:
+
+```cpp
+machine.picture(true);                    // the machine draws — off by default
+machine.run(Vm::Advance::OnTick);
+
+DrawLayer screen{.key = "screen"};
+screen.size    = PixelSize{160, 144};
+screen.content = machine.picture();       // valid for this renderFrame call
+```
+
+The dimensions and the layout are the machine's own — a machine that draws 256×224 says so, and one
+whose pixels are laid out differently names a different `GuestPixelFormat`. Nothing here says how often
+a machine draws: the platform holds the frame it finished and shows that one, so a machine slower than
+the display keeps its picture on screen rather than flickering.
+
+`generation` counts the frames the machine has finished — 0 before the first one. It is the platform's
+count, not something the game declares, and the renderer sends the raster to the GPU exactly when a
+submission carries a generation the resident texture does not already hold. The pixels are never hashed
+to decide — a full-colour raster differs every time a machine draws, so hashing one would cost more than
+the upload it could save.
+
+It is a value, so reading it leaves it where it is: two `picture()` calls in one frame report the same
+generation, and a submission the renderer skips still carries the right answer on the next one. It says
+which frame this is rather than when it arrived, which is what lets a machine on the game's tick and a
+machine on a clock of its own be read the same way.
+
+The full picture surface — turning it on, what a machine owes, and how it composes with native layers —
+is in [co-execution.md](co-execution.md).
 
 ## Whole-frame colour
 

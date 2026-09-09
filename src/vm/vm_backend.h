@@ -17,6 +17,7 @@
 #include <string_view>
 
 #include "retropp/driver_binding.h"  // DriverImage / Mapper — the resident-driver image configuration
+#include "retropp/guest_frame.h"     // GuestPixelFormat — the layout a completed frame arrives in
 #include "retropp/guest_watch.h"     // AccessVerdict — what a watched access is answered with
 #include "retropp/memory_region.h"   // MemoryRegion — a declared place in the guest's address space
 #include "src/vm/assembler.h"        // AssembledRoutine — the assemble() return shape (bytes + labels)
@@ -300,6 +301,32 @@ public:
     // place its hook cannot cover, naming what it could not reach.
     virtual void armWatch(const MemoryRegion& where, bool onRead, bool onWrite) = 0;
     virtual void disarmWatch(const MemoryRegion& where, bool onRead, bool onWrite) = 0;
+
+    // ── Picture (the frames the machine finishes drawing) ─────────────────────────────────────────
+    // The backend's part is SIGNAL AND HAND OVER: it calls the sink when the machine FINISHES a frame,
+    // handing over that frame's pixels. Nothing polls a machine for its picture — a cycle budget can
+    // end part-way through a raster, and a half-drawn frame reads exactly like a finished one.
+    //
+    // What a backend owes here is a completion, a buffer, dimensions and a pixel layout. It is never
+    // asked how often it draws or which frame this is: a core that draws 256×224, or that cannot hold
+    // a steady rate at all, is implementable behind this seam precisely because neither question is
+    // asked of it.
+
+    // The sink the backend calls when a frame completes. `pixels` is row-major and
+    // width * height * bytesPerPixel(format) bytes long, valid for the duration of the call. Installed
+    // once by the generic host, in the same posture as AudioSampleSink: it fires on the thread that
+    // steps the machine.
+    using FrameSink = std::function<void(std::span<const std::uint8_t> pixels, int width, int height,
+                                         GuestPixelFormat format)>;
+
+    // Install the sink. Idempotent; an empty sink detaches.
+    virtual void setFrameSink(FrameSink sink) = 0;
+
+    // Turn pixel output on and off. A machine hosts WITHOUT drawing by default — a raster costs cycles
+    // that a co-execution path which never displays should not pay. A backend whose core produces no
+    // picture throws rather than accepting one that could never arrive, the same posture armEscape and
+    // armWatch take. Idempotent in both directions.
+    virtual void setPictureEnabled(bool enabled) = 0;
 };
 
 }  // namespace retropp::vm

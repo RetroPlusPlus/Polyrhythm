@@ -74,6 +74,10 @@ public:
     void armWatch(const MemoryRegion& where, bool onRead, bool onWrite) override;
     void disarmWatch(const MemoryRegion& where, bool onRead, bool onWrite) override;
 
+    // Picture: report each frame the PPU finishes, once drawing has been turned on.
+    void setFrameSink(FrameSink sink) override;
+    void setPictureEnabled(bool enabled) override;
+
 private:
     // One watched address: the encoded form the host armed — reported back verbatim when it fires,
     // so the host matches it to its declaration without decoding anything — beside the decoded pair
@@ -149,6 +153,8 @@ private:
 
     std::vector<ArmedWatch> armedWatches_;  // watched places, in the order they were armed
     WatchSink               watchSink_;     // where a watched access asks what it does
+
+    FrameSink               frameSink_;     // where a finished frame is reported
 };
 
 }  // namespace retropp::vm

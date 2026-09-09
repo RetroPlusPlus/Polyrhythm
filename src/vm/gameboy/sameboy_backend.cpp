@@ -971,4 +971,20 @@ void SameBoyBackend::onEscapeReached(std::uint16_t addr16) {
     }
 }
 
+void SameBoyBackend::setFrameSink(FrameSink sink) {
+    frameSink_ = std::move(sink);
+    if (!frameSink_) {
+        machine_.setFrameSink({});
+        return;
+    }
+    // The machine reports the dimensions it drew; the layout is this core's, declared once here. A
+    // core whose PPU wrote a different layout would name a different enumerator, and nothing above
+    // would convert anything.
+    machine_.setFrameSink([this](std::span<const std::uint8_t> pixels, int width, int height) {
+        frameSink_(pixels, width, height, GuestPixelFormat::Rgba8888);
+    });
+}
+
+void SameBoyBackend::setPictureEnabled(bool enabled) { machine_.setPictureEnabled(enabled); }
+
 }  // namespace retropp::vm

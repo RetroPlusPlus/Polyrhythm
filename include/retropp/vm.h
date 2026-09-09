@@ -58,6 +58,7 @@
 #include "retropp/asset_policy.h"      // AssetPolicy (registerRoutine's Embed / LoadFromPath choice)
 #include "retropp/driver_binding.h"    // DriverBinding / Instruction — the resident-driver surface below
 #include "retropp/guest_escape.h"      // GuestEscape / EscapeMap / EscapeTable — the escape surface below
+#include "retropp/guest_frame.h"       // GuestFrameContent — what picture() answers with
 #include "retropp/guest_watch.h"       // GuestWatch / WatchMap / WatchTable — the watch surface below
 #include "retropp/isa.h"               // Isa + the VMPlatform → Isa mapping below
 #include "retropp/literal_path.h"      // LiteralPath (registerRoutine takes a compile-time literal path)
@@ -468,6 +469,34 @@ public:
     // Leave the loop: the machine parks where it is, keeping every byte of its state, and the
     // thread is gone by return. Harmless when nothing runs.
     void stop();
+
+    // ── The machine's picture ───────────────────────────────────────────────────────────────────
+    // A machine hosts WITHOUT drawing: a raster costs cycles, and a machine hosted for its memory or
+    // its routines shows nothing. Turn drawing on and the frames it finishes become a layer's
+    // content, composited with native layers like anything else on screen.
+
+    // picture(true) starts the machine drawing, picture(false) stops it. Idempotent either way.
+    //
+    // A DRAWING MACHINE IS A TICK-ADVANCED MACHINE. Under Advance::OnTick the machine steps on the
+    // thread that calls advanceTick, so the frame the game composes with is a frame nothing else is
+    // writing. A machine advancing Continuously steps on a thread of its own, where the picture would
+    // be overwritten as it is read — so picture(true) throws for one that is already running that way,
+    // and run(Advance::Continuously) throws once it is drawing.
+    //
+    // Throws std::logic_error if the machine is running Continuously, or if its core produces no
+    // picture at all.
+    void picture(bool drawing);
+
+    // The last complete frame the machine drew, as a layer's content — hand it straight to a
+    // DrawLayer. The pixels stay valid until the next advanceTick.
+    //
+    // A frame the machine finished part-way through a tick is answered from the TICK BOUNDARY, where
+    // every other verb on a hosted machine lands. What a layer composes is the picture the tick left,
+    // and `contentChanged` says whether that tick brought a new one.
+    //
+    // Throws std::logic_error unless the machine is drawing — a machine that draws nothing has no
+    // picture to answer with.
+    [[nodiscard]] GuestFrameContent picture() const;
 
     // Declare the places in this machine the game cares about, as one batch, and get back the handle
     // that names them. Every entry is checked here — reachable on this machine, and wholly contained

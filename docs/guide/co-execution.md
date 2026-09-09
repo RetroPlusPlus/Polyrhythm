@@ -40,6 +40,7 @@ bytes exactly as they shipped, in memory this process owns, with the behaviour l
 - [The machine's own memories](#the-machines-own-memories)
 - [Running it](#running-it)
   - [Advancing it on your own tick instead](#advancing-it-on-your-own-tick-instead)
+- [Showing its picture](#showing-its-picture)
 - [While it runs: one thread owns the machine](#while-it-runs-one-thread-owns-the-machine)
 - [Escaping into your own code](#escaping-into-your-own-code)
 - [Replacing a routine the cartridge calls](#replacing-a-routine-the-cartridge-calls)
@@ -238,6 +239,59 @@ guest's execution part of your simulation: it follows a slow-motion tick, holds 
 one, and replays from the same inputs.
 
 A machine running on its own thread refuses `advanceTick` — it keeps its own clock.
+
+## Showing its picture
+
+A hosted machine draws nothing until you ask it to. Ask, and the frames it finishes become a layer's
+content:
+
+```cpp
+vm.hostRom(rom);
+vm.picture(true);                 // this machine draws
+vm.run(Vm::Advance::OnTick);
+
+// once per tick:
+vm.advanceTick();
+
+// and in the frame you submit:
+DrawLayer screen{.key = "screen"};
+screen.z       = 0;
+screen.size    = PixelSize{160, 144};
+screen.content = vm.picture();    // the last complete frame it drew
+```
+
+That layer composites by `z` like any other, so native layers go over or under a machine's screen —
+your own HUD above it, your own background behind it, a transform or a per-layer effect on it — and
+the machine knows nothing about any of it.
+
+**Drawing is off by default because a raster costs cycles.** A machine hosted for its memory, its
+routines or its driver never draws a pixel and never pays for one. `picture(true)` turns that cost on
+per machine and `picture(false)` turns it back off; both are idempotent.
+
+**Either clock draws.** A machine advancing on your tick steps on the thread that called `advanceTick`,
+so its picture is written where you read it. A machine advancing on a clock of its own steps on its own
+thread and hands each finished frame across; you see completed frames either way, and never a frame
+being drawn.
+
+**When a frame becomes visible is what each clock offers.** A tick-advanced machine answers from the
+tick boundary: it may finish a frame part-way through a tick, and `picture()` keeps answering with the
+previous one until `advanceTick` returns — the same boundary queued writes and table changes land at.
+A machine on its own clock has no such boundary, so it answers with the newest frame it has finished.
+Either way, asking twice in one frame gives the same picture both times.
+
+**One tick is one frame, when the periods agree.** The Game Boy tick period *is* the machine's frame
+period, so a Game Boy advanced on a Game Boy tick draws exactly one frame per tick with nothing to
+drift. Run it at another period, or at another speed factor, and a tick becomes worth a fraction or
+several of its frames — the platform shows the last one it completed, and holds that picture through a
+tick where it completed none. A machine slower than the display repeats a frame rather than blanking,
+which is what a console on a faster screen does.
+
+**What the picture carries is the machine's, not the platform's:** its own `width` and `height`, its
+own `GuestPixelFormat`, and `contentChanged` — the platform's answer for whether this tick brought a
+new one. Nothing asks a machine how fast it runs or which frame it is on. `pixels` is valid until the
+next `advanceTick`, which is exactly the lifetime a submission needs.
+
+The content type itself is in [draw-state.md](draw-state.md#guestframecontent--a-hosted-machines-picture).
 
 ## While it runs: one thread owns the machine
 
