@@ -114,6 +114,11 @@ function(retropp_set_warnings target)
     endif()
 endfunction()
 
+# Declared here rather than beside the example targets far below, because SDL's own configuration
+# reads it: the Game Boy player example needs SDL's file dialog, and SDL is configured long before any
+# example target exists. See the SDL_DIALOG line below.
+option(RETROPP_BUILD_EXAMPLES "Build runnable example hosts" ${PROJECT_IS_TOP_LEVEL})
+
 # ── SDL3 (vendored submodule) ──────────────────────────────────────────────────
 # The project-locked platform boundary. Built statically from source so the engine
 # links one self-contained binary; consumers inherit it transitively through
@@ -127,10 +132,15 @@ set(SDL_AUDIO        ON  CACHE BOOL "" FORCE)  # the audio sink's backend
 set(SDL_CAMERA       OFF CACHE BOOL "" FORCE)
 set(SDL_HAPTIC       OFF CACHE BOOL "" FORCE)
 set(SDL_POWER        OFF CACHE BOOL "" FORCE)
-set(SDL_DIALOG       OFF CACHE BOOL "")        # no FORCE — a consumer may opt in before
-                                               # add_subdirectory (native file picker, e.g. a
-                                               # port's first-start ROM selection); OFF stays
-                                               # the lean default for everyone who sets nothing
+# No FORCE — a consumer may opt in before add_subdirectory (native file picker, e.g. a port's
+# first-start ROM selection); OFF stays the lean default for everyone who sets nothing. The examples
+# are that opt-in in this tree: the Game Boy player asks for a ROM through the native picker, so
+# building the examples brings the dialog in and a consumer building without them carries none of it.
+if(RETROPP_BUILD_EXAMPLES)
+    set(SDL_DIALOG   ON  CACHE BOOL "" FORCE)  # the player example needs it — not a preference
+else()
+    set(SDL_DIALOG   OFF CACHE BOOL "")
+endif()
 add_subdirectory(third_party/sdl EXCLUDE_FROM_ALL SYSTEM)
 
 # ── lodepng (vendored single-file PNG decoder) ────────────────────────────────
@@ -1184,7 +1194,7 @@ endfunction()
 cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL retropp_finalize_assets)
 
 set(RETROPP_SHADER_STEMS blit.vert blit.frag tile.vert tile.frag sprite.vert sprite.frag sprite_below.frag
-                       sprite_emission.frag
+                       sprite_emission.frag guest_frame.frag
                        postprocess.vert region_batch.vert displace.frag ripple.frag colorfill.frag
                        colorfill_gather.frag gleam.frag saturation.frag swirl.frag
                        emission_extract.frag emission_extract_rect.vert emission_extract_rect.frag
@@ -1458,6 +1468,8 @@ if(RETROPP_BUILD_TESTS)
         tests/escape_table_threads_test.cpp
         tests/guest_watch_test.cpp
         tests/sameboy_watch_test.cpp
+        tests/guest_frame_content_test.cpp
+        tests/vm_frame_sink_test.cpp
         tests/guest_nesting_test.cpp
         tests/sameboy_nesting_test.cpp
         tests/region_map_test.cpp
@@ -1573,8 +1585,8 @@ endif()
 # The example hosts are the manual runtime checks for the live platform path (open a
 # window, composite real draw state, route real input). They are built — so their use of
 # the live SdlPlatform/Renderer compiles and links on every CI platform — but never run
-# in CI, which has no display. Off for consumers (built only when the engine is top-level).
-option(RETROPP_BUILD_EXAMPLES "Build runnable example hosts" ${PROJECT_IS_TOP_LEVEL})
+# in CI, which has no display. Off for consumers (built only when the engine is top-level). The option
+# itself is declared up beside the SDL configuration, which reads it.
 if(RETROPP_BUILD_EXAMPLES)
     # Every example binary lands under build/examples/ — the flat demos directly, the
     # retropp_add_example demos in their own build/examples/<name>_demo/ subdir (the helper sets that
@@ -1867,6 +1879,13 @@ if(RETROPP_BUILD_EXAMPLES)
     # Six embedded indexed sheets + eleven palette images, all generated (assets/gen_render_stats_assets.py).
     # Dev-run only; the device-free suites are the CI signal.
     retropp_add_example(render_stats)
+
+    # ── Game Boy player — a hosted machine's picture on screen and nothing else. Asks for a ROM through
+    # the native file picker (the SDL_DIALOG opt-in at the top of this file), hosts it, advances it one
+    # frame per engine tick, and submits its completed frames as a layer's content at 6×. It ships no
+    # ROM: the image is the developer's own, read at runtime. Dev-run only — it needs a display and a
+    # file, so CI compiles it and never runs it.
+    retropp_add_example(gb_player)
 
     # ── Curve demo — plots a Catmull-Rom curve through waypoints, a constant-speed atDistance walker, and
     # a Hermite curve, using a tiny in-memory marker atlas (no committed asset). Dev-run only; the live

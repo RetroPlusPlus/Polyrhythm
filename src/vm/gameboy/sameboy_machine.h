@@ -227,6 +227,29 @@ public:
     // bank it meant compares against this when the address is reached.
     [[nodiscard]] std::uint16_t mappedRomBank() const;
 
+    // ── Picture ───────────────────────────────────────────────────────────────
+    // The machine draws nothing until picture output is enabled: pixel output is off
+    // from construction, because running the CPU for extended periods with a PPU that
+    // draws costs cycles no headless path should pay.
+
+    // Called when the PPU FINISHES a frame, with that frame's pixels: row-major RGBA
+    // bytes, width * height * 4 long, valid for the duration of the call. Fires on the
+    // thread running the CPU. Pass an empty sink to detach.
+    using FrameSink = std::function<void(std::span<const std::uint8_t> pixels,
+                                         int width, int height)>;
+    void setFrameSink(FrameSink sink);
+
+    // Turn drawing on and off. Enabling sizes the machine's own pixel buffer to the
+    // screen, points the PPU at it, fixes the colour encoding to RGBA bytes, and reports
+    // each finished frame to the installed sink; disabling suppresses pixel output again.
+    // Idempotent in both directions. A frame the hardware would not have redrawn is not
+    // reported — the screen keeps what it is already showing.
+    void setPictureEnabled(bool enabled);
+
+    // Whether picture output is on. What decides it is one call to enablePicture, so
+    // this is what makes a machine's headlessness observable rather than asserted.
+    [[nodiscard]] bool pictureEnabled() const;
+
     // Defined in sameboy_machine.cpp. Public only so the backend's TU-local
     // execution callback can name it (it receives the instance via SameBoy's
     // user-data pointer); an incomplete type here, it exposes nothing usable.

@@ -363,6 +363,8 @@ public:
         std::uint64_t tilemapSkips   = 0;  // ...skipped (cell content unchanged since the last upload)
         std::uint64_t spriteUploads  = 0;  // per-layer sprite-record buffer uploads issued
         std::uint64_t spriteSkips    = 0;  // ...skipped (built records unchanged)
+        std::uint64_t guestFrameUploads = 0;  // per-layer hosted-machine picture uploads issued
+        std::uint64_t guestFrameSkips   = 0;  // ...skipped (the machine finished no new frame)
         std::uint64_t composePasses  = 0;  // full-frame composes run (both renderFrame and captureViewport)
         std::uint64_t composeSkips   = 0;  // ...skipped (frame bit-identical → retained output re-blitted)
         std::uint64_t presentPasses  = 0;  // renderFrame calls that blitted a swapchain texture
@@ -447,6 +449,19 @@ private:
         std::uint64_t               contentHash = 0;
         std::vector<PackedTileCell> staging;
         SDL_GPUTransferBuffer*      transfer = nullptr;
+    };
+    // A per-layer picture texture (RGBA8, the machine's own dimensions), recreated when the machine's
+    // dimensions or pixel layout change. There is no hash beside it: a picture is a full-colour raster
+    // that differs every time the machine draws, so hashing one costs more than the upload it could
+    // save. `uploadedGeneration` is which of the machine's frames this texture holds — a submission
+    // carrying that same generation is already resident and skips, and 0 means nothing has landed here.
+    struct GuestFrameTex {
+        SDL_GPUTexture*        texture = nullptr;
+        int                    width   = 0;
+        int                    height  = 0;
+        GuestPixelFormat       format  = GuestPixelFormat::Rgba8888;
+        std::uint64_t          uploadedGeneration = 0;
+        SDL_GPUTransferBuffer* transfer = nullptr;
     };
     // A per-layer sprite storage buffer (GpuSprite records). Grow-only: recreated only when a
     // frame's sprite count exceeds its capacity (in sprites), reused across frames otherwise.
@@ -568,6 +583,7 @@ private:
 
     void releaseAtlases();
     void releaseTilemaps();
+    void releaseGuestFrames();
     void releaseSpriteBuffers();
     void releaseCustomStages();
     void releaseBatchResources();
@@ -690,6 +706,7 @@ private:
     // log would bury everything else in the console, so the report tracks the number rather than the frame.
     int                      emissionDropReported_ = 0;
     SDL_GPUGraphicsPipeline* tile_         = nullptr;  // indexed tilemap → atlas → palette compositor
+    SDL_GPUGraphicsPipeline* guestFrame_   = nullptr;  // a hosted machine's picture, one Load per pixel
     SDL_GPUGraphicsPipeline* sprite_       = nullptr;  // instanced per-sprite-quad → atlas → palette
     SDL_GPUGraphicsPipeline* spriteBelow_  = nullptr;  // Below-scope sprites: scene-reading, coverage-masked
     SDL_GPUGraphicsPipeline* displace_     = nullptr;  // row-displacement post-process stage
@@ -776,8 +793,9 @@ private:
     // degenerate-keyed layer — empty key, or a duplicate within one frame (only reachable under
     // WarnAndResolve; Throw rejects both before compose) — never touches these maps: it gets a per-frame
     // transient slot (released with the frame scratch) so two colliding keys can't share one texture/buffer.
-    std::unordered_map<std::string, TilemapTex> tilemaps_;
-    std::unordered_map<std::string, SpriteBuf>  spriteBufs_;
+    std::unordered_map<std::string, TilemapTex>    tilemaps_;
+    std::unordered_map<std::string, SpriteBuf>     spriteBufs_;
+    std::unordered_map<std::string, GuestFrameTex> guestFrames_;
     // Per-run sprite-record buffers for MIXED-blend sprite layers (a layer whose sprites don't all share
     // BlendMode::Normal). An all-Normal layer keeps the single spriteBufs_ buffer + one instanced draw
     // (byte-identical); a mixed layer splits its draw order into contiguous same-blend runs (spriteBlendRuns)

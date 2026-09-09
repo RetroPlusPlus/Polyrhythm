@@ -245,6 +245,32 @@ public:
         throw notAMachine();
     }
 
+    // ── The picture seam ─────────────────────────────────────────────────────────────────────────
+    // This machine has no PPU either, so the frames come from the test: finishFrame is where a real
+    // core's vblank is, and it reports only once drawing has been turned on — which is what lets a
+    // case watch a machine that was never asked to draw stay silent.
+
+    void setFrameSink(FrameSink sink) override { frameSink_ = std::move(sink); }
+
+    void setPictureEnabled(bool enabled) override {
+        if (enabled && refusePicture_) {
+            throw std::logic_error("MockVmBackend: this machine draws nothing");
+        }
+        pictureOn_ = enabled;
+    }
+
+    // Draw nothing at all, the way a core with no picture must.
+    void refusePicture(bool refuse) noexcept { refusePicture_ = refuse; }
+
+    [[nodiscard]] bool pictureEnabled() const noexcept { return pictureOn_; }
+
+    // Finish one frame of `pixels` at these dimensions — where a real core's vblank fires.
+    void finishFrame(std::span<const std::uint8_t> pixels, int width, int height) {
+        if (pictureOn_ && frameSink_) {
+            frameSink_(pixels, width, height, GuestPixelFormat::Rgba8888);
+        }
+    }
+
 private:
     [[nodiscard]] static std::logic_error notAMachine() {
         return std::logic_error("MockVmBackend: this machine has no CPU");
@@ -298,6 +324,9 @@ private:
     std::function<void(std::uint32_t)> onCall_;
     std::vector<ArmedWatch>           armedWatches_;
     WatchSink                         watchSink_;
+    FrameSink                         frameSink_;
+    bool                              pictureOn_     = false;
+    bool                              refusePicture_ = false;
     std::size_t                       executed_    = 0;
     std::size_t                       acceptLimit_ = kNoLimit;
     std::size_t                       watchLimit_  = kNoLimit;
