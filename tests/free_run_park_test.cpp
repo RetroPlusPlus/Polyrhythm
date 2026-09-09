@@ -156,7 +156,10 @@ TEST(VmRunner, AParkLastsTheDeadlineOrTheIntervalWhicheverIsShorter) {
     const std::size_t onTheInterval = parksIn(1s, 60ms);   // far past the interval — it bounds the wait
     const std::size_t onTheDeadline = parksIn(0ns, 60ms);  // already due — the wait is the deadline
 
-    EXPECT_GT(onTheInterval, 5u);  // asked afresh each time the interval ran out
+    // How MANY times the interval elapses in a fixed window is the scheduler's business — its wait
+    // granularity is coarser on some platforms than the interval itself — so the claim is the
+    // comparison, not a count. That the interval bounds a longer deadline at all is pinned below.
+    EXPECT_GT(onTheInterval, 0u);  // asked afresh each time a park ended
     EXPECT_GT(onTheDeadline, onTheInterval * 2);
 }
 
