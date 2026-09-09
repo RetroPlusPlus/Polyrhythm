@@ -141,8 +141,19 @@ links the `retropp::testkit` target.
   `third_party/lodepng/` (pinned, zlib/MIT), compiled as a small static lib and linked
   privately. Decodes indexed/grayscale PNGs for the image-ingestion path; no symbol
   reaches a public header.
+- **[dr_libs](https://github.com/mackron/dr_libs)** (`dr_wav`) and
+  **[stb](https://github.com/nothings/stb)** (`stb_vorbis`) — vendored in-tree at
+  `third_party/dr_libs/` and `third_party/stb/`, compiled into a small static lib and linked
+  privately for the audio-pack decoders. Each is offered as a choice of public domain or a
+  permissive licence (MIT-0 and MIT respectively).
 - **[GoogleTest](https://github.com/google/googletest)** — fetched at configure time
   only when Polyrhythm's own tests are built.
+
+Everything above links **statically**, so a game ships as one self-contained binary with no
+runtime dependency to install. It stays small: the platform library is **~1.5 MB**, and a
+complete game binary — the platform, SDL3, the Game Boy core, the image and audio decoders, and
+the game itself, all linked in — is **~3.2 MB**. Release builds dead-strip unreferenced code at
+link, and that figure is already stripped. (Measured on macOS arm64.)
 
 ## License
 
