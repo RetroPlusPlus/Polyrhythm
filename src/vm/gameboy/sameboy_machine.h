@@ -228,7 +228,7 @@ public:
     [[nodiscard]] std::uint16_t mappedRomBank() const;
 
     // ── Picture ───────────────────────────────────────────────────────────────
-    // The machine draws nothing until picture output is enabled: pixel output is off
+    // The machine draws nothing until video output is enabled: pixel output is off
     // from construction, because running the CPU for extended periods with a PPU that
     // draws costs cycles no headless path should pay.
 
@@ -244,11 +244,11 @@ public:
     // each finished frame to the installed sink; disabling suppresses pixel output again.
     // Idempotent in both directions. A frame the hardware would not have redrawn is not
     // reported — the screen keeps what it is already showing.
-    void setPictureEnabled(bool enabled);
+    void setVideoEnabled(bool enabled);
 
-    // Whether picture output is on. What decides it is one call to enablePicture, so
+    // Whether video output is on. What decides it is one call to videoEnabled, so
     // this is what makes a machine's headlessness observable rather than asserted.
-    [[nodiscard]] bool pictureEnabled() const;
+    [[nodiscard]] bool videoEnabled() const;
 
     // Defined in sameboy_machine.cpp. Public only so the backend's TU-local
     // execution callback can name it (it receives the instance via SameBoy's

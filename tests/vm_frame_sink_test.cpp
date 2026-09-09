@@ -24,6 +24,7 @@ namespace {
 using retropp::GuestFrameContent;
 using retropp::GuestPixelFormat;
 using retropp::Vm;
+using retropp::VmFeatures;
 using retropp::VMPlatform;
 using retropp::testing::MockVmBackend;
 using retropp::vm::VmTestAccess;
@@ -64,35 +65,58 @@ TEST(VmFrameSink, AMachineWithOutputDisabledNeverFiresTheSink) {
     m.mock->finishFrame(frame, kWidth, kHeight);
     m.machine.advanceTick();
 
-    EXPECT_FALSE(m.mock->pictureEnabled());
-    EXPECT_THROW((void)m.machine.picture(), std::logic_error);
+    EXPECT_FALSE(m.mock->videoEnabled());
+    EXPECT_THROW((void)m.machine.video(), std::logic_error);
 }
 
 TEST(VmFrameSink, AskingAMachineThatDrawsNothingToDrawThrows) {
     MockedVm m;
-    m.mock->refusePicture(true);
+    m.mock->refuseVideo(true);
 
-    EXPECT_THROW(m.machine.picture(true), std::logic_error);
+    EXPECT_THROW(m.machine.video(true), std::logic_error);
 }
 
-TEST(VmFrameSink, AskingForThePictureTwiceIsIdempotent) {
+// Declaring an output at construction and switching it on afterwards are the same setting reached two
+// ways, so a machine declared this way is drawing before it has hosted anything.
+TEST(VmFrameSink, VideoDeclaredAtConstructionIsOn) {
+    Vm             machine{VMPlatform::GameBoy, VmFeatures{.video = true}};
+    auto           owned = std::make_unique<MockVmBackend>();
+    MockVmBackend* mock  = owned.get();
+    VmTestAccess::substituteBackend(machine, std::move(owned));
+
+    // The declaration reached the machine that was there at construction; asking again is idempotent
+    // and reaches the substituted one, which is what makes the setting observable here.
+    machine.video(true);
+    EXPECT_TRUE(mock->videoEnabled());
+    EXPECT_NO_THROW((void)machine.video());
+}
+
+// A machine that declares nothing produces nothing, which is what keeps a machine hosted for its
+// memory or its routines from paying for a raster it never shows.
+TEST(VmFrameSink, VideoIsOffWhenNothingDeclaresIt) {
     MockedVm m;
-    m.machine.picture(true);
-    EXPECT_NO_THROW(m.machine.picture(true));
-    EXPECT_TRUE(m.mock->pictureEnabled());
+    EXPECT_FALSE(m.mock->videoEnabled());
+    EXPECT_THROW((void)m.machine.video(), std::logic_error);
+}
+
+TEST(VmFrameSink, AskingForTheVideoTwiceIsIdempotent) {
+    MockedVm m;
+    m.machine.video(true);
+    EXPECT_NO_THROW(m.machine.video(true));
+    EXPECT_TRUE(m.mock->videoEnabled());
 }
 
 // Drawing goes off the way it came on, and a machine that draws nothing has no picture to answer with.
 TEST(VmFrameSink, TurningThePictureOffStopsTheMachineDrawing) {
     MockedVm m;
-    m.machine.picture(true);
+    m.machine.video(true);
     m.mock->finishFrame(pictureOf(1), kWidth, kHeight);
     m.machine.advanceTick();
-    EXPECT_NO_THROW((void)m.machine.picture());
+    EXPECT_NO_THROW((void)m.machine.video());
 
-    m.machine.picture(false);
-    EXPECT_FALSE(m.mock->pictureEnabled());
-    EXPECT_THROW((void)m.machine.picture(), std::logic_error);
+    m.machine.video(false);
+    EXPECT_FALSE(m.mock->videoEnabled());
+    EXPECT_THROW((void)m.machine.video(), std::logic_error);
 }
 
 // ── The tick boundary ───────────────────────────────────────────────────────────────────────────
@@ -102,20 +126,20 @@ TEST(VmFrameSink, TurningThePictureOffStopsTheMachineDrawing) {
 // timing rule of its own.
 TEST(VmFrameSink, AFrameCompletingBetweenTicksIsNotSeenUntilTheBoundary) {
     MockedVm m;
-    m.machine.picture(true);
+    m.machine.video(true);
     const std::vector<std::uint8_t> frame = pictureOf(1);
 
     m.mock->finishFrame(frame, kWidth, kHeight);
 
     // Mid-tick: the machine has finished a frame, and the game cannot see it yet.
-    const GuestFrameContent before = m.machine.picture();
+    const GuestFrameContent before = m.machine.video();
     EXPECT_EQ(before.generation, 0u);
     EXPECT_TRUE(before.pixels.empty());
     EXPECT_EQ(before.width, 0);
 
     m.machine.advanceTick();
 
-    const GuestFrameContent after = m.machine.picture();
+    const GuestFrameContent after = m.machine.video();
     EXPECT_EQ(after.generation, 1u);
     EXPECT_EQ(after.width, kWidth);
     EXPECT_EQ(after.height, kHeight);
@@ -127,36 +151,36 @@ TEST(VmFrameSink, AFrameCompletingBetweenTicksIsNotSeenUntilTheBoundary) {
 // one. A generation that tracked stepping would climb on every tick and every layer would re-upload.
 TEST(VmFrameSink, TheGenerationAdvancesOncePerCompletedFrameNotPerStep) {
     MockedVm m;
-    m.machine.picture(true);
+    m.machine.video(true);
 
     m.mock->finishFrame(pictureOf(1), kWidth, kHeight);
     m.machine.advanceTick();
-    EXPECT_EQ(m.machine.picture().generation, 1u);
+    EXPECT_EQ(m.machine.video().generation, 1u);
 
     m.machine.advanceTick();
-    EXPECT_EQ(m.machine.picture().generation, 1u);
+    EXPECT_EQ(m.machine.video().generation, 1u);
 
     m.machine.advanceTick();
-    EXPECT_EQ(m.machine.picture().generation, 1u);
+    EXPECT_EQ(m.machine.video().generation, 1u);
 
     m.mock->finishFrame(pictureOf(2), kWidth, kHeight);
     m.machine.advanceTick();
-    EXPECT_EQ(m.machine.picture().generation, 2u);
+    EXPECT_EQ(m.machine.video().generation, 2u);
 }
 
 // A machine that has finished nothing reports zero — the sentinel the renderer's per-layer slot starts
 // at, so a first submission is never mistaken for one already resident.
 TEST(VmFrameSink, AMachineThatFinishedNothingReportsGenerationZero) {
     MockedVm m;
-    m.machine.picture(true);
+    m.machine.video(true);
     m.machine.advanceTick();
 
-    EXPECT_EQ(m.machine.picture().generation, 0u);
+    EXPECT_EQ(m.machine.video().generation, 0u);
 }
 
 TEST(VmFrameSink, TheLastCompleteFrameIsHeldWhenNoNewOneArrives) {
     MockedVm m;
-    m.machine.picture(true);
+    m.machine.video(true);
     const std::vector<std::uint8_t> frame = pictureOf(7);
 
     m.mock->finishFrame(frame, kWidth, kHeight);
@@ -165,7 +189,7 @@ TEST(VmFrameSink, TheLastCompleteFrameIsHeldWhenNoNewOneArrives) {
 
     // The picture is still on screen — a display that refreshes faster than the machine draws shows
     // the frame again rather than going blank.
-    const GuestFrameContent held = m.machine.picture();
+    const GuestFrameContent held = m.machine.video();
     EXPECT_EQ(held.generation, 1u);
     ASSERT_EQ(held.pixels.size(), frame.size());
     EXPECT_TRUE(std::equal(frame.begin(), frame.end(), held.pixels.begin()));
@@ -176,7 +200,7 @@ TEST(VmFrameSink, TheLastCompleteFrameIsHeldWhenNoNewOneArrives) {
 // nothing downstream has to detect the case.
 TEST(VmFrameSink, SeveralFramesInOneTickLeaveTheLastOne) {
     MockedVm m;
-    m.machine.picture(true);
+    m.machine.video(true);
     const std::vector<std::uint8_t> first  = pictureOf(1);
     const std::vector<std::uint8_t> second = pictureOf(100);
 
@@ -184,7 +208,7 @@ TEST(VmFrameSink, SeveralFramesInOneTickLeaveTheLastOne) {
     m.mock->finishFrame(second, kWidth, kHeight);
     m.machine.advanceTick();
 
-    const GuestFrameContent shown = m.machine.picture();
+    const GuestFrameContent shown = m.machine.video();
     EXPECT_EQ(shown.generation, 2u);
     ASSERT_EQ(shown.pixels.size(), second.size());
     EXPECT_TRUE(std::equal(second.begin(), second.end(), shown.pixels.begin()));
@@ -195,23 +219,23 @@ TEST(VmFrameSink, SeveralFramesInOneTickLeaveTheLastOne) {
 // it where it is.
 TEST(VmFrameSink, ReadingThePictureTwiceInOneFrameAnswersTheSame) {
     MockedVm m;
-    m.machine.picture(true);
+    m.machine.video(true);
     m.mock->finishFrame(pictureOf(1), kWidth, kHeight);
     m.machine.advanceTick();
 
-    EXPECT_EQ(m.machine.picture().generation, 1u);
-    EXPECT_EQ(m.machine.picture().generation, 1u);
+    EXPECT_EQ(m.machine.video().generation, 1u);
+    EXPECT_EQ(m.machine.video().generation, 1u);
 }
 
 // ── What a core owes, and what it is never asked ────────────────────────────────────────────────
 
 TEST(VmFrameSink, ThePictureCarriesTheMachinesOwnDimensionsAndLayout) {
     MockedVm m;
-    m.machine.picture(true);
+    m.machine.video(true);
     m.mock->finishFrame(pictureOf(3), kWidth, kHeight);
     m.machine.advanceTick();
 
-    const GuestFrameContent shown = m.machine.picture();
+    const GuestFrameContent shown = m.machine.video();
     EXPECT_EQ(shown.width, kWidth);
     EXPECT_EQ(shown.height, kHeight);
     EXPECT_EQ(shown.format, GuestPixelFormat::Rgba8888);
@@ -234,15 +258,15 @@ TEST(VmFrameSink, AContinuouslyAdvancingMachineDraws) {
     machine.hostRom(std::vector<std::uint8_t>(0x8000, 0x00));
     machine.run(Vm::Advance::Continuously);
 
-    EXPECT_NO_THROW(machine.picture(true));
-    EXPECT_NO_THROW((void)machine.picture());
-    EXPECT_EQ(machine.picture().generation, 0u);  // asked, not yet drawn
+    EXPECT_NO_THROW(machine.video(true));
+    EXPECT_NO_THROW((void)machine.video());
+    EXPECT_EQ(machine.video().generation, 0u);  // asked, not yet drawn
 
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
-    while (machine.picture().generation == 0 && std::chrono::steady_clock::now() < deadline) {
+    while (machine.video().generation == 0 && std::chrono::steady_clock::now() < deadline) {
         std::this_thread::yield();
     }
-    EXPECT_GT(machine.picture().generation, 0u) << "the machine never drew on its own clock";
+    EXPECT_GT(machine.video().generation, 0u) << "the machine never drew on its own clock";
     machine.stop();
 }
 
@@ -256,7 +280,7 @@ TEST(VmFrameSink, AContinuouslyAdvancingMachineDraws) {
 TEST(VmFrameSink, AMachineDrawingOnItsOwnThreadHandsWholeFramesToTheGameThread) {
     Vm machine{VMPlatform::GameBoy};
     machine.hostRom(std::vector<std::uint8_t>(0x8000, 0x00));
-    machine.picture(true);
+    machine.video(true);
     machine.run(Vm::Advance::Continuously);
 
     // Bounded by WALL TIME, not iterations: the machine draws at its own hardware cadence, so a fixed
@@ -265,7 +289,7 @@ TEST(VmFrameSink, AMachineDrawingOnItsOwnThreadHandsWholeFramesToTheGameThread) 
     std::uint64_t  highest  = 0;
     std::uint64_t  reads    = 0;
     while (std::chrono::steady_clock::now() < deadline) {
-        const GuestFrameContent shown = machine.picture();
+        const GuestFrameContent shown = machine.video();
         ASSERT_EQ(shown.pixels.size(), static_cast<std::size_t>(shown.width) *
                                            static_cast<std::size_t>(shown.height) *
                                            retropp::bytesPerPixel(shown.format))
@@ -283,7 +307,7 @@ TEST(VmFrameSink, AMachineDrawingOnItsOwnThreadHandsWholeFramesToTheGameThread) 
 
 TEST(VmFrameSink, ADrawingMachineTakesEitherClock) {
     Vm machine{VMPlatform::GameBoy};
-    machine.picture(true);
+    machine.video(true);
     machine.hostRom(std::vector<std::uint8_t>(0x8000, 0x00));
 
     EXPECT_NO_THROW(machine.run(Vm::Advance::Continuously));

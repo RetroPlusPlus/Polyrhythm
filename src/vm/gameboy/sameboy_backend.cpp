@@ -985,6 +985,6 @@ void SameBoyBackend::setFrameSink(FrameSink sink) {
     });
 }
 
-void SameBoyBackend::setPictureEnabled(bool enabled) { machine_.setPictureEnabled(enabled); }
+void SameBoyBackend::setVideoEnabled(bool enabled) { machine_.setVideoEnabled(enabled); }
 
 }  // namespace retropp::vm

@@ -16,9 +16,10 @@ sprites, plus whole-frame colour and screen-space effects. The colour *model* (i
 - [`FrameDrawState` + `DrawLayer`](#framedrawstate--drawlayer)
   - [Layer identity vs depth](#layer-identity-vs-depth)
   - [Layer-key uniqueness is a contract](#layer-key-uniqueness-is-a-contract)
-- [Layer content: tiles or sprites](#layer-content-tiles-or-sprites)
+- [Layer content: tiles, sprites, or a hosted machine's picture](#layer-content-tiles-sprites-or-a-hosted-machines-picture)
   - [`TileContent` — a scrolling tile map](#tilecontent--a-scrolling-tile-map)
   - [`SpriteContent` + `Sprite` — placed sprites](#spritecontent--sprite--placed-sprites)
+  - [`GuestFrameContent` — a hosted machine's picture](#guestframecontent--a-hosted-machines-picture)
 - [Whole-frame colour](#whole-frame-colour)
 - [Screen-space effects](#screen-space-effects)
   - [Confining an effect to a shape (`Region`)](#confining-an-effect-to-a-shape-region)
@@ -233,12 +234,12 @@ A layer whose content is the last complete frame a hosted machine drew. Ask the 
 hand it straight to a layer:
 
 ```cpp
-machine.picture(true);                    // the machine draws — off by default
+machine.video(true);                    // the machine draws — off by default
 machine.run(Vm::Advance::OnTick);
 
 DrawLayer screen{.key = "screen"};
 screen.size    = PixelSize{160, 144};
-screen.content = machine.picture();       // valid for this renderFrame call
+screen.content = machine.video();       // valid for this renderFrame call
 ```
 
 The dimensions and the layout are the machine's own — a machine that draws 256×224 says so, and one
@@ -252,7 +253,7 @@ submission carries a generation the resident texture does not already hold. The 
 to decide — a full-colour raster differs every time a machine draws, so hashing one would cost more than
 the upload it could save.
 
-It is a value, so reading it leaves it where it is: two `picture()` calls in one frame report the same
+It is a value, so reading it leaves it where it is: two `video()` calls in one frame report the same
 generation, and a submission the renderer skips still carries the right answer on the next one. It says
 which frame this is rather than when it arrived, which is what lets a machine on the game's tick and a
 machine on a clock of its own be read the same way.
