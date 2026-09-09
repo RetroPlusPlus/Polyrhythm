@@ -979,7 +979,12 @@ struct Vm::Impl {
                     const std::uint64_t ran = raw->cyclesRun();
                     return static_cast<std::size_t>(ran > owed ? ran - owed : 0);
                 },
-                /*highWater=*/1);
+                /*highWater=*/1,
+                // The wait, from the same two numbers: how long until the wall clock owes the
+                // machine everything it has already run. One step is a whole guest frame, so a park
+                // measured any other way lands the next frame late by whatever the park had left to
+                // run; measured this way it lands when the frame is due.
+                [g, raw] { return g->timeUntilOwed(raw->cyclesRun()); });
         }
     }
 };

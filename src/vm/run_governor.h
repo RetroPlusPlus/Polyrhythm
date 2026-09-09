@@ -10,9 +10,9 @@
 // drifting. The factor {num, den} is exact too: {1, 1} is the platform's own speed, {2, 1} double,
 // {1, 2} half, and {0, den} owes nothing — pause is the degenerate case, not a second mechanism.
 //
-// One thread accrues, any thread steers. owedThrough() and restart() belong to the stepping thread;
-// setFactor() and factor() are wait-free from anywhere (the pair is packed into one atomic word, so
-// a torn {num, den} is unrepresentable).
+// One thread accrues, any thread steers. owedThrough(), timeUntilOwed() and restart() belong to the
+// stepping thread; setFactor() and factor() are wait-free from anywhere (the pair is packed into one
+// atomic word, so a torn {num, den} is unrepresentable).
 //
 // INTERNAL — under src/vm/, never include/retropp/.
 
@@ -108,6 +108,43 @@ public:
         owed_ += acc / scale;
         carryNum_ = acc % scale;
         return owed_;
+    }
+
+    // Wall time until the machine is owed `cycles` in total, at the factor as it stands — the owed
+    // arithmetic run backwards. A stepping loop parks on this: a step lands a whole frame of the
+    // machine's own time at once, so the wait is what the wall clock still owes for it, and a park
+    // measured this way ends when the next step is due rather than at a poll boundary. Cycles
+    // already owed are no wait at all. The answer is bounded by kMaxFold — a paused factor never
+    // reaches the target, and neither does a target further out than one fold, so both report the
+    // bound and a caller's park stays finite. Stepping thread only, like owedThrough.
+    [[nodiscard]] std::chrono::nanoseconds timeUntilOwed(std::uint64_t cycles) const {
+        if (cycles <= owed_) {
+            return std::chrono::nanoseconds::zero();
+        }
+        const auto [num, den] = factor();
+        if (num == 0) {
+            return kMaxFold;
+        }
+        const std::uint64_t deficit = cycles - owed_;
+        // What one fold's worth of wall time accrues. The constructor's clock guard is what makes
+        // this product safe at any factor, and it is also the bound that keeps `want` below in
+        // range: a deficit within it costs at most this many cycle-nanoseconds.
+        const std::uint64_t perFold = static_cast<std::uint64_t>(clockHz_) *
+                                      static_cast<std::uint64_t>(kMaxFold.count()) * num /
+                                      (1'000'000'000ull * den);
+        if (deficit > perFold) {
+            return kMaxFold;
+        }
+        // Both sides in cycle-nanoseconds under this denominator: what the deficit costs, less what
+        // the carried remainder already covers. The carry is under one cycle and the deficit is at
+        // least one, so the subtraction stays positive.
+        const std::uint64_t want = deficit * 1'000'000'000ull * den;
+        const std::uint64_t have = carryNum_ * den / carryDen_;
+        const std::uint64_t rate = static_cast<std::uint64_t>(clockHz_) * num;
+        const std::uint64_t ns   = (want - have + rate - 1) / rate;  // wake owing it, never short
+        const auto          cap  = static_cast<std::uint64_t>(kMaxFold.count());
+        return std::chrono::nanoseconds{
+            static_cast<std::chrono::nanoseconds::rep>(ns < cap ? ns : cap)};
     }
 
 private:

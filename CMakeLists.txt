@@ -1477,6 +1477,7 @@ if(RETROPP_BUILD_TESTS)
         tests/gb_regions_test.cpp
         tests/cycle_budget_test.cpp
         tests/vm_runner_test.cpp
+        tests/free_run_park_test.cpp
         tests/driver_hosting_vm_test.cpp
         tests/driver_registration_test.cpp
         tests/driver_mixed_images_test.cpp
