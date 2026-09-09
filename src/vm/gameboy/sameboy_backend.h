@@ -76,7 +76,7 @@ public:
 
     // Picture: report each frame the PPU finishes, once drawing has been turned on.
     void setFrameSink(FrameSink sink) override;
-    void setPictureEnabled(bool enabled) override;
+    void setVideoEnabled(bool enabled) override;
 
 private:
     // One watched address: the encoded form the host armed — reported back verbatim when it fires,

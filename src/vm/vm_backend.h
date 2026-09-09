@@ -326,7 +326,7 @@ public:
     // that a co-execution path which never displays should not pay. A backend whose core produces no
     // picture throws rather than accepting one that could never arrive, the same posture armEscape and
     // armWatch take. Idempotent in both directions.
-    virtual void setPictureEnabled(bool enabled) = 0;
+    virtual void setVideoEnabled(bool enabled) = 0;
 };
 
 }  // namespace retropp::vm

@@ -22,10 +22,10 @@
 // WHAT THIS DEMONSTRATES. A hosted machine's completed frames are a layer's content, so a machine's
 // screen composites with native layers by z like tiles or sprites do:
 //
-//     machine.picture(true);                    // the machine draws (off by default — a raster costs cycles)
-//     machine.run(Vm::Advance::OnTick);         // one engine tick advances it by one tick's worth
+//     Vm machine{model, VmFeatures{.video = true}};  // this machine draws; an output is off until asked
+//     machine.run(Vm::Advance::OnTick);              // one engine tick advances it by one of its frames
 //     ...
-//     screen.content = machine.picture();       // the last complete frame, held to the tick boundary
+//     screen.content = machine.video();              // the last complete frame it drew
 //
 // The whole of the picture path is those three lines. Everything else here is choosing a file and
 // standing up a window.
@@ -162,6 +162,57 @@ DialogEnd askForRom(std::filesystem::path& chosen) {
     return outcome.end;
 }
 
+// ── Capture mode ────────────────────────────────────────────────────────────────────────────────
+// `retropp-gb_player-demo <seconds> [out.csv]` picks a ROM as usual, runs for a fixed time, and writes
+// one row per rendered frame. Run plainly, it captures nothing and takes no arguments.
+//
+// What it measures: how each machine's frames line up with the frames the game draws. `picture()`
+// answers with a generation — how many frames that machine has finished — so the DELTA between two
+// consecutive rows says what happened to that machine's output over one drawn frame:
+//
+//     0  the same picture was drawn twice — the machine finished nothing in that interval
+//     1  one machine frame, one drawn frame — the cadence is preserved exactly
+//    ≥2  the machine finished more than one and only the newest was drawn; the rest were dropped
+//
+// A tick-advanced machine advances exactly once per tick, so its delta is 1 by construction. A machine
+// on a clock of its own is sampled rather than stepped, so its deltas are the measurement. The display
+// refresh is recorded on every row because it decides what a correct histogram even looks like — a
+// panel running at twice the machine's rate makes a 0 the expected case rather than a defect.
+struct CaptureRow {
+    std::uint64_t frame      = 0;
+    std::uint64_t tNs        = 0;   // since the first captured frame
+    std::uint64_t tickedGen  = 0;
+    std::uint64_t freeGen    = 0;
+    std::uint64_t tickedStep = 0;   // generation delta since the previous row
+    std::uint64_t freeStep   = 0;
+    int           presented  = 0;   // whether this frame reached the screen — the honest frame counter
+    float         displayHz  = 0.0f;
+};
+
+// Write the buffered rows once, at the end. Nothing touches the disk during the run, so the capture
+// does not perturb the thing it is measuring. Every frame is recorded — there is no threshold and no
+// filtering, because the interesting frame is always the one a filter would have dropped.
+void writeCapture(const std::string& path, const std::vector<CaptureRow>& rows) {
+    std::FILE* out = std::fopen(path.c_str(), "w");
+    if (out == nullptr) {
+        std::fprintf(stderr, "gb_player: cannot open %s for writing\n", path.c_str());
+        return;
+    }
+    std::fprintf(out, "frame,t_ns,ticked_gen,free_gen,ticked_step,free_step,presented,display_hz\n");
+    for (const CaptureRow& r : rows) {
+        std::fprintf(out, "%llu,%llu,%llu,%llu,%llu,%llu,%d,%.3f\n",
+                     static_cast<unsigned long long>(r.frame),
+                     static_cast<unsigned long long>(r.tNs),
+                     static_cast<unsigned long long>(r.tickedGen),
+                     static_cast<unsigned long long>(r.freeGen),
+                     static_cast<unsigned long long>(r.tickedStep),
+                     static_cast<unsigned long long>(r.freeStep),
+                     r.presented, static_cast<double>(r.displayHz));
+    }
+    std::fclose(out);
+    std::fprintf(stderr, "gb_player: wrote %zu rows to %s\n", rows.size(), path.c_str());
+}
+
 std::vector<std::uint8_t> readRom(const std::filesystem::path& file) {
     std::ifstream in{file, std::ios::binary};
     if (!in) {
@@ -173,16 +224,26 @@ std::vector<std::uint8_t> readRom(const std::filesystem::path& file) {
 
 }  // namespace
 
-int main() {
-    std::filesystem::path file;
-    switch (askForRom(file)) {
-        case DialogEnd::Chosen:
-            break;
-        case DialogEnd::Cancelled:
-            std::printf("No ROM was chosen, so there is nothing to run.\n");
-            return 0;
-        case DialogEnd::Failed:
-            return 1;
+int main(int argc, char** argv) {
+    // Capture mode: `gb_player <seconds> [out.csv] [rom]`. Without arguments the player just plays and
+    // asks for a ROM through the picker. Naming a ROM skips the dialog, which is what lets a capture run
+    // start to finish without a hand on it.
+    const double      capSeconds = (argc > 1) ? std::strtod(argv[1], nullptr) : 0.0;
+    const std::string capPath    = (argc > 2) ? argv[2] : "gb_player_capture.csv";
+    const std::string romArg     = (argc > 3) ? argv[3] : "";
+    const bool        capturing  = capSeconds > 0.0;
+
+    std::filesystem::path file{romArg};
+    if (romArg.empty()) {
+        switch (askForRom(file)) {
+            case DialogEnd::Chosen:
+                break;
+            case DialogEnd::Cancelled:
+                std::printf("No ROM was chosen, so there is nothing to run.\n");
+                return 0;
+            case DialogEnd::Failed:
+                return 1;
+        }
     }
 
     const std::vector<std::uint8_t> rom = readRom(file);
@@ -210,14 +271,14 @@ int main() {
     Renderer    renderer{platform.device(), platform.sdlWindow()};
 
     // The same image on two machines, so the only difference between the two screens is the clock each
-    // one runs on. Both are hosted and told to draw here; when each one STARTS is the delicate part,
-    // and it is handled below.
+    // one runs on. Both declare their outputs at construction — video is off unless a machine is asked
+    // for it, because a raster costs cycles a machine that never displays should not pay. When each one
+    // STARTS is the delicate part, and it is handled below.
     const VMPlatform model = color ? VMPlatform::GameBoyColor : VMPlatform::GameBoy;
-    Vm               ticked{model};
-    Vm               freeRunning{model};
+    Vm               ticked{model, VmFeatures{.video = true}};
+    Vm               freeRunning{model, VmFeatures{.video = true}};
     for (Vm* machine : {&ticked, &freeRunning}) {
         machine->hostRom(std::span<const std::uint8_t>(rom));
-        machine->picture(true);  // the machine draws — off by default, because a raster costs cycles
     }
     ticked.run(Vm::Advance::OnTick);  // the engine's tick is its clock: one tick, one of its frames
 
@@ -237,26 +298,69 @@ int main() {
         ticked.advanceTick();
     });
 
+    // The panel's refresh, read once: it decides what a correct delta histogram looks like, so it is
+    // recorded rather than assumed.
+    float displayHz = 0.0f;
+    if (const SDL_DisplayMode* mode =
+            SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(platform.sdlWindow()))) {
+        displayHz = mode->refresh_rate;
+    }
+
+    std::vector<CaptureRow> capRows;
+    if (capturing) {
+        capRows.reserve(static_cast<std::size_t>(capSeconds * 130.0) + 64);
+    }
+    const auto    capStart   = std::chrono::steady_clock::now();
+    std::uint64_t capFrame   = 0;
+    std::uint64_t lastTicked = 0;
+    std::uint64_t lastFree   = 0;
+
     FrameDrawState frame;
     loop.renderLoop([&]() {
         frame.layers.clear();
         // Each machine's picture is one screen wide and the layer spans both, so the right-hand one is
         // placed by scrolling its content half a viewport to the left. Outside its own dimensions a
         // picture draws nothing, which is what keeps the two halves from overlapping.
+        const GuestFrameContent tickedPicture = ticked.video();
+        const GuestFrameContent freePicture   = freeRunning.video();
+
         DrawLayer left{.key = "tick-advanced"};
         left.z       = 0;
         left.size    = PixelSize{kViewW, kViewH};
-        left.content = ticked.picture();
+        left.content = tickedPicture;
         frame.layers.push_back(left);
 
         DrawLayer right{.key = "free-running"};
         right.z       = 1;
         right.size    = PixelSize{kViewW, kViewH};
         right.scroll  = LayerScroll{-kGuestW, 0};
-        right.content = freeRunning.picture();
+        right.content = freePicture;
         frame.layers.push_back(right);
 
         renderer.renderFrame(frame);
+
+        if (capturing) {
+            // Recorded AFTER the submission, so the row describes the frame that was just drawn from
+            // these two pictures — and `presented` says whether it reached the screen at all.
+            const auto now = std::chrono::steady_clock::now();
+            capRows.push_back(CaptureRow{
+                .frame      = capFrame,
+                .tNs        = static_cast<std::uint64_t>(
+                    std::chrono::duration_cast<std::chrono::nanoseconds>(now - capStart).count()),
+                .tickedGen  = tickedPicture.generation,
+                .freeGen    = freePicture.generation,
+                .tickedStep = tickedPicture.generation - lastTicked,
+                .freeStep   = freePicture.generation - lastFree,
+                .presented  = renderer.renderStats().lastFrame.presented ? 1 : 0,
+                .displayHz  = displayHz,
+            });
+            lastTicked = tickedPicture.generation;
+            lastFree   = freePicture.generation;
+            ++capFrame;
+            if (std::chrono::duration<double>(now - capStart).count() >= capSeconds) {
+                loop.exitRequest();
+            }
+        }
     });
 
     std::printf(
@@ -271,5 +375,8 @@ int main() {
     host.run();
     ticked.stop();
     freeRunning.stop();
+    if (capturing) {
+        writeCapture(capPath, capRows);
+    }
     return 0;
 }

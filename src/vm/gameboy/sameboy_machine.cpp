@@ -99,7 +99,7 @@ struct SameBoyMachine::Impl {
     // was turned on at all.
     std::vector<std::uint32_t> pixels;
     SameBoyMachine::FrameSink  frameSink;
-    bool                       pictureOn = false;
+    bool                       videoOn = false;
 
     // Watched addresses, sorted so the per-instruction check is a binary search, and the sink each
     // one reports to. Both are read by the execution callback below.
@@ -450,15 +450,15 @@ void SameBoyMachine::setSampleSink(SampleSink sink) { impl_->sampleSink = std::m
 
 void SameBoyMachine::setFrameSink(FrameSink sink) { impl_->frameSink = std::move(sink); }
 
-void SameBoyMachine::setPictureEnabled(bool enabled) {
+void SameBoyMachine::setVideoEnabled(bool enabled) {
     if (!enabled) {
         // Suppress pixel output again. The buffer and the callbacks stay where they are, so turning
         // drawing back on costs nothing beyond the flag.
         GB_set_rendering_disabled(&impl_->gb, true);
-        impl_->pictureOn = false;
+        impl_->videoOn = false;
         return;
     }
-    if (impl_->pictureOn) {
+    if (impl_->videoOn) {
         return;
     }
     // The encoding first: the PPU asks for it as it draws, and the palettes it has already resolved
@@ -473,10 +473,10 @@ void SameBoyMachine::setPictureEnabled(bool enabled) {
     // buffer, the encoding and this flag all live in the region GB_reset preserves, so a machine that
     // is reset — by hosting a cartridge, or on its own — keeps drawing.
     GB_set_rendering_disabled(&impl_->gb, false);
-    impl_->pictureOn = true;
+    impl_->videoOn = true;
 }
 
-bool SameBoyMachine::pictureEnabled() const { return impl_->pictureOn; }
+bool SameBoyMachine::videoEnabled() const { return impl_->videoOn; }
 
 std::uint64_t SameBoyMachine::runForCycles(std::uint64_t ticks8MHz) {
     // Step the CPU in raw GB_run increments (each returns the 8 MHz ticks that instruction took)

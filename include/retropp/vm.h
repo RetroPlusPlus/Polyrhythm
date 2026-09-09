@@ -58,7 +58,7 @@
 #include "retropp/asset_policy.h"      // AssetPolicy (registerRoutine's Embed / LoadFromPath choice)
 #include "retropp/driver_binding.h"    // DriverBinding / Instruction — the resident-driver surface below
 #include "retropp/guest_escape.h"      // GuestEscape / EscapeMap / EscapeTable — the escape surface below
-#include "retropp/guest_frame.h"       // GuestFrameContent — what picture() answers with
+#include "retropp/guest_frame.h"       // GuestFrameContent — what video() answers with
 #include "retropp/guest_watch.h"       // GuestWatch / WatchMap / WatchTable — the watch surface below
 #include "retropp/isa.h"               // Isa + the VMPlatform → Isa mapping below
 #include "retropp/literal_path.h"      // LiteralPath (registerRoutine takes a compile-time literal path)
@@ -324,9 +324,29 @@ struct DeclaredRegion {
 
 // The VM host. Owns one backend machine (selected by VMPlatform); routines registered on it share
 // its memory (so RNG seed state persists across calls). Non-copyable (owns a machine); movable.
+// What a machine produces, declared at construction. A machine hosts without producing anything: it
+// runs a cartridge, holds its memory, and answers the verbs below, and nothing is drawn or heard
+// unless it is asked for. Each output costs the machine something a machine that never uses it should
+// not pay — a raster costs cycles — so each is named and each is off until declared.
+//
+// Every member has a runtime verb of the same name (video(bool)), so a game that knows at
+// construction says so here, and one that decides later switches it there. They are the same setting.
+struct VmFeatures {
+    bool video = false;  // the machine draws; its finished frames become a layer's content
+};
+
 class Vm {
 public:
     explicit Vm(VMPlatform platform, TimingProfile timing = TimingProfile::GameBoyColor);
+
+    // The same, with the machine's outputs declared up front:
+    //
+    //     Vm gb{VMPlatform::GameBoyColor, VmFeatures{.video = true}};
+    //
+    // Equivalent to constructing without them and calling the matching verb — a machine declared this
+    // way is drawing before it hosts anything, which is the difference from switching it on later.
+    Vm(VMPlatform platform, VmFeatures features);
+    Vm(VMPlatform platform, TimingProfile timing, VmFeatures features);
     ~Vm();
 
     // Nested platform-bound instantiation types — the CPU-half symmetric spelling of
@@ -470,33 +490,37 @@ public:
     // thread is gone by return. Harmless when nothing runs.
     void stop();
 
-    // ── The machine's picture ───────────────────────────────────────────────────────────────────
+    // ── Video ───────────────────────────────────────────────────────────────────────────────────
     // A machine hosts WITHOUT drawing: a raster costs cycles, and a machine hosted for its memory or
-    // its routines shows nothing. Turn drawing on and the frames it finishes become a layer's
-    // content, composited with native layers like anything else on screen.
+    // its routines shows nothing. Turn video on and the frames it finishes become a layer's content,
+    // composited with native layers like anything else on screen. Declare it at construction
+    // (VmFeatures) or switch it here; they are the same setting reached two ways.
 
-    // picture(true) starts the machine drawing, picture(false) stops it. Idempotent either way.
+    // video(true) starts the machine drawing, video(false) stops it. Idempotent either way.
     //
-    // A DRAWING MACHINE IS A TICK-ADVANCED MACHINE. Under Advance::OnTick the machine steps on the
-    // thread that calls advanceTick, so the frame the game composes with is a frame nothing else is
-    // writing. A machine advancing Continuously steps on a thread of its own, where the picture would
-    // be overwritten as it is read — so picture(true) throws for one that is already running that way,
-    // and run(Advance::Continuously) throws once it is drawing.
+    // EITHER CLOCK DRAWS. Under Advance::OnTick the machine steps on the thread that calls
+    // advanceTick, so the frame the game composes with is written where it is read. Under
+    // Advance::Continuously it steps on a thread of its own and hands each finished frame across, so
+    // what a game reads is a completed frame either way, never one being drawn.
     //
-    // Throws std::logic_error if the machine is running Continuously, or if its core produces no
-    // picture at all.
-    void picture(bool drawing);
+    // Asked of a RUNNING machine, the change lands at its next step boundary — where every change
+    // issued to a running machine lands — so the machine is never asked to install anything while its
+    // own thread is using it.
+    //
+    // Throws std::logic_error if this machine's core produces no video at all.
+    void video(bool drawing);
 
     // The last complete frame the machine drew, as a layer's content — hand it straight to a
     // DrawLayer. The pixels stay valid until the next advanceTick.
     //
-    // A frame the machine finished part-way through a tick is answered from the TICK BOUNDARY, where
-    // every other verb on a hosted machine lands. What a layer composes is the picture the tick left,
-    // and `contentChanged` says whether that tick brought a new one.
+    // A tick-advanced machine answers from the TICK BOUNDARY, where every other verb on a hosted
+    // machine lands, so a frame finishing part-way through a tick waits there. A machine on a clock of
+    // its own has no such boundary and answers with the newest frame it has finished. Either way
+    // `generation` says which frame this is — never when it arrived — so both read the same.
     //
-    // Throws std::logic_error unless the machine is drawing — a machine that draws nothing has no
-    // picture to answer with.
-    [[nodiscard]] GuestFrameContent picture() const;
+    // Throws std::logic_error unless this machine has been asked for video; a request that has not
+    // reached a step boundary yet counts, and answers with the empty picture until a frame lands.
+    [[nodiscard]] GuestFrameContent video() const;
 
     // Declare the places in this machine the game cares about, as one batch, and get back the handle
     // that names them. Every entry is checked here — reachable on this machine, and wholly contained

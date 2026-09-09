@@ -4,6 +4,7 @@
 #include "retropp/vm.h"            // Vm, MemoryRegion declarations, bindRoutine, run/speed/stop
 #include "retropp/guest_escape.h"  // GuestEscape, escapes(), the escape table
 #include "retropp/guest_watch.h"   // GuestWatch, AccessVerdict, watches(), the watch table
+#include "retropp/guest_frame.h"   // GuestFrameContent — a machine's video as layer content
 #include "retropp/memory_region.h" // MemoryRegion — where a place is
 #include "retropp/gb.h"            // gb::A … gb::PC, gb::VRam … gb::Hram, gb::banked
 ```
@@ -40,7 +41,7 @@ bytes exactly as they shipped, in memory this process owns, with the behaviour l
 - [The machine's own memories](#the-machines-own-memories)
 - [Running it](#running-it)
   - [Advancing it on your own tick instead](#advancing-it-on-your-own-tick-instead)
-- [Showing its picture](#showing-its-picture)
+- [Video: showing its picture](#video-showing-its-picture)
 - [While it runs: one thread owns the machine](#while-it-runs-one-thread-owns-the-machine)
 - [Escaping into your own code](#escaping-into-your-own-code)
 - [Replacing a routine the cartridge calls](#replacing-a-routine-the-cartridge-calls)
@@ -57,7 +58,7 @@ bytes exactly as they shipped, in memory this process owns, with the behaviour l
 
 ## The shape of it
 
-Six verbs, and everything else is composition:
+Seven verbs, and everything else is composition:
 
 | | |
 |---|---|
@@ -67,12 +68,16 @@ Six verbs, and everything else is composition:
 | `registerEscapes(...)` | name places in the cartridge's **code** where control leaves the guest for yours |
 | `registerWatches(...)` | name places in the cartridge's **memory** whose reads and writes your code decides |
 | `bindRoutine<Sig>(at, binding)` | call the cartridge's own routines from your code, in the guest's own context |
+| `video(on)` · `video()` | let it draw, and put the frames it finishes on a layer |
 
 The first three reach into the machine from outside. The next two are the machine reaching out to
-you — one keyed on the code it is about to execute, one on the memory it is about to touch. The last
-is you reaching back in. Together they close the loop: guest code calls your function, your function
-calls a routine of the cartridge's, that routine's own execution hits another escape, and so on, with
-the register file and the stack coming back untouched at every level.
+you — one keyed on the code it is about to execute, one on the memory it is about to touch.
+`bindRoutine` is you reaching back in. Together they close the loop: guest code calls your function,
+your function calls a routine of the cartridge's, that routine's own execution hits another escape,
+and so on, with the register file and the stack coming back untouched at every level.
+
+`video` is the machine's output rather than a way in or out of it: what the machine draws, handed to
+your frame as content you compose with.
 
 A `Vm` hosts a game's cartridge **or** a platform-built driver image, never both — `hostDriver`
 synthesizes an image the platform owns, and `hostRom` takes one your game owns. On a hosted cartridge
@@ -240,14 +245,14 @@ one, and replays from the same inputs.
 
 A machine running on its own thread refuses `advanceTick` — it keeps its own clock.
 
-## Showing its picture
+## Video: showing its picture
 
-A hosted machine draws nothing until you ask it to. Ask, and the frames it finishes become a layer's
-content:
+A hosted machine produces nothing until you ask it to. Ask for video, and the frames it finishes
+become a layer's content:
 
 ```cpp
 vm.hostRom(rom);
-vm.picture(true);                 // this machine draws
+vm.video(true);                 // this machine draws
 vm.run(Vm::Advance::OnTick);
 
 // once per tick:
@@ -257,16 +262,30 @@ vm.advanceTick();
 DrawLayer screen{.key = "screen"};
 screen.z       = 0;
 screen.size    = PixelSize{160, 144};
-screen.content = vm.picture();    // the last complete frame it drew
+screen.content = vm.video();    // the last complete frame it drew
 ```
 
 That layer composites by `z` like any other, so native layers go over or under a machine's screen —
 your own HUD above it, your own background behind it, a transform or a per-layer effect on it — and
 the machine knows nothing about any of it.
 
-**Drawing is off by default because a raster costs cycles.** A machine hosted for its memory, its
-routines or its driver never draws a pixel and never pays for one. `picture(true)` turns that cost on
-per machine and `picture(false)` turns it back off; both are idempotent.
+**Video is off by default because a raster costs cycles.** A machine hosted for its memory, its
+routines or its driver never draws a pixel and never pays for one. `video(true)` turns that cost on
+per machine and `video(false)` turns it back off; both are idempotent.
+
+**Declare it at construction if you know then**, which is the same setting reached the other way:
+
+```cpp
+Vm vm{VMPlatform::GameBoyColor, VmFeatures{.video = true}};
+```
+
+A machine declared this way is drawing before it hosts anything. `VmFeatures` is where a machine's
+outputs are named, so each one a machine does not use costs it nothing.
+
+**Asked of a RUNNING machine, the change lands at its next step boundary** — where every change issued
+to a running machine lands, so the machine is never asked to install anything while its own thread is
+using it. Reading the video in that window answers the empty picture rather than throwing: you asked,
+so you are early rather than mistaken.
 
 **Either clock draws.** A machine advancing on your tick steps on the thread that called `advanceTick`,
 so its picture is written where you read it. A machine advancing on a clock of its own steps on its own
@@ -274,7 +293,7 @@ thread and hands each finished frame across; you see completed frames either way
 being drawn.
 
 **When a frame becomes visible is what each clock offers.** A tick-advanced machine answers from the
-tick boundary: it may finish a frame part-way through a tick, and `picture()` keeps answering with the
+tick boundary: it may finish a frame part-way through a tick, and `video()` keeps answering with the
 previous one until `advanceTick` returns — the same boundary queued writes and table changes land at.
 A machine on its own clock has no such boundary, so it answers with the newest frame it has finished.
 Either way, asking twice in one frame gives the same picture both times.
@@ -677,7 +696,7 @@ be discovered.
 
 ## Try it
 
-Four examples, each one act, and one that puts the whole surface on a single screen.
+Five examples, each one act, one that puts the whole surface on a single screen, and one that runs your own cartridge.
 
 | | |
 |---|---|
@@ -686,14 +705,15 @@ Four examples, each one act, and one that puts the whole surface on a single scr
 | `examples/guest_escape` | escapes at a place in the guest's loop to count what it is doing from C++, then declares its routine replaced and answers it natively, in the routine's own registers |
 | `examples/guest_nesting` | a replacement that answers the cartridge's damage rule by calling the cartridge's **own** generator, nested inside the escape; then, parked, calls its own decompressor on a table the game never reached |
 | `examples/coexecution` | windowed, and every verb on this page acts on one picture: the cartridge marches eight walkers of its own each frame, drawn from the per-step publish. Under its own pace rule they hold a column; with `.replaces` armed they scatter |
+| `examples/gb_player` | windowed: one ROM of your own on two machines side by side, one advanced by the engine's tick and one free-running on a clock of its own, both submitting their video as layer content. Asks for a ROM through the native file picker and ships none |
 
-Every cartridge in all five is authored in-code or by a committed generator script.
+Every cartridge in the first five is authored in-code or by a committed generator script; the player takes a ROM of your own at runtime and ships none.
 
 ## Where to change things
 
 | What | Where |
 |---|---|
-| The public surface | `include/retropp/vm.h`, `include/retropp/guest_escape.h`, `include/retropp/guest_watch.h`, `include/retropp/memory_region.h` |
+| The public surface | `include/retropp/vm.h`, `include/retropp/guest_escape.h`, `include/retropp/guest_watch.h`, `include/retropp/guest_frame.h`, `include/retropp/memory_region.h` |
 | The Game Boy vocabulary — registers, memory areas, `banked` | `include/retropp/gb.h` |
 | The host layer: declarations, validation, the escape and watch tables, the run loop | `src/vm/vm.cpp`, `src/vm/vm_runner.cpp` |
 | What a core must provide | `src/vm/vm_backend.h` |
@@ -711,8 +731,9 @@ built-on-the-spot forms; the `gb::` memory constants and `gb::banked` addressing
 `stop` with seeded post-boot state and the per-step publish; `registerEscapes` with both kinds —
 `.handler` and `.replaces` — the escape table (`armed` / `remove` / `contains` / `size`) including
 changing it while the machine runs; `registerWatches` with both directions, the `AccessVerdict`
-outcomes, `AccessSource` and the watch table on the same terms; and `bindRoutine`, in the guest's own
-context, nested to any depth.
+outcomes, `AccessSource` and the watch table on the same terms; `bindRoutine`, in the guest's own
+context, nested to any depth; and `video`, declared through `VmFeatures` or switched at runtime, on
+either clock.
 
 **Constructing a `Vm` for any other `VMPlatform` throws** — `Snes`, `Nes`, `Genesis` and
 `MasterSystem` are enumerated so a consumer can name one, and each is a drop-in when its backend
@@ -723,5 +744,8 @@ header naming its registers and memory areas; the verbs on this page, the declar
 binding vocabulary stay as they are, because none of them is console-shaped. Two capabilities depend
 on what a core can offer rather than on the surface: escapes need a per-instruction hook and watches
 need a per-access one, and a core that has neither refuses at declaration rather than accepting a
-declaration that could never fire. A console also states its own access granularity — how many times
+declaration that could never fire. Video is a third of that kind — a core reports a completed frame,
+its dimensions and its pixel layout, and one that draws nothing refuses rather than accepting a
+request that could never be answered. A core with different dimensions or a different layout needs
+nothing new from the surface, because neither is the platform's to choose. A console also states its own access granularity — how many times
 a wide access fires a watch, and at which addresses.

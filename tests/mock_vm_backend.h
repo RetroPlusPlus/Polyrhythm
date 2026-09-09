@@ -245,28 +245,28 @@ public:
         throw notAMachine();
     }
 
-    // ── The picture seam ─────────────────────────────────────────────────────────────────────────
+    // ── The video seam ─────────────────────────────────────────────────────────────────────────
     // This machine has no PPU either, so the frames come from the test: finishFrame is where a real
     // core's vblank is, and it reports only once drawing has been turned on — which is what lets a
     // case watch a machine that was never asked to draw stay silent.
 
     void setFrameSink(FrameSink sink) override { frameSink_ = std::move(sink); }
 
-    void setPictureEnabled(bool enabled) override {
-        if (enabled && refusePicture_) {
+    void setVideoEnabled(bool enabled) override {
+        if (enabled && refuseVideo_) {
             throw std::logic_error("MockVmBackend: this machine draws nothing");
         }
-        pictureOn_ = enabled;
+        videoOn_ = enabled;
     }
 
-    // Draw nothing at all, the way a core with no picture must.
-    void refusePicture(bool refuse) noexcept { refusePicture_ = refuse; }
+    // Draw nothing at all, the way a core with no video must.
+    void refuseVideo(bool refuse) noexcept { refuseVideo_ = refuse; }
 
-    [[nodiscard]] bool pictureEnabled() const noexcept { return pictureOn_; }
+    [[nodiscard]] bool videoEnabled() const noexcept { return videoOn_; }
 
     // Finish one frame of `pixels` at these dimensions — where a real core's vblank fires.
     void finishFrame(std::span<const std::uint8_t> pixels, int width, int height) {
-        if (pictureOn_ && frameSink_) {
+        if (videoOn_ && frameSink_) {
             frameSink_(pixels, width, height, GuestPixelFormat::Rgba8888);
         }
     }
@@ -325,8 +325,8 @@ private:
     std::vector<ArmedWatch>           armedWatches_;
     WatchSink                         watchSink_;
     FrameSink                         frameSink_;
-    bool                              pictureOn_     = false;
-    bool                              refusePicture_ = false;
+    bool                              videoOn_     = false;
+    bool                              refuseVideo_ = false;
     std::size_t                       executed_    = 0;
     std::size_t                       acceptLimit_ = kNoLimit;
     std::size_t                       watchLimit_  = kNoLimit;
