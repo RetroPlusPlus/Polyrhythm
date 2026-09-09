@@ -22,8 +22,8 @@ Out of the box, with no enhancements enabled, Polyrhythm reproduces the consumin
 behavior faithfully. Enhancements (output scaling, world zoom, audio packs, display filters) are
 opt-in and off by default.
 
-**The platform is lean: the library is ~1.5 MB.** Everything it depends on — SDL3, the Game Boy core,
-the PNG decoder, the Vorbis and WAV decoders — links statically alongside it, which puts the floor for
+**The platform is lean: the library is ~1.5 MB.** Everything it depends on — SDL3, the image and audio
+decoders, any VM cores a game uses — links statically alongside it, which puts the floor for
 a shipped binary at roughly 3.2 MB before a game adds its own code and content, with nothing to
 install beside it. Release builds dead-strip at link, so those are shipped sizes rather than pre-trim
 ones. (Measured on macOS arm64.)
