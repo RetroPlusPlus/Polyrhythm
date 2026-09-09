@@ -42,6 +42,11 @@ TEST(ReturnLanding, CallDoesNotLeaveTheMarkerBehind) {
     SameBoyBackend backend{ConsoleModel::GameBoyColor};
     const std::uint32_t entry = placeReturnOnly(backend);
 
+    // Seeded, because power-on high RAM is PRNG-seeded: a landing that restores exactly what it found
+    // still holds the marker afterwards whenever the machine powered on holding one, and the case
+    // below asks about the landing's own doing rather than the byte it inherited.
+    backend.writeMemory(kLanding, 0x00, 1);
+
     backend.beginCall(entry);
     backend.run();
 

@@ -27,7 +27,8 @@
 // A machine either steps on the thread that asks it to (Inline) or on a thread of its own (Threaded).
 // A threaded machine paces itself against what it has already produced: it steps while its downstream
 // backlog is below the high-water mark and parks otherwise, so it runs ahead by a bounded amount and a
-// machine that falls behind falls behind alone.
+// machine that falls behind falls behind alone. A runner given a deadline parks until its next step is
+// due, so the step lands on its own schedule rather than on the interval a park would otherwise run.
 //
 // A runner drives a machine, whatever that machine is for.
 //
@@ -63,9 +64,11 @@ public:
     // gesture rather than blocking the thread that offered it.
     static constexpr std::size_t kMailboxCapacity = 256;
 
-    // How long a threaded runner parks once it has produced its fill. Short against the backlog the
-    // high-water mark holds, so the machine resumes well before its consumer runs out; the wait is
-    // timed rather than pure, so a missed wake costs one interval and never a stall.
+    // The longest a threaded runner parks once it has produced its fill. Short against the backlog
+    // the high-water mark holds, so the machine resumes well before its consumer runs out; the wait
+    // is timed rather than pure, so a missed wake costs one interval and never a stall. A runner
+    // given a deadline waits for whichever comes first, and this is what keeps that wait finite —
+    // a paused machine still looks up often enough to notice it has been asked to leave.
     static constexpr std::chrono::milliseconds kParkInterval{4};
 
     // Take ownership of `machine` and drive it `cyclesPerStep` CPU cycles at a time. Pass a machine that
@@ -135,8 +138,13 @@ public:
 
     // Give the machine its own thread. `backlog` reports how much of what the machine produced is still
     // waiting downstream, and the runner steps only while that is under `highWater` — so a machine runs
-    // ahead by a bounded amount and its consumer paces it. Threaded runners only, called once.
-    void start(std::function<std::size_t()> backlog, std::size_t highWater);
+    // ahead by a bounded amount and its consumer paces it. `untilNext` answers how long until the next
+    // step is due; supply it and a park lasts that or kParkInterval, whichever is shorter, so a step
+    // lands when it is owed instead of at the next interval. It answers from the same numbers `backlog`
+    // reports on, which is what keeps the two from disagreeing about whether it is time to step.
+    // Threaded runners only, called once.
+    void start(std::function<std::size_t()> backlog, std::size_t highWater,
+               std::function<std::chrono::nanoseconds()> untilNext = {});
 
     // Ask the loop to leave. Wait-free: it neither blocks nor joins, so closing a machine never hands a
     // stalled one the power to stall the thread doing the closing.
@@ -166,8 +174,9 @@ private:
     std::function<void()>              place_;    // threaded only — the loop's first act
     std::atomic<std::uint64_t>         cyclesRun_{0};
 
-    std::function<std::size_t()> backlog_;
-    std::size_t                  highWater_ = 0;
+    std::function<std::size_t()>             backlog_;
+    std::function<std::chrono::nanoseconds()> untilNext_;  // empty: a park runs the full interval
+    std::size_t                              highWater_ = 0;
     std::thread                  thread_;
     std::mutex                   mtx_;
     std::condition_variable      cv_;

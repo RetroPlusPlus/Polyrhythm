@@ -1,5 +1,6 @@
 #include "src/vm/vm_runner.h"
 
+#include <algorithm>
 #include <span>
 #include <stdexcept>
 #include <utility>
@@ -76,8 +77,10 @@ void VmRunner::beforeFirstStep(std::function<void()> work) {
     place_ = std::move(work);
 }
 
-void VmRunner::start(std::function<std::size_t()> backlog, std::size_t highWater) {
+void VmRunner::start(std::function<std::size_t()> backlog, std::size_t highWater,
+                     std::function<std::chrono::nanoseconds()> untilNext) {
     backlog_   = std::move(backlog);
+    untilNext_ = std::move(untilNext);
     highWater_ = highWater;
     finished_.store(false, std::memory_order_relaxed);
     thread_ = std::thread([this] { loop(); });
@@ -106,11 +109,16 @@ void VmRunner::loop() {
             stepOnce();
             continue;
         }
+        // Asked before the lock is taken, so the deadline is read on the same terms the backlog was
+        // and no closure runs under the mutex.
+        const std::chrono::nanoseconds park =
+            untilNext_ ? std::min<std::chrono::nanoseconds>(untilNext_(), kParkInterval)
+                       : std::chrono::nanoseconds{kParkInterval};
         std::unique_lock<std::mutex> lock(mtx_);
         if (stop_.load(std::memory_order_relaxed)) {
             break;
         }
-        cv_.wait_for(lock, kParkInterval);
+        cv_.wait_for(lock, park);
     }
     finished_.store(true, std::memory_order_release);
 }
