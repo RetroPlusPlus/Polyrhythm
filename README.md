@@ -22,6 +22,11 @@ Out of the box, with no enhancements enabled, Polyrhythm reproduces the consumin
 behavior faithfully. Enhancements (output scaling, world zoom, audio packs, display filters) are
 opt-in and off by default.
 
+**A finished game is one file of about three megabytes.** That figure is the whole of it — the
+platform, SDL3, the Game Boy core, the PNG decoder, the Vorbis and WAV decoders, and the game's own
+code — linked statically, with nothing to install beside it. The platform library on its own is
+~1.5 MB. Release builds dead-strip at link, so those are the shipped sizes, not the pre-trim ones.
+
 ## Status
 
 Active development. The core is in place and exercised end to end by a real consumer:
@@ -149,11 +154,8 @@ links the `retropp::testkit` target.
 - **[GoogleTest](https://github.com/google/googletest)** — fetched at configure time
   only when Polyrhythm's own tests are built.
 
-Everything above links **statically**, so a game ships as one self-contained binary with no
-runtime dependency to install. It stays small: the platform library is **~1.5 MB**, and a
-complete game binary — the platform, SDL3, the Game Boy core, the image and audio decoders, and
-the game itself, all linked in — is **~3.2 MB**. Release builds dead-strip unreferenced code at
-link, and that figure is already stripped. (Measured on macOS arm64.)
+Every one of them links **statically** into the consuming game's binary — the ~3.2 MB above, measured
+on macOS arm64 from a dead-stripped release build. A game ships as one file.
 
 ## License
 
