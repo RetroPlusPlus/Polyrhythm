@@ -151,8 +151,9 @@ int main() {
         frame.layers.push_back(scene);
 
         // The holed lattice, over the scene. Its two grade regions differ ONLY in scope: the left half at
-        // Layer scope (grades the lattice's own art, holes stay transparent), the right half at Below scope
-        // (grades the composited image beneath, reaching through the holes). Same tint, same mode, one seam.
+        // Layer scope (Multiply composes over the lattice's own content, where a hole is a destination of
+        // nothing), the right half at Below scope (over the composited image beneath, reaching through the
+        // holes). Same tint, same mode, one seam.
         DrawLayer lattice{.key = "lattice"};
         lattice.z       = 10;
         lattice.size    = PixelSize{kViewW, kViewH};

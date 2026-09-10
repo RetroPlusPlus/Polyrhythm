@@ -89,9 +89,10 @@ tint, a flash, a fade.
 
 Where that grade lands is the effect's `scope` (`ScreenSpaceEffectScope`, on a per-layer effect):
 
-- **`Layer`** — the grade combines over the layer's **own content**, in place. The layer's transparent pixels
-  stay transparent: a hole in the graded layer reveals the layers below *ungraded*. Tint one plane (a sprite
-  flashes, a single layer goes to dusk) without touching the rest of the scene.
+- **`Layer`** — the grade combines over the layer's **own content**, in place. A hole in that layer is a
+  destination of nothing, so the grade lands there against an empty pixel rather than against the scene
+  beneath. Tint one plane (a sprite flashes, a single layer goes to dusk) without touching the rest of
+  the scene.
 - **`Below`** — the grade combines over the **accumulated image** at the layer's z: this layer's content and
   everything beneath it, coherently, including *through* the layer's holes. A wash that sits over the world (a
   whole-scene day/night, a screen flash) while layers above the grade's z ride over it untouched.

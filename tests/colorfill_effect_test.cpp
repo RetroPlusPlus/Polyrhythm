@@ -80,18 +80,14 @@ TEST(ColorFillIntensity, ZeroIsBlack) {
 
 // ── applyColorFill — the solid-fill transform mirror ──────────────────────────────────
 
-// The output rgb is exactly the fill colour, regardless of the input pixel — a solid fill: the line/shape
-// colour replaces whatever was underneath.
+// The output rgb is exactly the fill colour — a fill is a pure source colour, so the params are all of it.
 TEST(ApplyColorFill, OutputIsTheFillColour) {
     constexpr ColorFillParams p{.r = 0.9f, .g = 0.1f, .b = 0.4f};
-    const ColorFillRgb fromBlack = applyColorFill(ColorFillRgb{0.0f, 0.0f, 0.0f}, p);
-    const ColorFillRgb fromWhite = applyColorFill(ColorFillRgb{1.0f, 1.0f, 1.0f}, p);
-    EXPECT_FLOAT_EQ(fromBlack.r, 0.9f); EXPECT_FLOAT_EQ(fromBlack.g, 0.1f); EXPECT_FLOAT_EQ(fromBlack.b, 0.4f);
-    EXPECT_FLOAT_EQ(fromWhite.r, 0.9f); EXPECT_FLOAT_EQ(fromWhite.g, 0.1f); EXPECT_FLOAT_EQ(fromWhite.b, 0.4f);
-    static_assert(applyColorFill(ColorFillRgb{1.0f, 1.0f, 1.0f},
-                                 ColorFillParams{.r = 0.9f, .g = 0.1f, .b = 0.4f}) ==
+    const ColorFillRgb out = applyColorFill(p);
+    EXPECT_FLOAT_EQ(out.r, 0.9f); EXPECT_FLOAT_EQ(out.g, 0.1f); EXPECT_FLOAT_EQ(out.b, 0.4f);
+    static_assert(applyColorFill(ColorFillParams{.r = 0.9f, .g = 0.1f, .b = 0.4f}) ==
                       ColorFillRgb{0.9f, 0.1f, 0.4f},
-                  "the fill colour replaces the pixel, regardless of input");
+                  "the output is the fill colour");
 }
 
 // ColorFillRgb equality is constexpr.

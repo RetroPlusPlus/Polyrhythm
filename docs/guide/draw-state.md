@@ -573,13 +573,18 @@ frame.regions.push_back(Region{ .key     = "wash",
                                 .alpha   = 0.5f });  // a 50% warm wash over the backdrop
 ```
 
-**It writes the colour over *existing* pixels — so pick the attachment point by what's underneath.** A pixel
-must be opaque for the colour to land:
+**It emits the colour into the region's shape**, so it fills that shape wherever you attach it. The
+`Region`'s `alpha` and `blend` are what compose the colour over the scene, and the attachment point
+picks which scene that is:
 
-- **Frame-level (`FrameDrawState::regions`) or a `Below`-scope layer effect** paints onto the **composited
-  scene** — use this to draw lines and shapes *over* the rendered frame (the scene is opaque).
-- **`Layer` scope (`DrawLayer::regions`)** recolours **that layer's own art** in place — flat-shading a
+- **Frame-level (`FrameDrawState::regions`) or a `Below`-scope layer effect** composes over the
+  **composited scene** — drawing lines and shapes over the rendered frame.
+- **`Layer` scope (`DrawLayer::regions`)** composes over **that layer's own content** — flat-shading a
   sprite, re-tinting a band of tiles.
+
+Under `Normal` at full alpha the result is the colour itself at either attachment point. A mode that
+reads its destination — `Multiply`, `Add`, `Screen`, `Subtract`, `Half` — differs between them, because
+the destination differs.
 
 `color_fill_demo` draws a solid fill, a stroked ring, a curved drawn line, and a translucent tint — all one
 built-in, each confined by a `Region`.

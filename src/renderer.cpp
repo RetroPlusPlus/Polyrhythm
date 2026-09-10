@@ -433,8 +433,8 @@ static_assert(sizeof(SwirlFragUniforms) == 32, "SwirlFragUniforms must match the
 
 // Built-in colour-fill stage uniform — must match colorfill.frag.hlsl's ColorFillUniforms cbuffer exactly:
 // one 16-byte register holding the fill colour (rgb, normalized) + a pad lane. Filled from
-// retropp::colorFillParams(effect). The ColorFill stage replaces the pixel rgb with this colour; opacity is
-// the layer alpha.
+// retropp::colorFillParams(effect). The ColorFill stage emits this colour, opaque; opacity belongs to the
+// owning Region / Layer / Frame.
 struct ColorFillFragUniforms {
     float r, g, b, pad;   // register 0 — fill colour (normalized) + pad
 };
@@ -1414,15 +1414,15 @@ Renderer::Renderer(SDL_GPUDevice* device, SDL_Window* window, ViewportResolution
         if (!swirlBlend_) fail("SDL_CreateGPUGraphicsPipeline (swirlBlend) failed");
     }
 
-    // Built-in colour-fill post-process pipeline: the third engine effect kind, the SAME shape as
-    // displace_ / ripple_ — a fullscreen-triangle pass over postprocess.vert, one sampled source + one
-    // uniform (ColorFillFragUniforms), no blend (replaces its scratch). The runEffect built-in branch
-    // dispatches to this by ScreenSpaceEffectKind::ColorFill. The fragment paints a colour onto the pixels
-    // it covers (clamp(in*mul+add) then mix to fill); a Region confines it to a shape, so a colour fills
-    // that shape — a stroked region becomes a drawn line, a filled region a solid shape.
+    // Built-in colour-fill post-process pipeline: a fullscreen-triangle pass over postprocess.vert with
+    // one uniform (ColorFillFragUniforms) and no sampled source — a fill is a pure source colour, so the
+    // stage emits it directly, and it means the same thing at every scope. No blend (it replaces its
+    // scratch). The runEffect built-in branch dispatches to this by ScreenSpaceEffectKind::ColorFill. A
+    // Region confines it to a shape, so a colour fills that shape — a stroked region becomes a drawn
+    // line, a filled region a solid shape.
     {
         SDL_GPUShader* vertex   = createShader(device_, SDL_GPU_SHADERSTAGE_VERTEX, shaders::postprocess_vert, 0);
-        SDL_GPUShader* fragment = createShader(device_, SDL_GPU_SHADERSTAGE_FRAGMENT, shaders::colorfill_frag, 1, 0, 1);
+        SDL_GPUShader* fragment = createShader(device_, SDL_GPU_SHADERSTAGE_FRAGMENT, shaders::colorfill_frag, 0, 0, 1);
 
         SDL_GPUColorTargetDescription colorTarget{};
         colorTarget.format = kViewportColorFormat;
@@ -5179,8 +5179,7 @@ SDL_GPUTexture* Renderer::composeViewport(SDL_GPUCommandBuffer* cmd, const Frame
             const ColorFillParams p = colorFillParams(effect);
             const ColorFillFragUniforms cu{p.r, p.g, p.b, 0.0f};
             SDL_BindGPUGraphicsPipeline(pass, blend ? colorFillBlend_ : colorFill_);
-            SDL_BindGPUFragmentSamplers(pass, 0, &binding, 1);
-            SDL_PushGPUFragmentUniformData(cmd, 0, &cu, sizeof(cu));
+            SDL_PushGPUFragmentUniformData(cmd, 0, &cu, sizeof(cu));  // no source: a fill reads nothing
         } else if (effect.kind == ScreenSpaceEffectKind::Gleam) {
             const GleamParams p = gleamParams(effect);
             const GleamFragUniforms gu{p.sweep, p.width, p.gain, p.slant};

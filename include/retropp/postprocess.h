@@ -402,7 +402,7 @@ struct SwirlParams {
 // The colour-fill stage's resolved parameters — the built-in peer of DisplaceParams / RippleParams: the
 // fill colour as normalized [0,1] floats (the shader and this mirror work in floats; the public ColorFill
 // carries an Rgba8). The renderer copies these straight into the GPU uniform (ColorFillFragUniforms in
-// renderer.cpp). The transform replaces the pixel's rgb with the fill colour; the layer alpha sets opacity.
+// renderer.cpp). The stage emits this colour, opaque; opacity belongs to the owning Region / Layer / Frame.
 struct ColorFillParams {
     float r = 0.0f, g = 0.0f, b = 0.0f;  // fill colour, normalized
     [[nodiscard]] constexpr bool operator==(const ColorFillParams&) const noexcept = default;
@@ -419,16 +419,17 @@ struct ColorFillParams {
                            static_cast<float>(e.fill.b) * inv * e.fillIntensity};
 }
 
-// An RGB colour in [0,1] floats — the colorfill mirror's in/out type (rgb; the stage keeps the pixel's
-// alpha). Named channels per the no-positional-opacity discipline.
+// An RGB colour in [0,1] floats — the colorfill mirror's output type. Named channels per the
+// no-positional-opacity discipline.
 struct ColorFillRgb {
     float r = 0.0f, g = 0.0f, b = 0.0f;
     [[nodiscard]] constexpr bool operator==(const ColorFillRgb&) const noexcept = default;
 };
 
-// The output rgb is the fill colour — a solid replace; the layer alpha sets opacity. The exact
-// colorfill.frag rgb math; pure arithmetic → genuinely constexpr, so it is static_assert-testable.
-[[nodiscard]] constexpr ColorFillRgb applyColorFill(ColorFillRgb /*in*/, const ColorFillParams& p) noexcept {
+// The output rgb IS the fill colour — a fill is a pure source colour, so the params fully determine it.
+// Opacity and blending belong to the owning Region / Layer / Frame. The exact colorfill.frag rgb math;
+// pure arithmetic → genuinely constexpr, so it is static_assert-testable.
+[[nodiscard]] constexpr ColorFillRgb applyColorFill(const ColorFillParams& p) noexcept {
     return ColorFillRgb{p.r, p.g, p.b};
 }
 
