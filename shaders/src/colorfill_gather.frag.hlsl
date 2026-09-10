@@ -167,10 +167,10 @@ float4 main(float2 uv : TEXCOORD0) : SV_Target0 {
         // render-target write quantizes that one).
         if (composited) acc = quantizeF16(acc);
 
-        // colorfill.frag: paint the fill, keep the pixel's own alpha. Its output crossed a float16
-        // scratch before the gate sampled it — quantize the fill the same way.
+        // colorfill.frag: emit the fill, opaque. Its output crossed a float16 scratch before the gate
+        // sampled it — quantize the fill the same way.
         float4 fillA = loadRec(base + 1u);
-        float4 eff = float4(quantizeF16(float4(fillA.rgb, 0.0)).rgb, acc.a);
+        float4 eff = float4(quantizeF16(float4(fillA.rgb, 0.0)).rgb, 1.0);
 
         // region_select.frag: the blend grade over the scene, then the region-alpha mix.
         uint   mode   = (uint)(inv2.w + 0.5);

@@ -2,17 +2,17 @@
 // colour painted onto a Region's shape. It opens a window over an opaque dim-grid backdrop and draws four
 // things with the SAME built-in effect (ScreenSpaceEffectKind::ColorFill), each confined to a Region:
 //
-//   • a SOLID filled rectangle (fillStrength 1) — a solid coloured shape;
+//   • a SOLID filled rectangle — a solid coloured shape;
 //   • a STROKED ring (a circle + strokeWidth) — a coloured outline / hoop;
 //   • a CURVED drawn LINE (ShapePoints::fromCurve on an OPEN curve + strokeWidth) — the missing primitive:
 //     a stroked region filled with a colour IS a drawn colored path;
 //   • a TRANSLUCENT warm tint — a solid colour in a Region whose alpha (0.5) blends it over the backdrop.
 //
-// All four are frame-level regions (FrameDrawState::regions), so they paint onto the composited (opaque)
-// backdrop — the line-drawing rule: ColorFill recolours EXISTING pixels, so the source must be opaque for
-// the fill to show (a frame-level / Below source is the opaque scene; a Layer-scope source would be the
-// layer's own art, recolouring it in place). The pixel-exact colour math is the device-free ctest suite's
-// job (applyColorFill vs the shader); this is the live GPU sanity check.
+// All four are frame-level regions (FrameDrawState::regions). A fill emits its colour into the region's
+// shape, so it paints the same way wherever it is attached; the Region's alpha and blend mode are what
+// compose it over the backdrop, which is how the tint gets its translucency. The
+// pixel-exact colour math is the device-free ctest suite's job (applyColorFill vs the shader); this is
+// the live GPU sanity check.
 //
 // The window never auto-launches (a dev drives it). Backspace = fullscreen; close to quit.
 

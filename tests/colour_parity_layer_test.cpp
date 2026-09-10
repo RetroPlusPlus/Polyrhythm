@@ -357,22 +357,23 @@ TEST_F(ColourParityLayer, LayerScopeMultiplyBrighten) {
         << "layer_multiply_brighten";
 }
 
-// ── Holes: Layer scope keeps a layer's transparent holes transparent; Below scope grades through ───
+// ── A fill carries no scope dependence ────────────────────────────────────────────────────────────
 //
-// A holed upper layer (index 0 = a structural hole) over an opaque lower layer, graded by one Multiply
-// ColorFill at Layer vs Below scope. The differential IS the semantics, so no tolerance is needed:
-//   - a HOLE pixel: Layer scope leaves it byte-identical to no effect (the upper layer's transparent
-//     pixels are untouched, the lower layer shows through ungraded), while Below scope grades it (the
-//     effect reached the accumulated image through the hole) — so the two scopes DIFFER there.
-//   - an ART pixel: both scopes grade the same opaque pixel identically — so the two scopes AGREE there,
-//     and both differ from no effect.
-// The scene is classified pixel-by-pixel from the three captures, and both classes must be non-empty.
+// A holed upper layer (index 0 = a structural hole) over an opaque lower layer, filled by one ColorFill
+// at Layer vs Below scope. A fill reads nothing, so what a scope would hand it to read cannot reach the
+// result: under a Normal fill at full region alpha the gate returns the fill itself, and the two scopes
+// are byte-identical everywhere — over the upper layer's art and through its holes alike. The
+// no-effect capture is the control that keeps the case from passing on a fill that did nothing.
+//
+// A destination-reading blend mode is a different question and belongs to the blend: Multiply composes
+// the fill over whatever its scope reads, so Layer and Below differ there by the blend's definition,
+// not the fill's.
 
-TEST_F(ColourParityLayer, HolesLayerVsBelowScope) {
+TEST_F(ColourParityLayer, AFillRendersTheSameAtEveryScope) {
     Renderer r{device_, nullptr, ViewportResolution{kW, kH}};
     const Art lower = uploadArt(r, TransparentIndices::None);     // opaque backing
     const Art upper = uploadArt(r, TransparentIndices::GameBoy);  // index 0 → holes
-    const Rgba8 fill{60, 60, 255, 255};                           // a strongly visible Multiply tint
+    const Rgba8 fill{60, 60, 255, 255};                           // a strongly visible fill colour
 
     // Three scenes sharing the lower + holed-upper stack; the region's scope is the only variable.
     auto build = [&](ScreenSpaceEffectScope scope, bool withGrade, std::vector<TileCell>& lo,
@@ -380,7 +381,7 @@ TEST_F(ColourParityLayer, HolesLayerVsBelowScope) {
         frame.layers.push_back(tileLayer("lo", 0, lower, lo));
         DrawLayer hi = tileLayer("hi", 10, upper, up);
         if (withGrade)
-            hi.regions = {gradeRegion(fill, 1.0f, 1.0f, BlendMode::Multiply, scope)};
+            hi.regions = {gradeRegion(fill, 1.0f, 1.0f, BlendMode::Normal, scope)};
         frame.layers.push_back(hi);
     };
 
@@ -395,24 +396,51 @@ TEST_F(ColourParityLayer, HolesLayerVsBelowScope) {
     ASSERT_EQ(none.size(), layer.size());
     ASSERT_EQ(none.size(), below.size());
 
-    int holePixels = 0, artPixels = 0;
+    int filled = 0, disagreements = 0;
+    std::size_t firstDisagreement = 0;
     for (std::size_t i = 0; i < none.size(); ++i) {
-        const bool layerUnchanged = exactEq(layer[i], none[i]);
-        const bool belowGraded    = changed(below[i], none[i]);
-        if (layerUnchanged && belowGraded) {
-            // A hole: the two scopes must genuinely diverge here (Layer left it, Below graded it).
-            EXPECT_TRUE(changed(layer[i], below[i]))
-                << "hole pixel " << i << ": Layer and Below scope agree — the differential proves nothing";
-            ++holePixels;
+        if (!exactEq(layer[i], below[i])) {
+            if (disagreements == 0) firstDisagreement = i;
+            ++disagreements;
         }
-        const bool layerGraded = changed(layer[i], none[i]);
-        if (layerGraded && !changed(layer[i], below[i])) {
-            // Art: Layer graded it, and Below graded it identically (same opaque pixel).
-            ++artPixels;
-        }
+        if (changed(layer[i], none[i])) ++filled;
     }
-    EXPECT_GT(holePixels, 0) << "no hole pixels found — the upper layer has no transparent index-0 texels";
-    EXPECT_GT(artPixels, 0) << "no art pixels found — the grade reached no opaque upper-layer pixel";
+    EXPECT_EQ(disagreements, 0)
+        << "the fill differs by scope at " << disagreements << " pixels (first at " << firstDisagreement
+        << ") — a fill reads nothing, so no scope can reach its result";
+    EXPECT_GT(filled, 0) << "the fill changed no pixel — the case would pass on a fill that did nothing";
+}
+
+// ── A fill needs nothing underneath it ────────────────────────────────────────────────────────────
+//
+// A layer carrying no content at all, holding one region fill over an opaque lower layer. The fill is
+// the colour asked for: a fill emits its colour into the region's shape, so it is fully determined by
+// the colour and the shape. The empty layer is the strongest form of that claim — the region's pixels
+// come from the fill alone.
+
+TEST_F(ColourParityLayer, AFillNeedsNothingUnderneathIt) {
+    Renderer r{device_, nullptr, ViewportResolution{kW, kH}};
+    const Art   lower = uploadArt(r, TransparentIndices::None);  // opaque backing
+    const Rgba8 fill{60, 60, 255, 255};
+
+    std::vector<TileCell> lo;
+    FrameDrawState        frame;
+    frame.layers.push_back(tileLayer("lo", 0, lower, lo));
+    DrawLayer empty{.key = "empty"};  // no content — only the fill
+    empty.z       = 10;
+    empty.size    = PixelSize{kW, kH};
+    empty.regions = {gradeRegion(fill, 1.0f, 1.0f, BlendMode::Normal, ScreenSpaceEffectScope::Layer)};
+    frame.layers.push_back(std::move(empty));
+
+    const std::vector<Rgba8> got = r.captureViewport(frame);
+    ASSERT_EQ(got.size(), static_cast<std::size_t>(kW) * static_cast<std::size_t>(kH));
+
+    int matched = 0;
+    for (const Rgba8 px : got) {
+        if (px.r == fill.r && px.g == fill.g && px.b == fill.b) ++matched;
+    }
+    EXPECT_GT(matched, 0) << "no pixel carries the fill colour — a fill over a layer that draws nothing "
+                             "must still be the colour asked for";
 }
 
 }  // namespace
