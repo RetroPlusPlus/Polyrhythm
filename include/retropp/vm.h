@@ -330,9 +330,20 @@ struct DeclaredRegion {
 // unless it is asked for. Each output costs the machine something a machine that never uses it should
 // not pay — a raster costs cycles — so each is named and each is off until declared.
 //
-// Every member has a runtime verb of the same name (video(bool)), so a game that knows at
-// construction says so here, and one that decides later switches it there. They are the same setting.
-struct VmFeatures {
+// Every output has a runtime verb of the same name (video(bool)), so a game that knows at construction
+// says so here, and one that decides later switches it there. They are the same setting.
+struct VmConfig {
+    // What this machine's own files are kept under, in the player's data directory. A machine given a
+    // key keeps its guest's persistent data — what a cartridge holds on to when the power goes off —
+    // and comes up on it again next run, with the game calling nothing: the data is read back when a
+    // cartridge is hosted, and written out after the guest changes it. Empty, and the machine keeps
+    // nothing, which is every machine that does not ask for this.
+    //
+    // The key is one path component and is the game's to keep stable: it is what makes the data found
+    // again, so a machine keyed differently next run comes up on nothing, and two machines sharing a
+    // key share one set of files. The file inside that directory is named by batterySave().
+    std::string key;
+
     bool video = false;  // the machine draws; its finished frames become a layer's content
 };
 
@@ -340,15 +351,55 @@ class Vm {
 public:
     explicit Vm(VMPlatform platform, TimingProfile timing = TimingProfile::GameBoyColor);
 
-    // The same, with the machine's outputs declared up front:
+    // The same, with what the machine is and produces declared up front:
     //
-    //     Vm gb{VMPlatform::GameBoyColor, VmFeatures{.video = true}};
+    //     Vm gb{VMPlatform::GameBoyColor, VmConfig{.key = "adventure", .video = true}};
     //
     // Equivalent to constructing without them and calling the matching verb — a machine declared this
     // way is drawing before it hosts anything, which is the difference from switching it on later.
-    Vm(VMPlatform platform, VmFeatures features);
-    Vm(VMPlatform platform, TimingProfile timing, VmFeatures features);
+    //
+    // Throws std::invalid_argument for a key that is more than one path component (a separator, "."
+    // or ".."), and std::logic_error for a keyed machine on a platform whose core keeps nothing.
+    Vm(VMPlatform platform, VmConfig config);
+    Vm(VMPlatform platform, TimingProfile timing, VmConfig config);
+
     ~Vm();
+
+    // What to call the file this machine's data is kept in. The whole path is
+    //
+    //     <the game's own per-user data directory>/VM/<the machine's key>/<this name>.<extension>
+    //
+    // and this names the file alone. It is "battery" until this says otherwise, which is all a machine
+    // that plays one cartridge ever needs.
+    //
+    // THE EXTENSION IS THE CORE'S, and it always ends the file — the bytes are the console's own format,
+    // so what a file of them is called is that console's answer, and a Game Boy machine's data lands as
+    // the ".sav" every other program that reads one already expects. Spell it out and it is left alone
+    // ("zelda.sav" stays); leave it off and it is added ("zelda" → "zelda.sav"); carry some other
+    // extension and it keeps that and gets this after it ("zelda.bak" → "zelda.bak.sav"). Either way the
+    // file is one a player can take elsewhere.
+    //
+    // A machine that plays WHATEVER IT IS HANDED needs more: one machine, many cartridges, each one's
+    // data its own. It cannot have said so at construction, because it does not have the image yet —
+    // so it says so once it does:
+    //
+    //     Vm machine{model, VmConfig{.key = "ticked", .video = true}};
+    //     machine.batterySave(nameOf(image));   // → VM/ticked/<that image>.sav
+    //     machine.hostRom(image);
+    //
+    // Either order works. Set before a cartridge is hosted, the stored copy is read back as the
+    // cartridge arrives; set after, it is read back here. What the machine already owes under the name
+    // it is leaving is written out under THAT name first, so changing cartridges never files one
+    // image's data under another's.
+    //
+    // Only while the machine is parked. The name decides which file the data goes to, and moving that
+    // out from under a guest writing into it is the one moment it must not change — so this throws
+    // std::logic_error on a running machine, as every verb that touches the machine does.
+    //
+    // Throws std::invalid_argument for a name that is empty or more than one file's worth (a path
+    // separator, "." or ".."), and std::logic_error on a machine with no key — a file needs a directory
+    // to be in, and VmConfig::key is what names that.
+    void batterySave(std::string_view name);
 
     // Nested platform-bound instantiation types — the CPU-half symmetric spelling of
     // AudioSystem::{GB,GBC} (the all-caps hardware vocabulary of the driver-hosting design). Each fixes the
@@ -495,7 +546,7 @@ public:
     // A machine hosts WITHOUT drawing: a raster costs cycles, and a machine hosted for its memory or
     // its routines shows nothing. Turn video on and the frames it finishes become a layer's content,
     // composited with native layers like anything else on screen. Declare it at construction
-    // (VmFeatures) or switch it here; they are the same setting reached two ways.
+    // (VmConfig) or switch it here; they are the same setting reached two ways.
 
     // video(true) starts the machine drawing, video(false) stops it. Idempotent either way.
     //
@@ -820,11 +871,15 @@ private:
 class Vm::GB : public Vm {
 public:
     GB() : Vm(VMPlatform::GameBoy, TimingProfile::GameBoy) {}
+    explicit GB(VmConfig config)
+        : Vm(VMPlatform::GameBoy, TimingProfile::GameBoy, std::move(config)) {}
 };
 
 class Vm::GBC : public Vm {
 public:
     GBC() : Vm(VMPlatform::GameBoyColor, TimingProfile::GameBoyColor) {}
+    explicit GBC(VmConfig config)
+        : Vm(VMPlatform::GameBoyColor, TimingProfile::GameBoyColor, std::move(config)) {}
 };
 
 // ── Template definitions ──────────────────────────────────────────────────────────────────────

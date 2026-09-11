@@ -15,6 +15,7 @@
 #include <functional>
 #include <span>
 #include <string_view>
+#include <vector>
 
 #include "retropp/driver_binding.h"  // DriverImage / Mapper — the resident-driver image configuration
 #include "retropp/guest_frame.h"     // GuestPixelFormat — the layout a completed frame arrives in
@@ -338,6 +339,50 @@ public:
     // picture throws rather than accepting one that could never arrive, the same posture armEscape and
     // armWatch take. Idempotent in both directions.
     virtual void setVideoEnabled(bool enabled) = 0;
+
+    // ── Save data (what the machine keeps when the power goes off) ─────────────────────────────────
+    // The backend's part is HOLD AND HAND OVER: it says how much persistent data the machine has right
+    // now, copies it out, takes a stored copy back, and reports whether the guest has changed it. What
+    // the bytes MEAN is the backend's alone — the generic host never reads one, so the console's whole
+    // vocabulary for its own persistence (which memory, which chip, whether a clock rides along) stays
+    // below this line.
+    //
+    // Two questions, not one. Whether the CORE has a persistence model at all is fixed for a backend;
+    // how many bytes THIS image keeps depends on the image and is answered per machine. A core with no
+    // model answers false and nothing else is ever asked of it — the posture takesButtons() takes.
+
+    // Whether this core keeps anything across a power cycle. A backend with no persistence model
+    // answers false, and the public surface refuses a keyed machine on the calling thread rather than
+    // failing later on the machine's own.
+    [[nodiscard]] virtual bool keepsSaveData() const = 0;
+
+    // How many bytes the hosted image keeps, as the machine stands. Zero is an ordinary answer — an
+    // image that keeps nothing (no battery, no save memory) is the common case for a core that has the
+    // model — and it means there is nothing to write and nothing to read back.
+    [[nodiscard]] virtual std::size_t saveDataSize() const = 0;
+
+    // Copy out what the machine keeps: exactly saveDataSize() bytes, or empty when that is zero. Called
+    // on the thread stepping the machine, like every other verb here.
+    [[nodiscard]] virtual std::vector<std::uint8_t> readSaveData() = 0;
+
+    // Take a stored copy back into the machine. A buffer that is not the size this image keeps is
+    // refused (std::invalid_argument) rather than truncated or padded: a save that does not fit the
+    // cartridge it was handed to is a save for a different cartridge, and guessing which bytes to drop
+    // would corrupt the player's data silently.
+    virtual void writeSaveData(std::span<const std::uint8_t> bytes) = 0;
+
+    // What a file of this core's persistent data is called, without the dot ("sav" for the Game Boy
+    // family). The bytes are the console's own format, so what a file of them is NAMED is the console's
+    // answer too — a player's save is then the file every other program that knows that console already
+    // reads, and the generic host never invents a name for a format it cannot read. Empty for a core
+    // that keeps nothing, whose files never exist.
+    [[nodiscard]] virtual std::string_view saveDataExtension() const = 0;
+
+    // Whether the guest has changed what it keeps since this was last asked. ASKING CLEARS IT, so the
+    // signal cannot be read twice and cannot be left uncleared — the host polls it once per step and a
+    // separate clear verb would be one more thing to forget. A backend whose core cannot tell answers
+    // true and lets the host's own pacing decide how often that costs a write.
+    [[nodiscard]] virtual bool takeSaveDataChanged() = 0;
 };
 
 }  // namespace retropp::vm

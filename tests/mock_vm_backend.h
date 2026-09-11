@@ -280,6 +280,19 @@ public:
         }
     }
 
+    // ── The save-data seam ─────────────────────────────────────────────────────────────────────
+    // This machine has no power to go off, so it keeps nothing: a core with no persistence model is a
+    // thing the seam is built to allow, and this is one. The save-data behaviour itself is exercised
+    // against the real core (vm_save_data_test.cpp), because the chain under test — a guest's store
+    // raising the core's own change signal — only exists when the core is real.
+
+    [[nodiscard]] bool keepsSaveData() const override { return false; }
+    [[nodiscard]] std::string_view saveDataExtension() const override { return {}; }
+    [[nodiscard]] std::size_t saveDataSize() const override { return 0; }
+    [[nodiscard]] std::vector<std::uint8_t> readSaveData() override { return {}; }
+    void writeSaveData(std::span<const std::uint8_t>) override { throw notAMachine(); }
+    [[nodiscard]] bool takeSaveDataChanged() override { return false; }
+
 private:
     [[nodiscard]] static std::logic_error notAMachine() {
         return std::logic_error("MockVmBackend: this machine has no CPU");
@@ -336,6 +349,9 @@ private:
     FrameSink                         frameSink_;
     bool                              videoOn_     = false;
     bool                              refuseVideo_ = false;
+    std::vector<std::uint8_t>         saveData_;
+    bool                              saveDirty_     = false;
+    bool                              keepsSaveData_ = true;
     std::size_t                       executed_    = 0;
     std::size_t                       acceptLimit_ = kNoLimit;
     std::size_t                       watchLimit_  = kNoLimit;

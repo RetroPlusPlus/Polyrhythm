@@ -278,11 +278,13 @@ per machine and `video(false)` turns it back off; both are idempotent.
 **Declare it at construction if you know then**, which is the same setting reached the other way:
 
 ```cpp
-Vm vm{VMPlatform::GameBoyColor, VmFeatures{.video = true}};
+Vm vm{VMPlatform::GameBoyColor, VmConfig{.video = true}};
 ```
 
-A machine declared this way is drawing before it hosts anything. `VmFeatures` is where a machine's
-outputs are named, so each one a machine does not use costs it nothing.
+A machine declared this way is drawing before it hosts anything. `VmConfig` is where a machine's
+outputs are named, so each one a machine does not use costs it nothing — and where `.key` names the
+machine for keeping what its guest writes (see
+[vm-and-routines.md](vm-and-routines.md#keeping-what-the-guest-writes)).
 
 **Asked of a RUNNING machine, the change lands at its next step boundary** — where every change issued
 to a running machine lands, so the machine is never asked to install anything while its own thread is
@@ -773,7 +775,7 @@ built-on-the-spot forms; the `gb::` memory constants and `gb::banked` addressing
 `.handler` and `.replaces` — the escape table (`armed` / `remove` / `contains` / `size`) including
 changing it while the machine runs; `registerWatches` with both directions, the `AccessVerdict`
 outcomes, `AccessSource` and the watch table on the same terms; `bindRoutine`, in the guest's own
-context, nested to any depth; and `video`, declared through `VmFeatures` or switched at runtime, on
+context, nested to any depth; and `video`, declared through `VmConfig` or switched at runtime, on
 either clock.
 
 **Constructing a `Vm` for any other `VMPlatform` throws** — `Snes`, `Nes`, `Genesis` and

@@ -22,7 +22,7 @@
 // WHAT THIS DEMONSTRATES. A hosted machine's completed frames are a layer's content, so a machine's
 // screen composites with native layers by z like tiles or sprites do:
 //
-//     Vm machine{model, VmFeatures{.video = true}};  // this machine draws; an output is off until asked
+//     Vm machine{model, VmConfig{.key = "…", .video = true}};  // named, and drawing; both are off until asked
 //     machine.run(Vm::Advance::OnTick);              // one engine tick advances it by one of its frames
 //     ...
 //     screen.content = machine.video();              // the last complete frame it drew
@@ -225,6 +225,24 @@ std::vector<std::uint8_t> readRom(const std::filesystem::path& file) {
                                      std::istreambuf_iterator<char>{}};
 }
 
+// What to call the file an image's data is kept in. A battery save's name is one path component, and
+// an image's name is whatever a player happened to call it on disk — so the characters that would make
+// it more than one component are replaced. Any program naming a file after something a player chose
+// does this; the platform refuses such a name rather than quietly writing somewhere else.
+//
+// EMPTY when the image's name yields nothing usable, and the caller then says nothing at all: the
+// machine keeps whatever the platform calls a save by default, which is not this program's business to
+// know or to repeat.
+std::string keptAs(const std::filesystem::path& file) {
+    std::string name;
+    for (const char c : file.stem().string()) {
+        const bool plain = (std::isalnum(static_cast<unsigned char>(c)) != 0) || c == '-' ||
+                           c == '_' || c == ' ' || c == '.';
+        name += plain ? c : '-';
+    }
+    return (name == "." || name == "..") ? std::string{} : name;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -277,10 +295,22 @@ int main(int argc, char** argv) {
     // one runs on. Both declare their outputs at construction — video is off unless a machine is asked
     // for it, because a raster costs cycles a machine that never displays should not pay. When each one
     // STARTS is the delicate part, and it is handled below.
+    //
+    // Each is NAMED, so what its guest writes survives the program: a player who saves inside the game
+    // finds that save here again next time. The two are named apart because they are two machines — one
+    // set of data each, the way two cartridges in two consoles do not share one battery.
     const VMPlatform model = color ? VMPlatform::GameBoyColor : VMPlatform::GameBoy;
-    Vm               ticked{model, VmFeatures{.video = true}};
-    Vm               freeRunning{model, VmFeatures{.video = true}};
+    Vm               ticked{model, VmConfig{.key = "ticked", .video = true}};
+    Vm               freeRunning{model, VmConfig{.key = "free-running", .video = true}};
+    // This program plays whatever it is handed, so it cannot have said at construction what the data
+    // belongs to. It says so here, once it has the image — before hosting it, so what the last session
+    // kept is read back as the cartridge arrives. An image whose name yields nothing usable is not
+    // named at all, and keeps its data under whatever the platform calls a save by default.
+    const std::string saveFor = keptAs(file);
     for (Vm* machine : {&ticked, &freeRunning}) {
+        if (!saveFor.empty()) {
+            machine->batterySave(saveFor);
+        }
         machine->hostRom(std::span<const std::uint8_t>(rom));
     }
     // The guest's own button vocabulary, bound to whatever this program likes. Editing these rows is

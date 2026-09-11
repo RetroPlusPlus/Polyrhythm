@@ -24,7 +24,7 @@ namespace {
 using retropp::GuestFrameContent;
 using retropp::GuestPixelFormat;
 using retropp::Vm;
-using retropp::VmFeatures;
+using retropp::VmConfig;
 using retropp::VMPlatform;
 using retropp::testing::MockVmBackend;
 using retropp::vm::VmTestAccess;
@@ -79,7 +79,7 @@ TEST(VmFrameSink, AskingAMachineThatDrawsNothingToDrawThrows) {
 // Declaring an output at construction and switching it on afterwards are the same setting reached two
 // ways, so a machine declared this way is drawing before it has hosted anything.
 TEST(VmFrameSink, VideoDeclaredAtConstructionIsOn) {
-    Vm             machine{VMPlatform::GameBoy, VmFeatures{.video = true}};
+    Vm             machine{VMPlatform::GameBoy, VmConfig{.video = true}};
     auto           owned = std::make_unique<MockVmBackend>();
     MockVmBackend* mock  = owned.get();
     VmTestAccess::substituteBackend(machine, std::move(owned));
