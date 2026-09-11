@@ -610,11 +610,15 @@ struct Vm::Impl {
         if (backend->takeSaveDataChanged()) {
             save.dirty = true;
         }
-        if (!save.dirty) {
-            return;
+        if (save.dirty) {
+            save.dirty = false;
+            handOverSaveData(/*blocking=*/true);
         }
-        save.dirty = false;
-        handOverSaveData(/*blocking=*/true);
+        // What the guest changed MOST RECENTLY is now on disk — but a snapshot taken earlier in the run
+        // went to the writer without blocking, and that thread may not have run yet. Putting a machine
+        // away means its data is ON DISK, not merely handed over, so this waits for the rest of it: the
+        // program may be about to end, and a machine that has been parked can be read back at once.
+        vm::SaveWriter::shared().settle(saveFiles(), saveDocument());
     }
 
     // Declared after `backend` on purpose: members destroy in reverse order, so the runner (and its

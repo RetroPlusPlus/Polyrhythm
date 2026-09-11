@@ -22,7 +22,9 @@
 #include <vector>
 
 #include "retropp/memory_region.h"
+#include "retropp/user_files.h"
 #include "retropp/vm.h"
+#include "src/vm/save_writer.h"
 #include "src/vm/vm_testing.h"
 #include "tests/authored_cartridge.h"
 
@@ -297,6 +299,22 @@ TEST_F(VmSaveDataTest, TheDefaultFileIsTheOnlyOneAMachineNeeds) {
     // Nothing named it, so it is "battery" — what a machine playing one cartridge never has to think
     // about.
     EXPECT_TRUE(std::filesystem::exists(fileFor("cartridge", "battery.sav")));
+}
+
+// ── The writer's own contract ───────────────────────────────────────────────────────────────────
+
+TEST_F(VmSaveDataTest, SettlingIsWhatPutsHandedOverBytesOnDisk) {
+    const UserFiles                 files = UserFiles::atPath(root_);
+    const std::string               at    = "VM/writer/battery.sav";
+    const std::vector<std::uint8_t> bytes(64 * 1024, 0x5A);
+
+    // Handing bytes over does not put them on disk — the writer has a thread of its own, which is the
+    // whole reason it exists. Settling waits for that thread, and is what putting a machine away does.
+    vm::SaveWriter::shared().queue(files, at, bytes);
+    vm::SaveWriter::shared().settle(files, at);
+
+    EXPECT_TRUE(std::filesystem::exists(root_ / "VM" / "writer" / "battery.sav"))
+        << "the writer had not reached the file by the time settling returned";
 }
 
 // ── Keys and names that are not one path component ──────────────────────────────────────────────

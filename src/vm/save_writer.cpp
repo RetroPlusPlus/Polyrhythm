@@ -63,6 +63,15 @@ bool SaveWriter::writeNow(const UserFiles& files, std::string_view document,
     return store.write(document, std::as_bytes(std::span{bytes}));
 }
 
+void SaveWriter::settle(const UserFiles& files, std::string_view document) {
+    const std::filesystem::path  at = files.pathFor(document);
+    std::unique_lock<std::mutex> lock(mx_);
+    settled_.wait(lock, [&] {
+        return pending_.find(at) == pending_.end() &&
+               (!inFlight_.has_value() || *inFlight_ != at);
+    });
+}
+
 void SaveWriter::loop() {
     std::unique_lock<std::mutex> lock(mx_);
     for (;;) {

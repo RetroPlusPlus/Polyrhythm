@@ -54,6 +54,15 @@ public:
     bool writeNow(const UserFiles& files, std::string_view document,
                   std::vector<std::uint8_t> bytes);
 
+    // Wait until nothing is queued or being written for `document`, so a caller about to look at that
+    // file — or about to go away — sees everything already handed over. Returns at once when the
+    // writer has nothing for it.
+    //
+    // This is what makes putting a machine away mean its data is ON DISK rather than merely handed
+    // over: a snapshot taken mid-run went to the writer without blocking, and the machine can be
+    // parked and read back before that thread has run at all.
+    void settle(const UserFiles& files, std::string_view document);
+
 private:
     SaveWriter() = default;
     ~SaveWriter();
