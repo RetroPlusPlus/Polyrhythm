@@ -22,6 +22,7 @@
 #include <functional>
 #include <memory>
 #include <span>
+#include <vector>
 
 namespace retropp::vm {
 
@@ -254,6 +255,32 @@ public:
     // Whether video output is on. What decides it is one call to videoEnabled, so
     // this is what makes a machine's headlessness observable rather than asserted.
     [[nodiscard]] bool videoEnabled() const;
+
+    // ── Save data ─────────────────────────────────────────────────────────────
+    // The battery-backed memory a cartridge holds on to with the power off: its RAM,
+    // plus the clock state for a cartridge that carries one. How many bytes that is
+    // is the loaded image's own answer, read out of its header — so it is zero until
+    // a ROM is loaded, and zero for an image whose cartridge has no battery.
+    //
+    // A reset does NOT clear it — that is what battery-backed means, and the core
+    // wipes the RAM on reset only for a cartridge without one.
+
+    // How many bytes this image keeps; 0 when it keeps nothing.
+    [[nodiscard]] std::size_t saveDataSize() const;
+
+    // Copy out what the cartridge keeps — exactly saveDataSize() bytes, empty when
+    // that is zero. Must be called on the thread running the CPU: the core asserts
+    // that no other thread is running the machine.
+    [[nodiscard]] std::vector<std::uint8_t> readSaveData();
+
+    // Load a stored copy back into the cartridge. The buffer must be exactly
+    // saveDataSize() bytes (throws std::invalid_argument otherwise) — a save sized
+    // for a different cartridge is not this one's.
+    void writeSaveData(std::span<const std::uint8_t> bytes);
+
+    // Whether the guest has written to the battery-backed memory since this was last
+    // asked. Asking clears the flag, so each change is reported once.
+    [[nodiscard]] bool takeSaveDataChanged();
 
     // Defined in sameboy_machine.cpp. Public only so the backend's TU-local
     // execution callback can name it (it receives the instance via SameBoy's

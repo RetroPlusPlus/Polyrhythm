@@ -82,6 +82,17 @@ public:
     void setFrameSink(FrameSink sink) override;
     void setVideoEnabled(bool enabled) override;
 
+    // Save data: the battery-backed memory the hosted cartridge keeps with the power off. The family
+    // has the model, so a machine can be named; how many bytes an image keeps is the image's own answer.
+    [[nodiscard]] bool keepsSaveData() const override { return true; }
+    // The family's own name for a file of this data — the one every other program that reads a Game Boy
+    // cartridge's save already expects, so a player's file is not trapped in this platform.
+    [[nodiscard]] std::string_view saveDataExtension() const override { return "sav"; }
+    [[nodiscard]] std::size_t saveDataSize() const override;
+    [[nodiscard]] std::vector<std::uint8_t> readSaveData() override;
+    void writeSaveData(std::span<const std::uint8_t> bytes) override;
+    [[nodiscard]] bool takeSaveDataChanged() override;
+
 private:
     // One watched address: the encoded form the host armed — reported back verbatim when it fires,
     // so the host matches it to its declaration without decoding anything — beside the decoded pair

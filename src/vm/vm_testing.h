@@ -11,6 +11,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <filesystem>
 #include <memory>
 
 #include "retropp/vm.h"
@@ -55,6 +56,21 @@ struct VmTestAccess {
     // The publish sequence word: even when stable, odd mid-flight, advanced by two per publish —
     // how a test pins that every step publishes exactly once.
     [[nodiscard]] static std::uint32_t publishSeq(const Vm& vm);
+
+    // ── Save data ─────────────────────────────────────────────────────────────────────────────
+    // Root this machine's own files at `base` rather than the player's data directory — the same
+    // seam UserFiles::atPath is, reached for the same reason: a case that wrote into the real one
+    // would depend on the machine it runs on and leave files behind. Set it before hosting an
+    // image, which is where the stored copy is read back.
+    static void saveFilesAt(Vm& vm, std::filesystem::path base);
+
+    // Hand the machine's data over now, on the calling thread, and wait for it to be written —
+    // what stop() does, without stopping. Lets a case assert the file's contents at a chosen
+    // moment instead of against an interval.
+    static void flushSaveData(Vm& vm);
+
+    // Whether the machine is holding changes the interval has not let it hand over yet.
+    [[nodiscard]] static bool saveDataPending(const Vm& vm);
 };
 
 }  // namespace retropp::vm

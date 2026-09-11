@@ -989,4 +989,30 @@ void SameBoyBackend::setFrameSink(FrameSink sink) {
 
 void SameBoyBackend::setVideoEnabled(bool enabled) { machine_.setVideoEnabled(enabled); }
 
+// A synthesized image — the resident-driver path writes its own header — keeps nothing a player owns.
+// The engine placed every byte in it, so there is no save to carry between runs, and reporting one
+// would name engine content as the player's data.
+std::size_t SameBoyBackend::saveDataSize() const {
+    return romHosted_ ? machine_.saveDataSize() : 0;
+}
+
+std::vector<std::uint8_t> SameBoyBackend::readSaveData() {
+    return romHosted_ ? machine_.readSaveData() : std::vector<std::uint8_t>{};
+}
+
+void SameBoyBackend::writeSaveData(std::span<const std::uint8_t> bytes) {
+    if (!romHosted_) {
+        // The same gate the other three answer through: a synthesized image reports no save, so it
+        // takes none either. The MBC3 the resident path installs carries a battery in its header, so
+        // without this the machine would accept a save into engine-placed content.
+        throw std::invalid_argument(
+            "writeSaveData: this machine hosts no cartridge of its own, so it keeps nothing");
+    }
+    machine_.writeSaveData(bytes);
+}
+
+bool SameBoyBackend::takeSaveDataChanged() {
+    return romHosted_ && machine_.takeSaveDataChanged();
+}
+
 }  // namespace retropp::vm

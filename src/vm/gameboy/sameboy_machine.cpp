@@ -4,6 +4,8 @@
 
 #include <algorithm>
 #include <csetjmp>
+#include <stdexcept>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -483,6 +485,46 @@ void SameBoyMachine::setVideoEnabled(bool enabled) {
 }
 
 bool SameBoyMachine::videoEnabled() const { return impl_->videoOn; }
+
+std::size_t SameBoyMachine::saveDataSize() const {
+    // Answered from the loaded image's own header: the core reports 0 for a cartridge with no
+    // battery, and for one that claims a battery but carries neither RAM nor a clock.
+    const int size = GB_save_battery_size(&impl_->gb);
+    return size > 0 ? static_cast<std::size_t>(size) : 0;
+}
+
+std::vector<std::uint8_t> SameBoyMachine::readSaveData() {
+    const std::size_t size = saveDataSize();
+    if (size == 0) {
+        return {};
+    }
+    std::vector<std::uint8_t> bytes(size);
+    if (GB_save_battery_to_buffer(&impl_->gb, bytes.data(), bytes.size()) != 0) {
+        return {};  // the core declined to fill the buffer; there is nothing to keep
+    }
+    return bytes;
+}
+
+void SameBoyMachine::writeSaveData(std::span<const std::uint8_t> bytes) {
+    const std::size_t size = saveDataSize();
+    if (bytes.size() != size) {
+        throw std::invalid_argument(
+            "writeSaveData: " + std::to_string(bytes.size()) +
+            " bytes is not what this cartridge keeps (" + std::to_string(size) + ")");
+    }
+    if (size == 0) {
+        return;
+    }
+    GB_load_battery_from_buffer(&impl_->gb, bytes.data(), bytes.size());
+}
+
+bool SameBoyMachine::takeSaveDataChanged() {
+    if (!GB_get_battery_dirty(&impl_->gb)) {
+        return false;
+    }
+    GB_clear_battery_dirty(&impl_->gb);
+    return true;
+}
 
 std::uint64_t SameBoyMachine::runForCycles(std::uint64_t ticks8MHz) {
     // Step the CPU in raw GB_run increments (each returns the 8 MHz ticks that instruction took)

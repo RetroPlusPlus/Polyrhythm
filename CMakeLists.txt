@@ -1260,7 +1260,8 @@ add_library(retroppengine STATIC
     src/vm/gameboy/sameboy_backend.cpp
     src/vm/gameboy/gb_routines.cpp
     src/vm/vm.cpp
-    src/vm/vm_runner.cpp)
+    src/vm/vm_runner.cpp
+    src/vm/save_writer.cpp)
 add_library(retropp::engine ALIAS retroppengine)
 target_include_directories(retroppengine PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>)
@@ -1470,6 +1471,7 @@ if(RETROPP_BUILD_TESTS)
         tests/sameboy_watch_test.cpp
         tests/guest_frame_content_test.cpp
         tests/guest_input_test.cpp
+        tests/vm_save_data_test.cpp
         tests/vm_frame_sink_test.cpp
         tests/guest_nesting_test.cpp
         tests/sameboy_nesting_test.cpp

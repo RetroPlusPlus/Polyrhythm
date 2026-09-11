@@ -27,6 +27,7 @@ else in a port is native code; this is the surgical exception.
 - [Pacing: `Throttle` (and the audio seam)](#pacing-throttle-and-the-audio-seam)
 - [Hosting a resident driver](#hosting-a-resident-driver)
 - [Hosting a whole cartridge](#hosting-a-whole-cartridge)
+  - [Keeping what the guest writes](#keeping-what-the-guest-writes)
 - [The typed callable: `Routine<Sig>`](#the-typed-callable-routinesig)
 - [Ready-made presets: `retropp::sameboy`](#ready-made-presets-retroppsameboy)
 - [Where to change things](#where-to-change-things)
@@ -343,6 +344,55 @@ Hosting a cartridge and hosting a resident driver are **exclusive**, and each re
 `hostDriver` synthesizes an image the platform owns; `hostRom` takes one your game owns. On a hosted
 cartridge `uploadRoutine` and `registerRoutine` throw as well, since a game's image has no arena to
 inject into. One `Vm` does one or the other; use two if you need both.
+
+### Keeping what the guest writes
+
+A cartridge holds on to some of what its guest writes when the power goes off. **Give a machine a key**
+and the platform keeps that for the player, and gives it back on the next run:
+
+```cpp
+Vm machine{VMPlatform::GameBoyColor, VmConfig{.key = "adventure", .video = true}};
+machine.hostRom(image);
+machine.run();
+```
+
+Your game calls nothing else. The stored data is read back as the cartridge is hosted, and written out
+after the guest changes it — so a player who saves inside the game finds that save next time whether or
+not your code thought to ask. The file lands beside everything else you keep for that player:
+
+```
+<your game's per-user data directory>/VM/adventure/battery.sav
+```
+
+The extension is the **core's**, and it always ends the file. The bytes are the console's own format, so
+what a file of them is called is that console's answer — a Game Boy machine's data lands as the `.sav`
+every other program that reads one already expects, and a player can take their save elsewhere.
+
+`VmConfig::key` is the machine's own, and rides the same aggregate its outputs are declared in —
+`EngineConfig`'s shape, one step down. Leave it out and the machine keeps nothing, which is every
+machine that does not ask for this.
+
+A machine that plays **whatever it is handed** needs a file per cartridge, and cannot say which at
+construction because it does not have the image yet. `batterySave` says it once the image is in hand:
+
+```cpp
+Vm machine{model, VmConfig{.key = "player", .video = true}};
+machine.batterySave(nameOf(image));   // → VM/player/<that image>.sav
+machine.hostRom(image);
+```
+
+Either order works — set before hosting, the stored copy is read back as the cartridge arrives; set
+after, it is read back there. Spell the extension out and it is left alone (`"zelda.sav"` stays), leave
+it off and it is added, carry another one and it keeps that and gets the core's after it
+(`"zelda.bak"` → `"zelda.bak.sav"`). The key and the file's name are each **one path component**:
+`"."`, `".."`, or anything carrying a separator throws `std::invalid_argument` where it was given.
+`batterySave` throws `std::logic_error` on a machine with no key, and on a running machine like every
+verb that touches the machine — park it first.
+
+What the bytes mean belongs to the machine, never to your game: the platform never reads one, so a
+cartridge that keeps nothing produces no file, and a machine on another console keeps whatever that
+console keeps. Writing happens off every paced thread, so a save never costs you a frame, and a file is
+rewritten only when rewriting it would change it.
 
 ## The typed callable: `Routine<Sig>`
 

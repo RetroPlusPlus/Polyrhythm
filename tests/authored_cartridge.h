@@ -18,11 +18,18 @@ namespace retropp::testing {
 inline constexpr std::size_t kSmallestCartridge = 0x8000;  // 32 KiB, the smallest a cartridge can be
 inline constexpr std::uint8_t kRomOnly = 0x00;             // cartridge type: no mapper
 inline constexpr std::uint8_t kMbc3    = 0x10;             // cartridge type: MBC3
+inline constexpr std::uint8_t kMbc3RamBattery = 0x13;      // cartridge type: MBC3 + RAM + BATTERY
+
+// RAM-size header bytes. A cartridge that keeps anything needs RAM to keep it in, so a battery
+// cartridge type pairs with one of these; the default is a cartridge with no RAM at all.
+inline constexpr std::uint8_t kNoRam  = 0x00;
+inline constexpr std::uint8_t kRam8K  = 0x02;
 
 // A zero-filled cartridge of `bytes`, headered for `cartridgeType`. The ROM-size header byte is
 // log2(bytes / 32 KiB), which is the form SameBoy reads.
 inline std::vector<std::uint8_t> authorCartridge(std::size_t bytes,
-                                                 std::uint8_t cartridgeType = kRomOnly) {
+                                                 std::uint8_t cartridgeType = kRomOnly,
+                                                 std::uint8_t ramSizeByte   = kNoRam) {
     std::vector<std::uint8_t> rom(bytes, 0x00);
     std::uint8_t sizeByte = 0;
     for (std::size_t s = bytes; s > kSmallestCartridge; s >>= 1) {
@@ -30,7 +37,7 @@ inline std::vector<std::uint8_t> authorCartridge(std::size_t bytes,
     }
     rom[0x0147] = cartridgeType;
     rom[0x0148] = sizeByte;
-    rom[0x0149] = 0x00;  // RAM size: none
+    rom[0x0149] = ramSizeByte;
     return rom;
 }
 

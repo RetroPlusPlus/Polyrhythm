@@ -23,8 +23,10 @@
 #include "retropp/asset_policy.h"      // resolveAssetPolicy
 #include "retropp/asset_registry.h"    // assetRoot — the single project-relative resource root (no routine root)
 #include "retropp/routine_registry.h"  // detail::findEmbeddedRoutine
+#include "retropp/user_files.h"        // UserFiles — where a keyed machine's own files live
 #include "src/vm/gameboy/sameboy_backend.h"
 #include "src/vm/run_governor.h"       // RunGovernor — what a running cartridge owes the wall clock
+#include "src/vm/save_writer.h"        // SaveWriter — the thread a keyed machine's bytes reach disk on
 #include "src/vm/vm_backend.h"
 #include "src/vm/vm_runner.h"          // VmRunner — the thread a running cartridge steps on
 #include "src/vm/vm_testing.h"         // VmTestAccess — the deterministic seam, defined at file end
@@ -195,6 +197,43 @@ private:
 // A call in the guest's context runs until the routine returns; this is the runaway guard for one
 // that never does, in the shape and at the size the machine's own run-to-return carries.
 constexpr std::size_t kMaxContextInstructions = 1'000'000;
+
+// ── How often a keyed machine's data is taken from it ─────────────────────────────────────────────
+//
+// The longest the data stays unwritten while the guest keeps changing it. What this bounds is the
+// SNAPSHOT — a copy of the machine's own memory, taken on the machine's thread — and not the write,
+// which costs that thread nothing (save_writer.h). So the interval is picked against the copy: a
+// guest that scribbles on its save memory every frame is snapshotted once a second rather than sixty
+// times, and a player who is interrupted loses at most this much of what they had just done.
+constexpr std::chrono::milliseconds kSaveInterval{1000};
+
+// Where a keyed machine's files live, inside the game's own per-user data directory:
+//
+//     VM/<the machine's key>/<the save's name>
+//
+// The default file name says which KIND of save it is — the one a cartridge's battery holds, not a
+// snapshot of the machine — and a machine that plays more than one cartridge replaces it per image
+// through Vm::batterySave.
+constexpr std::string_view kSaveDirectory       = "VM";
+constexpr std::string_view kDefaultSaveDocument = "battery";
+
+// Both names a machine carries — the machine's own, and its save's — are ONE path component, never a
+// path: the rule SaveStore's document names carry, for the same reason. A name that could be a path is
+// a name that could name somewhere else. Refusing it here puts the error where the name was given
+// rather than at the first write.
+void requireFlatName(std::string_view name, const char* what) {
+    if (name.empty()) {
+        throw std::invalid_argument(std::string(what) + " is empty");
+    }
+    if (name == "." || name == "..") {
+        throw std::invalid_argument(std::string(what) + " is \"" + std::string(name) +
+                                    "\", which names a directory rather than a thing in one");
+    }
+    if (name.find_first_of("/\\:") != std::string_view::npos) {
+        throw std::invalid_argument(std::string(what) + " \"" + std::string(name) +
+                                    "\" contains a path separator — it is one name, not a path");
+    }
+}
 
 struct Vm::Impl {
     VMPlatform                   platform;
@@ -426,6 +465,161 @@ struct Vm::Impl {
     }
 
     bool romHosted = false;  // hostRom has run: the machine holds a game's own cartridge
+
+    // ── Save data ────────────────────────────────────────────────────────────────────────────────
+    // What a keyed machine keeps for the player. The bytes belong to the machine and are never read
+    // here — this layer owns only WHEN they move and WHERE they land.
+    //
+    // Every field is touched on the thread that owns the machine: the game's own while it is parked
+    // (construction, hostRom, stop), and the machine's own at a step boundary while it runs. There is
+    // no moment when both could reach it, which is why none of it is guarded.
+    struct SaveData {
+        std::string key;  // empty: this machine has no key and keeps nothing
+
+        // The file inside the machine's directory, replaced per cartridge by a machine that plays
+        // more than one.
+        std::string document{kDefaultSaveDocument};
+
+        // Set to root the files at an explicit directory instead of the player's data directory —
+        // what VmTestAccess uses to keep a case hermetic, the same seam UserFiles::atPath is.
+        std::optional<std::filesystem::path> root;
+
+        bool dirty = false;  // the guest has touched the data since the last snapshot
+        std::chrono::steady_clock::time_point lastSnapshot{};
+
+        // What the file already holds. A machine is asked whether its guest TOUCHED the data, which
+        // is not the same question as whether the data is different: a guest that stores the same
+        // checksum every frame touches it constantly and changes nothing. Keeping the last copy turns
+        // the first answer into the second, so a file is rewritten only when rewriting it would
+        // change it — which is what keeps a large save off the disk when nothing is happening to it.
+        std::vector<std::uint8_t> lastWritten;
+    };
+    SaveData save;
+
+    // Whether this machine keeps anything: it was named, and its core has somewhere to keep it.
+    [[nodiscard]] bool keepsSave() const { return !save.key.empty() && backend->keepsSaveData(); }
+
+    [[nodiscard]] UserFiles saveFiles() const {
+        return save.root ? UserFiles::atPath(*save.root) : UserFiles();
+    }
+
+    // Where this machine's data goes: VM/<the machine's key>/<the file's name>.<the core's extension>.
+    //
+    // The extension is the CORE's, and it always ends the file — a name that already carries it is
+    // already right and is left alone, and a name carrying some other extension keeps that and gets
+    // this one after it. So a developer can spell it out or ignore it entirely and land in the same
+    // place, and a file of a console's format is never called something that console's other programs
+    // would not recognize.
+    [[nodiscard]] std::string saveDocument() const {
+        const std::string_view extension = backend->saveDataExtension();
+        std::string            file      = save.document;
+        if (!extension.empty()) {
+            const std::string suffix = "." + std::string(extension);
+            if (file.size() < suffix.size() ||
+                file.compare(file.size() - suffix.size(), suffix.size(), suffix) != 0) {
+                file += suffix;
+            }
+        }
+        return std::string(kSaveDirectory) + "/" + save.key + "/" + file;
+    }
+
+    // Read the stored copy back into the machine. Called where the image becomes known — hosting one
+    // is what decides how much this machine keeps — so the size is the loaded cartridge's own.
+    //
+    // A stored copy that is not the size this image keeps is left alone rather than forced in: it was
+    // written by a different cartridge under the same name, and padding or truncating it would hand
+    // the guest a corrupt save instead of a missing one.
+    void loadSaveData() {
+        if (!keepsSave()) {
+            return;
+        }
+        const std::size_t size = backend->saveDataSize();
+        if (size == 0) {
+            return;  // this image keeps nothing
+        }
+        const std::optional<std::vector<std::byte>> stored = saveFiles().read(saveDocument());
+        if (!stored || stored->size() != size) {
+            return;
+        }
+        std::vector<std::uint8_t> bytes(stored->size());
+        std::transform(stored->begin(), stored->end(), bytes.begin(),
+                       [](std::byte b) { return static_cast<std::uint8_t>(b); });
+        backend->writeSaveData(bytes);
+        // The file and the machine now agree, so nothing is owed until the guest changes something.
+        // Placing the bytes is not the guest touching them, so the signal that says it did is taken
+        // and dropped here rather than being left to read as a change on the first step.
+        save.lastWritten = std::move(bytes);
+        static_cast<void>(backend->takeSaveDataChanged());
+        save.dirty = false;
+    }
+
+    // Take the machine's own copy and hand it over to be written. The copy is taken HERE, on the
+    // thread that owns the machine, because that is the only thread allowed to reach into it; the
+    // write is somebody else's job (save_writer.h), so this costs a step the copy and nothing more.
+    //
+    // Bytes identical to the ones the file already holds are not handed over at all. The machine is
+    // asked whether its guest TOUCHED the data, and a guest that stores the same value touched it
+    // without changing it — so without this compare a cartridge nothing is happening to would have
+    // its whole file rewritten on every interval, for as long as the game ran.
+    //
+    // `blocking` is the shutdown path: the caller may be about to go away, so the bytes have to be on
+    // disk before this returns rather than with a thread that has not run yet.
+    void handOverSaveData(bool blocking) {
+        std::vector<std::uint8_t> bytes = backend->readSaveData();
+        if (bytes.empty() || bytes == save.lastWritten) {
+            return;
+        }
+        if (blocking) {
+            if (!vm::SaveWriter::shared().writeNow(saveFiles(), saveDocument(), bytes)) {
+                return;  // the file still holds what it held; the machine still holds the newer bytes
+            }
+        } else {
+            vm::SaveWriter::shared().queue(saveFiles(), saveDocument(), bytes);
+        }
+        save.lastWritten = std::move(bytes);
+    }
+
+    // The step boundary's save step: notice that the guest touched the data, and take a copy no more
+    // often than the interval allows. Runs after the step's own work, on the machine's own thread.
+    void stepSaveData() {
+        if (!keepsSave()) {
+            return;
+        }
+        if (backend->takeSaveDataChanged()) {
+            save.dirty = true;
+        }
+        if (!save.dirty) {
+            return;
+        }
+        const auto now = std::chrono::steady_clock::now();
+        if (now - save.lastSnapshot < kSaveInterval) {
+            return;
+        }
+        save.lastSnapshot = now;
+        save.dirty        = false;
+        handOverSaveData(/*blocking=*/false);
+    }
+
+    // Everything the guest changed, on disk before this returns, whatever the interval would have
+    // said. This is what putting a machine away means for its data: a save the guest finished a
+    // moment ago is not lost because the machine stopped before the interval was up.
+    void flushSaveData() {
+        if (!keepsSave()) {
+            return;
+        }
+        if (backend->takeSaveDataChanged()) {
+            save.dirty = true;
+        }
+        if (save.dirty) {
+            save.dirty = false;
+            handOverSaveData(/*blocking=*/true);
+        }
+        // What the guest changed MOST RECENTLY is now on disk — but a snapshot taken earlier in the run
+        // went to the writer without blocking, and that thread may not have run yet. Putting a machine
+        // away means its data is ON DISK, not merely handed over, so this waits for the rest of it: the
+        // program may be about to end, and a machine that has been parked can be read back at once.
+        vm::SaveWriter::shared().settle(saveFiles(), saveDocument());
+    }
 
     // Declared after `backend` on purpose: members destroy in reverse order, so the runner (and its
     // thread) is gone before the machine it steps.
@@ -987,7 +1181,10 @@ struct Vm::Impl {
             drainVideoChange();
             drainButtons();
         });
-        runner->afterEachStep([this] { publishStep(); });
+        runner->afterEachStep([this] {
+            publishStep();
+            stepSaveData();
+        });
         romRun.runner = std::move(runner);
         if (mode == vm::VmRunner::Mode::Threaded) {
             // The pace: step while cycles run lag cycles owed, park otherwise. Owed advances with
@@ -1024,20 +1221,60 @@ Vm::Vm(VMPlatform platform, TimingProfile timing)
     impl_->owner = this;
 }
 
-Vm::Vm(VMPlatform platform, VmFeatures features)
-    : Vm(platform, TimingProfile::GameBoyColor, features) {}
+Vm::Vm(VMPlatform platform, VmConfig config)
+    : Vm(platform, TimingProfile::GameBoyColor, std::move(config)) {}
 
-Vm::Vm(VMPlatform platform, TimingProfile timing, VmFeatures features)
-    : Vm(platform, timing) {
+Vm::Vm(VMPlatform platform, TimingProfile timing, VmConfig config) : Vm(platform, timing) {
+    if (!config.key.empty()) {
+        requireFlatName(config.key, "the machine's key");
+        if (!impl_->backend->keepsSaveData()) {
+            throw std::logic_error(
+                "Vm: this machine's core keeps nothing when the power goes off, so a key here would "
+                "stand for nothing");
+        }
+        impl_->save.key = std::move(config.key);
+    }
     // Declaring an output and switching it on are the same setting reached two ways, so this is the
     // verb — a machine declared here is producing before it hosts anything, which is the whole
     // difference from asking for it later. Nothing runs yet, so each lands directly.
-    if (features.video) {
+    if (config.video) {
         video(true);
     }
 }
 
-Vm::~Vm() = default;
+void Vm::batterySave(std::string_view name) {
+    impl_->requireNotRunning("batterySave");
+    requireFlatName(name, "the battery save's name");
+    if (impl_->save.key.empty()) {
+        throw std::logic_error(
+            "batterySave: this machine has no key, so there is no directory for the file to be in — "
+            "give it VmConfig::key at construction");
+    }
+    // The file being left is already complete: this refuses a running machine, and parking one is what
+    // writes out everything it owed.
+    impl_->save.document = std::string(name);
+    // A different file: nothing is known about what it holds, so the next hand-over compares against
+    // nothing and writes.
+    impl_->save.lastWritten.clear();
+    impl_->save.dirty = false;
+    // Set after the cartridge arrived, this is where that file's stored copy is read back. Set
+    // before, there is no image yet and this does nothing — hostRom does it instead.
+    impl_->loadSaveData();
+}
+
+
+// Parking the machine is what writes its data out, and a machine that is dropped without being parked
+// is still being put away — so this does what stop() does, for the case where nothing else will. A
+// destructor cannot throw, and a save that cannot be written is not worth taking a program down over.
+Vm::~Vm() {
+    if (impl_ == nullptr) {
+        return;  // moved from: the machine lives somewhere else now
+    }
+    try {
+        stop();
+    } catch (...) {  // NOLINT(bugprone-empty-catch) — see above
+    }
+}
 
 // The move operations re-point the Impl at its new owner: an escape handler is handed the machine, so
 // the machine it is handed must be where the machine now lives.
@@ -1143,6 +1380,10 @@ void Vm::hostRom(std::span<const std::uint8_t> rom) {
     impl_->backend->loadRom(rom);
     impl_->romHosted = true;
     impl_->romRun.booted = false;  // a fresh image boots fresh
+    // The image decides how much this machine keeps, so its stored copy is read back here rather than
+    // at construction. It survives the boot that run() performs — keeping its memory through a reset
+    // is what a cartridge's own battery does.
+    impl_->loadSaveData();
 }
 
 void Vm::run(Advance how) {
@@ -1226,6 +1467,7 @@ void Vm::stop() {
     impl_->drainEscapeChanges();
     impl_->drainWatchChanges();
     impl_->drainVideoChange();
+    impl_->flushSaveData();
 }
 
 std::vector<std::uint8_t> Vm::read(const MemoryRegion& where, std::uint32_t index) {
@@ -1675,6 +1917,15 @@ void Vm::hostDriver(const DriverBinding& binding) {
         throw std::invalid_argument(
             "hostDriver: the binding's ISA does not match this VM's platform");
     }
+    // The image a driver is hosted in is the platform's own — it writes the header and places every
+    // byte. There is nothing in it that belongs to the player, so a machine keyed to keep the player's
+    // data has been asked for two different things. Refused rather than silently kept empty, the same
+    // way hosting a cartridge and hosting a driver refuse each other.
+    if (!impl_->save.key.empty()) {
+        throw std::logic_error(
+            "hostDriver: this machine carries a key, and a key is for keeping the data a GAME's own "
+            "cartridge holds; the image a driver runs in belongs to the platform");
+    }
     // Configure the cartridge image (place + validate); stackTop 0 = the backend's default scratch top.
     impl_->backend->configureResidentImage(std::span<const DriverImage>(binding.images),
                                            binding.mapper, binding.stackTop.value_or(0));
@@ -1956,6 +2207,14 @@ bool VmTestAccess::readIsStable(const Vm& v) {
 std::uint32_t VmTestAccess::publishSeq(const Vm& v) {
     return v.impl_->romRun.seq.load(std::memory_order_acquire);
 }
+
+void VmTestAccess::saveFilesAt(Vm& v, std::filesystem::path base) {
+    v.impl_->save.root = std::move(base);
+}
+
+void VmTestAccess::flushSaveData(Vm& v) { v.impl_->flushSaveData(); }
+
+bool VmTestAccess::saveDataPending(const Vm& v) { return v.impl_->save.dirty; }
 
 }  // namespace vm
 
