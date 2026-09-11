@@ -446,6 +446,12 @@ void SameBoyMachine::enableAudio(unsigned sampleRate) {
     GB_apu_set_sample_callback(&impl_->gb, &sampleCallback);
 }
 
+void SameBoyMachine::setButtons(std::uint64_t held) {
+    // The core takes the whole mask in one call, and its key order — right, left, up, down, a, b,
+    // select, start from bit 0 — is the order the word already carries, so the low byte IS the mask.
+    GB_set_key_mask(&impl_->gb, static_cast<GB_key_mask_t>(held & 0xFF));
+}
+
 void SameBoyMachine::setSampleSink(SampleSink sink) { impl_->sampleSink = std::move(sink); }
 
 void SameBoyMachine::setFrameSink(FrameSink sink) { impl_->frameSink = std::move(sink); }

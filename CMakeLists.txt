@@ -1469,6 +1469,7 @@ if(RETROPP_BUILD_TESTS)
         tests/guest_watch_test.cpp
         tests/sameboy_watch_test.cpp
         tests/guest_frame_content_test.cpp
+        tests/guest_input_test.cpp
         tests/vm_frame_sink_test.cpp
         tests/guest_nesting_test.cpp
         tests/sameboy_nesting_test.cpp

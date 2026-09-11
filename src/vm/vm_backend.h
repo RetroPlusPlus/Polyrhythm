@@ -167,6 +167,17 @@ public:
     // last instruction overshoots — the caller carries the remainder for drift-free pacing).
     virtual std::uint64_t runForCycles(std::uint64_t cpuCycles) = 0;
 
+    // ── Guest input ───────────────────────────────────────────────────────────────────────────────
+    // Whether this core takes button state at all. A core with no input path answers false, and the
+    // public verb refuses on the calling thread rather than failing later on the machine's own.
+    [[nodiscard]] virtual bool takesButtons() const = 0;
+
+    // Hold exactly these buttons, packed in the machine's own order — the same word the platform's
+    // own button vocabulary produced, which the generic host passes through without reading. A level,
+    // not an event: the whole set is replaced, so a bit that is clear is released. Called at a step
+    // boundary, on the thread that steps the machine.
+    virtual void setButtons(std::uint64_t held) = 0;
+
     // ── Resident driver (the hosted-machine path) ─────────────────────────────────────────────────
     // Configure the machine as a resident-driver host: build a cartridge image sized to hold the
     // highest placed bank, install `mapper` (the backend decodes its opaque id), place each image's

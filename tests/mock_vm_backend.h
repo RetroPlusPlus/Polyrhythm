@@ -233,6 +233,15 @@ public:
         }
     }
 
+    // Guest input: recorded rather than realized, so a device-free case can assert what reached the
+    // seam and in which step.
+    [[nodiscard]] bool takesButtons() const override { return takesButtons_; }
+    void setButtons(std::uint64_t held) override {
+        buttonsSet.push_back(held);
+    }
+    bool                       takesButtons_ = true;  // flip to false to exercise the refusal
+    std::vector<std::uint64_t> buttonsSet;            // every word that reached the seam, in order
+
     void enableAudio(unsigned, AudioSampleSink) override { throw notAMachine(); }
     void beginContinuous(std::uint32_t) override { throw notAMachine(); }
     std::uint64_t runForCycles(std::uint64_t) override { throw notAMachine(); }

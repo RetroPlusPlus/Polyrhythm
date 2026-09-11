@@ -284,6 +284,30 @@ struct Vm::Impl {
     };
     Video video;
 
+    // Button state the game submitted, waiting for a step boundary. A level rather than a queue: a
+    // second submission before the boundary replaces the first, because what the guest reads is what
+    // is held now and never the order it was pressed in.
+    struct Held {
+        std::mutex    mx;
+        std::uint64_t latest  = 0;
+        bool          pending = false;
+    };
+    Held buttons;
+
+    // The step boundary's input step: hand the machine the buttons held as of now.
+    void drainButtons() {
+        std::uint64_t held = 0;
+        {
+            const std::lock_guard guard{buttons.mx};
+            if (!buttons.pending) {
+                return;
+            }
+            held            = buttons.latest;
+            buttons.pending = false;
+        }
+        backend->setButtons(held);
+    }
+
     // Install or detach the frame sink and turn the backend's pixel output on or off. Touches the
     // machine, so it runs on whichever thread owns it: the game's for a parked machine, and the
     // machine's own — from a step boundary — for a running one. Installing a sink from the game thread
@@ -961,6 +985,7 @@ struct Vm::Impl {
             drainEscapeChanges();
             drainWatchChanges();
             drainVideoChange();
+            drainButtons();
         });
         runner->afterEachStep([this] { publishStep(); });
         romRun.runner = std::move(runner);
@@ -1123,6 +1148,22 @@ void Vm::hostRom(std::span<const std::uint8_t> rom) {
 void Vm::run(Advance how) {
     impl_->startRun(this, how == Advance::OnTick ? vm::VmRunner::Mode::Inline
                                                  : vm::VmRunner::Mode::Threaded);
+}
+
+void Vm::buttons(GuestButtons held) {
+    if (!impl_->backend->takesButtons()) {
+        throw std::logic_error("buttons: this machine's core takes no button state");
+    }
+    // Held on the game's thread and applied on the machine's, so a submission never reaches the core
+    // while its own thread is mid-step. A machine that is not running has no such thread, so the state
+    // lands where it was asked for.
+    if (impl_->running()) {
+        const std::lock_guard guard{impl_->buttons.mx};
+        impl_->buttons.latest  = held.held;
+        impl_->buttons.pending = true;
+        return;
+    }
+    impl_->backend->setButtons(held.held);
 }
 
 void Vm::video(bool drawing) {

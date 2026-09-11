@@ -57,6 +57,7 @@
 
 #include "retropp/asset_policy.h"      // AssetPolicy (registerRoutine's Embed / LoadFromPath choice)
 #include "retropp/driver_binding.h"    // DriverBinding / Instruction — the resident-driver surface below
+#include "retropp/guest_buttons.h"     // GuestButtons — what buttons() takes
 #include "retropp/guest_escape.h"      // GuestEscape / EscapeMap / EscapeTable — the escape surface below
 #include "retropp/guest_frame.h"       // GuestFrameContent — what video() answers with
 #include "retropp/guest_watch.h"       // GuestWatch / WatchMap / WatchTable — the watch surface below
@@ -521,6 +522,16 @@ public:
     // Throws std::logic_error unless this machine has been asked for video; a request that has not
     // reached a step boundary yet counts, and answers with the empty picture until a frame lands.
     [[nodiscard]] GuestFrameContent video() const;
+
+    // Hold these buttons. The state is a level and the whole set is answered at once, so a button
+    // absent from the value is released — hand over what is held now, every tick, and the guest reads
+    // whatever its own code reads. A per-platform header names the buttons (gb::Buttons) and converts.
+    //
+    // Lands at the next step boundary, like every other verb: a machine on the game's tick sees it at
+    // its next advanceTick, one running on its own clock at its next step.
+    //
+    // Throws std::logic_error if this machine's core takes no button state.
+    void buttons(GuestButtons held);
 
     // Declare the places in this machine the game cares about, as one batch, and get back the handle
     // that names them. Every entry is checked here — reachable on this machine, and wholly contained

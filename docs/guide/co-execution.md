@@ -42,6 +42,7 @@ bytes exactly as they shipped, in memory this process owns, with the behaviour l
 - [Running it](#running-it)
   - [Advancing it on your own tick instead](#advancing-it-on-your-own-tick-instead)
 - [Video: showing its picture](#video-showing-its-picture)
+- [Input: playing it](#input-playing-it)
 - [While it runs: one thread owns the machine](#while-it-runs-one-thread-owns-the-machine)
 - [Escaping into your own code](#escaping-into-your-own-code)
 - [Replacing a routine the cartridge calls](#replacing-a-routine-the-cartridge-calls)
@@ -69,6 +70,7 @@ Seven verbs, and everything else is composition:
 | `registerWatches(...)` | name places in the cartridge's **memory** whose reads and writes your code decides |
 | `bindRoutine<Sig>(at, binding)` | call the cartridge's own routines from your code, in the guest's own context |
 | `video(on)` · `video()` | let it draw, and put the frames it finishes on a layer |
+| `buttons(held)` | hold the guest's buttons, so the cartridge can be played |
 
 The first three reach into the machine from outside. The next two are the machine reaching out to
 you — one keyed on the code it is about to execute, one on the memory it is about to touch.
@@ -311,6 +313,45 @@ new one. Nothing asks a machine how fast it runs or which frame it is on. `pixel
 next `advanceTick`, which is exactly the lifetime a submission needs.
 
 The content type itself is in [draw-state.md](draw-state.md#guestframecontent--a-hosted-machines-picture).
+
+## Input: playing it
+
+The guest's buttons are an Actions enum the platform ships, because a console's button set is fixed by
+its hardware. You bind them the way you bind any action:
+
+```cpp
+ActionMap controls{
+    {gb::Button::A,      {SDL_SCANCODE_X, PadButton::FaceLabelA}},
+    {gb::Button::B,      {SDL_SCANCODE_Z, PadButton::FaceLabelB}},
+    {gb::Button::Start,  {SDL_SCANCODE_RETURN, PadButton::Start}},
+    {gb::Button::Select, {SDL_SCANCODE_RSHIFT}},
+};
+controls.add(presets::directional(gb::Button::Up, gb::Button::Down,
+                                  gb::Button::Left, gb::Button::Right));
+platform.actions(controls);
+```
+
+Then hand the machine what is held, each tick:
+
+```cpp
+loop.simTick([&](const InputState& input) {
+    machine.buttons(gb::held(input));
+    machine.advanceTick();
+});
+```
+
+`gb::held(input)` reads those eight actions back as a `gb::Buttons` — the value the machine takes. It
+is a pure read: the platform stores no binding of its own and decides nothing, so **rebinding is
+editing `controls` and resubmitting it**, and costs no feature. A game with actions of its own numbers
+them clear of the guest's; there is one action space, 64 wide.
+
+**The state is a level and the whole set lands at once.** A button absent from the value is released,
+so you submit what is held now rather than pressing and releasing. A tap shorter than one tick still
+reaches the guest as one frame of held — the run loop accumulates it — and lasts exactly that frame,
+so the cartridge's own code tells a tap from a hold the way it does on hardware.
+
+It arrives at the next step boundary, like every other verb: a machine on your tick sees it at the
+next `advanceTick`, one running on its own clock at its next step. A core with no input path throws.
 
 ## While it runs: one thread owns the machine
 

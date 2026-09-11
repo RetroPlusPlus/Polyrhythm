@@ -14,6 +14,7 @@
 
 #include <cstdint>
 
+#include "retropp/input.h"  // ActionId + InputState — the Button vocabulary is an Actions enum
 #include "retropp/vm.h"
 
 namespace retropp::gb {
@@ -87,5 +88,70 @@ inline constexpr MemoryRegion Hram    = {.at = 0xFF80, .size = 0x007F};
 // always read high; neither is in the stored byte. Read a synthesized register through a routine
 // (ldh a,[reg]) rather than through this. The RAM areas above have no such gap.
 inline constexpr MemoryRegion Io      = {.at = 0xFF00, .size = 0x0080};
+
+// The Game Boy's buttons as an Actions enum — the vocabulary a game binds its input to, shipped
+// because a console's button set is fixed by the hardware rather than chosen by the game:
+//
+//   ActionMap controls{{gb::Button::A, {SDL_SCANCODE_X, PadButton::FaceLabelA}}, …};
+//   controls.add(presets::directional(gb::Button::Up, gb::Button::Down,
+//                                     gb::Button::Left, gb::Button::Right));
+//   platform.actions(controls);
+//
+// The developer writes the map, so rebinding is editing a plain value and costs no feature. A game
+// that also has actions of its own numbers them clear of these — one id space, 64 wide.
+enum class Button : ActionId { Right, Left, Up, Down, A, B, Select, Start };
+
+// What the machine takes: the eight buttons, held or not. `held(input)` builds it from the actions
+// above, and a game that drives a guest some other way can fill the fields itself.
+struct Buttons {
+    bool right  = false;
+    bool left   = false;
+    bool up     = false;
+    bool down   = false;
+    bool a      = false;
+    bool b      = false;
+    bool select = false;
+    bool start  = false;
+
+    // The joypad's own bit order — directions in the low nibble, action buttons in the high one. The
+    // machine takes the converted value; nothing between here and its core reads the bits.
+    [[nodiscard]] constexpr operator GuestButtons() const noexcept {
+        return GuestButtons{.held = static_cast<std::uint64_t>(right) << 0 |
+                                    static_cast<std::uint64_t>(left) << 1 |
+                                    static_cast<std::uint64_t>(up) << 2 |
+                                    static_cast<std::uint64_t>(down) << 3 |
+                                    static_cast<std::uint64_t>(a) << 4 |
+                                    static_cast<std::uint64_t>(b) << 5 |
+                                    static_cast<std::uint64_t>(select) << 6 |
+                                    static_cast<std::uint64_t>(start) << 7};
+    }
+};
+
+// The buttons held this tick, read off the Button actions. Hand it straight to the machine:
+//
+//   vm.buttons(gb::held(input));
+//
+// A pure read — the engine stores nothing and decides nothing; what each button is bound to was
+// settled by the map the game submitted.
+//
+// A button counts as down if it is held at the tick OR was pressed since the last one, which is the
+// run loop's press buffering reaching the guest: a tap shorter than a tick has no level left to read
+// by tick time, and a guest samples its joypad on its own frame, so reading the level alone would
+// drop exactly the quick taps a player expects to register.
+[[nodiscard]] inline Buttons held(const InputState& input) noexcept {
+    const auto down = [&input](Button b) noexcept {
+        return input.isHeld(b) || input.justPressed(b);
+    };
+    return Buttons{
+        .right  = down(Button::Right),
+        .left   = down(Button::Left),
+        .up     = down(Button::Up),
+        .down   = down(Button::Down),
+        .a      = down(Button::A),
+        .b      = down(Button::B),
+        .select = down(Button::Select),
+        .start  = down(Button::Start),
+    };
+}
 
 }  // namespace retropp::gb

@@ -508,6 +508,8 @@ void SameBoyBackend::enableAudio(unsigned sampleRate, AudioSampleSink sink) {
     audioOvershoot8MHz_ = 0;
 }
 
+void SameBoyBackend::setButtons(std::uint64_t held) { machine_.setButtons(held); }
+
 void SameBoyBackend::beginContinuous(std::uint32_t entry) {
     // Position the machine at the driver's entry with a scratch stack — applied immediately (unlike
     // beginCall, which only stages pending_ for run()). No return sentinel: the driver runs forever;

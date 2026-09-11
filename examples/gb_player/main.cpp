@@ -34,9 +34,9 @@
 // construction (70'224 cycles at 4'194'304 Hz), so this loop advances the machine by exactly one of
 // its frames per tick, forever, with nothing to drift.
 //
-// WHAT THIS PLAYER REACHES IS THE PICTURE. It does not reach the machine's buttons or its sound, so a
-// ROM boots, plays its logo and runs its attract mode, and cannot be played or heard. Each of those is
-// its own surface on a hosted machine, and this player picks them up as they land.
+// WHAT THIS PLAYER REACHES IS THE PICTURE AND THE BUTTONS. A ROM boots and plays; its sound is its own
+// surface on a hosted machine, and this player picks that up when it lands. Both machines take the same
+// buttons, so the two screens are played together.
 //
 // Bring your own ROM: the file you choose is read from disk at runtime, and read is all it ever is.
 //
@@ -63,6 +63,9 @@
 #include "retropp/clock.h"
 #include "retropp/draw_state.h"
 #include "retropp/engine_config.h"
+#include "retropp/gb.h"
+#include "retropp/input.h"
+#include "retropp/input_actions.h"
 #include "retropp/geometry.h"
 #include "retropp/renderer.h"
 #include "retropp/run_loop.h"
@@ -280,6 +283,18 @@ int main(int argc, char** argv) {
     for (Vm* machine : {&ticked, &freeRunning}) {
         machine->hostRom(std::span<const std::uint8_t>(rom));
     }
+    // The guest's own button vocabulary, bound to whatever this program likes. Editing these rows is
+    // all rebinding ever is.
+    ActionMap controls{
+        {gb::Button::A,      {SDL_SCANCODE_X, PadButton::FaceLabelA}},
+        {gb::Button::B,      {SDL_SCANCODE_Z, PadButton::FaceLabelB}},
+        {gb::Button::Select, {SDL_SCANCODE_RSHIFT}},
+        {gb::Button::Start,  {SDL_SCANCODE_RETURN, PadButton::Start}},
+    };
+    controls.add(presets::directional(gb::Button::Up, gb::Button::Down,
+                                      gb::Button::Left, gb::Button::Right));
+    platform.actions(controls);
+
     ticked.run(Vm::Advance::OnTick);  // the engine's tick is its clock: one tick, one of its frames
 
     // THE TWO CLOCKS START AT DIFFERENT MOMENTS UNLESS THEY ARE MADE TO. A machine given a thread of
@@ -290,11 +305,17 @@ int main(int argc, char** argv) {
     // than washing out. So the free-running machine is started from inside the tick that first advances
     // the other one, which is the only moment the two share.
     bool freeRunningStarted = false;
-    loop.simTick([&](const InputState&) {
+    loop.simTick([&](const InputState& input) {
         if (!freeRunningStarted) {
             freeRunning.run(Vm::Advance::Continuously);
             freeRunningStarted = true;
         }
+        // Both machines run the same image, so both get the same buttons — the left screen sees them
+        // at this tick, the right one at its own next step.
+        const gb::Buttons pad = gb::held(input);
+        ticked.buttons(pad);
+        freeRunning.buttons(pad);
+
         ticked.advanceTick();
     });
 
@@ -369,6 +390,8 @@ int main(int argc, char** argv) {
         "  RIGHT — free-running on a clock of its own, at the hardware's cadence.\n"
         "Both clocks run at the same nominal rate, so the two stay in step; a frame of wobble now and "
         "then is each side crossing a frame boundary at a slightly different moment.\n"
+        "Play it: X = A, Z = B, Enter = Start, Right Shift = Select, arrows or WASD = the d-pad; a "
+        "gamepad works too. Both machines take the same buttons.\n"
         "Close the window to quit.\n",
         file.filename().string().c_str());
     WindowedHost host{loop, platform};
