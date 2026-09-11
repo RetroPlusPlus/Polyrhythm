@@ -52,6 +52,10 @@ public:
     void beginContinuous(std::uint32_t entry) override;
     std::uint64_t runForCycles(std::uint64_t cpuCycles) override;
 
+    // Guest input: the SM83 family's joypad takes button state.
+    [[nodiscard]] bool takesButtons() const override { return true; }
+    void setButtons(std::uint64_t held) override;
+
     // Resident driver: configure a (possibly banked) cartridge image and call its entries per frame.
     void configureResidentImage(std::span<const DriverImage> images, Mapper mapper,
                                 std::uint32_t stackTop) override;

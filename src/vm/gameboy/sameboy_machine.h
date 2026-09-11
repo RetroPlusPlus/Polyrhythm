@@ -132,6 +132,11 @@ public:
     // the CPU (runForCycles) produces samples into the installed sink.
     void enableAudio(unsigned sampleRate);
 
+    // Hold exactly these buttons. The word's bits are the joypad's own order — right, left, up, down,
+    // a, b, select, start from bit 0 — which is the order the core's own key mask uses, so the two
+    // agree without a translation table. The whole set is replaced on every call.
+    void setButtons(std::uint64_t held);
+
     // Install the sink the APU sample callback forwards each produced frame to. The
     // callback fires on the thread that runs the CPU (for the audio chain, the
     // AudioSystem's production thread) — so the sink is the producer side of the
