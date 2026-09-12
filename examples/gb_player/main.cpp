@@ -14,6 +14,13 @@
 // moment. Reading the picture is IDENTICAL on both: `picture()` says which frame it is holding, never
 // when it arrived, which is what lets one loop draw either.
 //
+// THE TWO GAMES WILL SEPARATE ONCE YOU PLAY THEM, and that is the setup rather than a fault. Both
+// machines are handed the same buttons, but each takes them at ITS OWN next step boundary — so a press
+// that lands a frame earlier on one side puts that Mario somewhere the other one is not, and from there
+// they are two playthroughs. The clocks stay together; the games do not. Over a minute of real play the
+// two run the same number of frames to the frame, which is what says the separation is the input
+// landing and never the pacing.
+//
 // HOW TO READ THE TWO SCREENS PRECISELY: fuse them stereoscopically — cross or diverge your eyes until
 // the two halves overlap into one image. Two identical pictures fuse into a single stable percept; a
 // one-pixel offset or a single frame of divergence breaks the fusion into visible shimmer at once. It
