@@ -1219,6 +1219,32 @@ add_custom_target(retropp-shaders DEPENDS ${_retropp_shader_headers})
 # The platform layer (SdlPlatform) is compiled on every platform so its live SDL_GPU
 # usage cannot silently rot; the live device is exercised by the window demo, never
 # in CI (CI runs the headless suites against MockPlatform).
+# ── The transport ────────────────────────────────────────────────────────────────
+# Its own static library, linked PRIVATE into the engine below. An archive member reaches a link only to
+# satisfy an undefined symbol, so a game that names nothing under retropp::net carries no socket — and
+# that holds with no build flag for a consumer to set and no option for one to forget.
+#
+# Deliberately NOT anchored: retropp_anchor_registry exists to defeat archive pruning for the
+# registries, and here pruning is the property. net_linkage_no_transport_symbols measures it.
+#
+# Exactly one socket implementation compiles. Both files also guard their own bodies, so the archive is
+# well-formed whichever way a consumer's build reaches it.
+if(WIN32)
+    set(_retropp_net_sources src/net/socket_win32.cpp src/net/in_process.cpp)
+else()
+    set(_retropp_net_sources src/net/socket_posix.cpp src/net/in_process.cpp)
+endif()
+add_library(retropp-net STATIC ${_retropp_net_sources})
+target_compile_features(retropp-net PUBLIC cxx_std_20)
+target_include_directories(retropp-net PRIVATE
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>)
+retropp_set_warnings(retropp-net)
+if(WIN32)
+    # An import library: it contributes to a binary's import table only when a symbol is used, so a
+    # consumer that links the archive and calls nothing in it pays nothing for this either.
+    target_link_libraries(retropp-net PRIVATE ws2_32)
+endif()
+
 add_library(retroppengine STATIC
     src/version.cpp
     src/clock.cpp
@@ -1304,6 +1330,10 @@ target_link_libraries(retroppengine PRIVATE retropp-lodepng)
 # PRIVATE: the audio-pack backend's WAV/OGG decoders back src/audio/pcm_decode.cpp; no public header
 # exposes a decoder symbol, so consumers link them transitively but never see them.
 target_link_libraries(retroppengine PRIVATE retropp-audiodecode)
+# PRIVATE: the transport is an implementation detail the engine's own networking layers sit on; no
+# public header exposes a retropp::net symbol. The archive rides every consumer's link line and
+# contributes nothing to a binary that names none of it.
+target_link_libraries(retroppengine PRIVATE retropp-net)
 # PRIVATE: SameBoy is the VM backend's emulation core; the internal src/vm/ wrapper is
 # the only engine code that touches it. No public header exposes a GB_* symbol, so it stays an
 # implementation detail consumers link transitively but never see.
@@ -1472,6 +1502,7 @@ if(RETROPP_BUILD_TESTS)
         tests/guest_frame_content_test.cpp
         tests/guest_input_test.cpp
         tests/vm_save_data_test.cpp
+        tests/net_socket_test.cpp
         tests/vm_frame_sink_test.cpp
         tests/guest_nesting_test.cpp
         tests/sameboy_nesting_test.cpp
@@ -1583,6 +1614,67 @@ if(RETROPP_BUILD_TESTS)
              COMMAND ${CMAKE_COMMAND}
                      -DSHADER_ROOT=${CMAKE_CURRENT_SOURCE_DIR}/shaders
                      -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/shader_lint.cmake)
+
+    # ── The transport's linkage measurement (device-free, every platform) ────────────
+    # The transport is its own static library, so a game that never names it links no socket. That is a
+    # property of the link, and this measures it: net_linkage_control names only the platform's version
+    # string, retroppengine-tests names the seam, and the transport's symbols must be in the second and
+    # absent from the first. A control in the tests block rather than an example, because the examples
+    # are behind an option and a control that can silently not exist measures nothing.
+    add_executable(net_linkage_control tests/net_linkage_control.cpp)
+    target_compile_features(net_linkage_control PRIVATE cxx_std_20)
+    target_link_libraries(net_linkage_control PRIVATE retropp::engine)
+    retropp_set_warnings(net_linkage_control)
+
+    # The symbol reader is resolved here, at configure time, and its absence stops the build: a
+    # measurement this unit exists to make is never answered with a skip. nm ships with the toolchain on
+    # Apple and Unix; on Windows the reader sits in the toolchain beside the compiler, so it is resolved
+    # from there ahead of PATH.
+    if(MSVC)
+        get_filename_component(_retropp_cxx_dir "${CMAKE_CXX_COMPILER}" DIRECTORY)
+        find_program(RETROPP_SYMBOL_TOOL NAMES dumpbin llvm-nm HINTS "${_retropp_cxx_dir}")
+    else()
+        find_program(RETROPP_SYMBOL_TOOL NAMES nm llvm-nm)
+    endif()
+    if(NOT RETROPP_SYMBOL_TOOL)
+        message(FATAL_ERROR
+            "No symbol reader found (nm / llvm-nm / dumpbin). The transport's linkage test needs one to "
+            "read a linked binary's symbols; without it the test would report an absence it never "
+            "measured.")
+    endif()
+    get_filename_component(_retropp_symbol_tool_name "${RETROPP_SYMBOL_TOOL}" NAME_WE)
+    if(_retropp_symbol_tool_name STREQUAL "dumpbin")
+        set(_retropp_symbol_tool_args "/SYMBOLS")
+    else()
+        set(_retropp_symbol_tool_args "")
+    endif()
+
+    # A Release PE can carry no symbol table, so on Windows the linker also emits a map and the script
+    # reads that when the tool stays silent. Elsewhere nm reads the binary directly.
+    set(_retropp_net_maps "")
+    if(MSVC)
+        set(_retropp_tests_map   "$<TARGET_FILE_DIR:retroppengine-tests>/retroppengine-tests.map")
+        set(_retropp_control_map "$<TARGET_FILE_DIR:net_linkage_control>/net_linkage_control.map")
+        target_link_options(retroppengine-tests PRIVATE "/MAP:${_retropp_tests_map}")
+        target_link_options(net_linkage_control  PRIVATE "/MAP:${_retropp_control_map}")
+        set(_retropp_net_maps
+            "-DREFERENCING_MAP=${_retropp_tests_map}"
+            "-DCONTROL_MAP=${_retropp_control_map}")
+    endif()
+
+    # PROBE is a fragment every engine symbol carries, so the script can tell a binary with no transport
+    # from a reader that printed nothing. SYMBOL is asserted as a bare identifier: it reads the same
+    # through Itanium and MSVC mangling, where only the surrounding decoration differs.
+    add_test(NAME net_linkage_no_transport_symbols
+             COMMAND ${CMAKE_COMMAND}
+                     -DSYMBOL=connectStream
+                     -DPROBE=retropp
+                     -DREFERENCING=$<TARGET_FILE:retroppengine-tests>
+                     -DCONTROL=$<TARGET_FILE:net_linkage_control>
+                     -DTOOL=${RETROPP_SYMBOL_TOOL}
+                     -DTOOL_ARGS=${_retropp_symbol_tool_args}
+                     ${_retropp_net_maps}
+                     -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/net_linkage.cmake)
 endif()
 
 # ── Runnable example hosts (mode 1 only by default) ──────────────────────────────
