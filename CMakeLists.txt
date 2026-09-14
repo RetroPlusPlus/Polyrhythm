@@ -1626,54 +1626,45 @@ if(RETROPP_BUILD_TESTS)
     target_link_libraries(net_linkage_control PRIVATE retropp::engine)
     retropp_set_warnings(net_linkage_control)
 
-    # The symbol reader is resolved here, at configure time, and its absence stops the build: a
-    # measurement this unit exists to make is never answered with a skip. nm ships with the toolchain on
-    # Apple and Unix; on Windows the reader sits in the toolchain beside the compiler, so it is resolved
-    # from there ahead of PATH.
-    if(MSVC)
-        get_filename_component(_retropp_cxx_dir "${CMAKE_CXX_COMPILER}" DIRECTORY)
-        find_program(RETROPP_SYMBOL_TOOL NAMES dumpbin llvm-nm HINTS "${_retropp_cxx_dir}")
-    else()
-        find_program(RETROPP_SYMBOL_TOOL NAMES nm llvm-nm)
-    endif()
-    if(NOT RETROPP_SYMBOL_TOOL)
-        message(FATAL_ERROR
-            "No symbol reader found (nm / llvm-nm / dumpbin). The transport's linkage test needs one to "
-            "read a linked binary's symbols; without it the test would report an absence it never "
-            "measured.")
-    endif()
-    get_filename_component(_retropp_symbol_tool_name "${RETROPP_SYMBOL_TOOL}" NAME_WE)
-    if(_retropp_symbol_tool_name STREQUAL "dumpbin")
-        set(_retropp_symbol_tool_args "/SYMBOLS")
-    else()
-        set(_retropp_symbol_tool_args "")
-    endif()
-
-    # A Release PE can carry no symbol table, so on Windows the linker also emits a map and the script
-    # reads that when the tool stays silent. Elsewhere nm reads the binary directly.
-    set(_retropp_net_maps "")
+    # The instrument that answers whether the transport reached a binary, chosen per platform and
+    # resolved at configure time — a measurement this unit exists to make is never answered with a skip.
+    #
+    # Apple and Unix: nm, which ships with the toolchain and reads a linked executable directly.
+    #
+    # Windows: the linker's own map. A Release PE carries no symbol table, so no symbol reader can
+    # answer there — nm, llvm-nm and dumpbin all report an empty binary, and dumpbin is not even
+    # reachable from a clang-cl toolchain's own directory. The map is the linker stating which archive
+    # members it pulled into the link, written by the linker already doing the link, so Windows needs no
+    # external tool located at all.
+    set(_retropp_net_instrument "")
     if(MSVC)
         set(_retropp_tests_map   "$<TARGET_FILE_DIR:retroppengine-tests>/retroppengine-tests.map")
         set(_retropp_control_map "$<TARGET_FILE_DIR:net_linkage_control>/net_linkage_control.map")
         target_link_options(retroppengine-tests PRIVATE "/MAP:${_retropp_tests_map}")
         target_link_options(net_linkage_control  PRIVATE "/MAP:${_retropp_control_map}")
-        set(_retropp_net_maps
+        set(_retropp_net_instrument
             "-DREFERENCING_MAP=${_retropp_tests_map}"
             "-DCONTROL_MAP=${_retropp_control_map}")
+    else()
+        find_program(RETROPP_SYMBOL_TOOL NAMES nm)
+        if(NOT RETROPP_SYMBOL_TOOL)
+            message(FATAL_ERROR
+                "nm was not found. The transport's linkage test reads a linked binary's symbols with it; "
+                "without it the test would report an absence it never measured.")
+        endif()
+        set(_retropp_net_instrument "-DTOOL=${RETROPP_SYMBOL_TOOL}")
     endif()
 
     # PROBE is a fragment every engine symbol carries, so the script can tell a binary with no transport
-    # from a reader that printed nothing. SYMBOL is asserted as a bare identifier: it reads the same
-    # through Itanium and MSVC mangling, where only the surrounding decoration differs.
+    # from an instrument that reported nothing. SYMBOL is asserted as a bare identifier: it reads the
+    # same through Itanium and MSVC mangling, where only the surrounding decoration differs.
     add_test(NAME net_linkage_no_transport_symbols
              COMMAND ${CMAKE_COMMAND}
                      -DSYMBOL=connectStream
                      -DPROBE=retropp
                      -DREFERENCING=$<TARGET_FILE:retroppengine-tests>
                      -DCONTROL=$<TARGET_FILE:net_linkage_control>
-                     -DTOOL=${RETROPP_SYMBOL_TOOL}
-                     -DTOOL_ARGS=${_retropp_symbol_tool_args}
-                     ${_retropp_net_maps}
+                     ${_retropp_net_instrument}
                      -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/net_linkage.cmake)
 endif()
 

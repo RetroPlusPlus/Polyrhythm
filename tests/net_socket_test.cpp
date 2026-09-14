@@ -243,8 +243,13 @@ TEST(NetSocket, ConnectToAClosedPortIsRefused) {
     const std::uint16_t port = unusedPort("127.0.0.1");
     ASSERT_NE(port, 0);
 
+    // A longer bound than the other cases take, because a refusal does not arrive equally fast on every
+    // platform. The claim is unchanged — the error maps to refused rather than to the catch-all — and
+    // only the patience differs.
+    constexpr auto kRefusal = 8000ms;
+
     SocketHandle client;
-    const Status s = connectStream({.host = "127.0.0.1", .port = port}, kSettle, client);
+    const Status s = connectStream({.host = "127.0.0.1", .port = port}, kRefusal, client);
     EXPECT_EQ(s, Status::Refused);
     closeSocket(client);
 }
