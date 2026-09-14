@@ -1626,42 +1626,40 @@ if(RETROPP_BUILD_TESTS)
     target_link_libraries(net_linkage_control PRIVATE retropp::engine)
     retropp_set_warnings(net_linkage_control)
 
-    # The instrument that answers whether the transport reached a binary, chosen per platform and
-    # resolved at configure time — a measurement this unit exists to make is never answered with a skip.
-    #
-    # Apple and Unix: nm, which ships with the toolchain and reads a linked executable directly.
-    #
-    # Windows: the linker's own map. A Release PE carries no symbol table, so no symbol reader can
-    # answer there — nm, llvm-nm and dumpbin all report an empty binary, and dumpbin is not even
-    # reachable from a clang-cl toolchain's own directory. The map is the linker stating which archive
-    # members it pulled into the link, written by the linker already doing the link, so Windows needs no
-    # external tool located at all.
+    # The evidence that answers whether the transport reached a binary, chosen per platform because the
+    # two platforms keep different evidence. Resolved at configure time — a measurement this unit exists
+    # to make is never answered with a skip.
     set(_retropp_net_instrument "")
     if(MSVC)
-        set(_retropp_tests_map   "$<TARGET_FILE_DIR:retroppengine-tests>/retroppengine-tests.map")
-        set(_retropp_control_map "$<TARGET_FILE_DIR:net_linkage_control>/net_linkage_control.map")
-        target_link_options(retroppengine-tests PRIVATE "/MAP:${_retropp_tests_map}")
-        target_link_options(net_linkage_control  PRIVATE "/MAP:${_retropp_control_map}")
+        # A Release PE keeps no symbol table, so no symbol reader can answer here: nm, llvm-nm and
+        # dumpbin all report an empty executable, and a clang-cl toolchain's own directory holds no
+        # dumpbin to find. The import table survives, and an imported library's name sits in it as plain
+        # ASCII — so the claim is read straight out of the image with no tool to locate and nothing a
+        # Release build strips. It is also the stronger claim: the socket library IS the dependency the
+        # separate archive exists to keep out of a game that does not network. kernel32 is in every PE,
+        # which is what proves the read happened.
         set(_retropp_net_instrument
-            "-DREFERENCING_MAP=${_retropp_tests_map}"
-            "-DCONTROL_MAP=${_retropp_control_map}")
+            -DINSTRUMENT=strings
+            -DSYMBOL=ws2_32.dll
+            -DPROBE=kernel32.dll)
     else()
+        # nm ships with the toolchain and an executable here keeps its symbol table, so the claim is read
+        # from the seam's own function name. PROBE is a fragment every engine symbol carries.
         find_program(RETROPP_SYMBOL_TOOL NAMES nm)
         if(NOT RETROPP_SYMBOL_TOOL)
             message(FATAL_ERROR
                 "nm was not found. The transport's linkage test reads a linked binary's symbols with it; "
                 "without it the test would report an absence it never measured.")
         endif()
-        set(_retropp_net_instrument "-DTOOL=${RETROPP_SYMBOL_TOOL}")
+        set(_retropp_net_instrument
+            -DINSTRUMENT=tool
+            -DTOOL=${RETROPP_SYMBOL_TOOL}
+            -DSYMBOL=connectStream
+            -DPROBE=retropp)
     endif()
 
-    # PROBE is a fragment every engine symbol carries, so the script can tell a binary with no transport
-    # from an instrument that reported nothing. SYMBOL is asserted as a bare identifier: it reads the
-    # same through Itanium and MSVC mangling, where only the surrounding decoration differs.
     add_test(NAME net_linkage_no_transport_symbols
              COMMAND ${CMAKE_COMMAND}
-                     -DSYMBOL=connectStream
-                     -DPROBE=retropp
                      -DREFERENCING=$<TARGET_FILE:retroppengine-tests>
                      -DCONTROL=$<TARGET_FILE:net_linkage_control>
                      ${_retropp_net_instrument}

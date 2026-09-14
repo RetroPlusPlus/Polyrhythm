@@ -1,5 +1,5 @@
-# The transport's linkage measurement — a binary that names the transport carries its symbols, and a
-# binary that does not carries none.
+# The transport's linkage measurement — a binary that names the transport shows it, and a binary that
+# does not shows nothing of it.
 #
 # The transport is its own static library, so an archive member reaches a link only to satisfy an
 # undefined symbol. That makes "a game that does not network carries no socket" a property of the link
@@ -9,55 +9,48 @@
 #
 # Both directions are asserted. Absence on its own can pass for the wrong reason — a renamed symbol, a
 # reader that printed nothing, a pattern that never could have matched — so the referencing binary must
-# show the symbol before the control's silence means anything.
+# show its evidence before the control's silence means anything. PROBE is the second half of that guard:
+# a fragment both binaries must carry, so one whose output lacks it was never read successfully and the
+# script says so rather than reporting an absence it did not observe.
 #
-# Two instruments, one per platform, and the caller declares which:
+# Two instruments, one per platform, because the two platforms keep different evidence:
 #
-#   TOOL             a symbol reader over the linked binary. nm on Apple and Unix, where it ships with
-#                    the toolchain and reads an executable directly.
-#   *_MAP            the linker's own map — its statement of which archive members it pulled into the
-#                    link. This is what answers on Windows, where a Release PE carries no symbol table
-#                    for any reader to find. It needs nothing beyond the linker already doing the link.
+#   tool      a symbol reader over the linked binary — nm on Apple and Unix, where it ships with the
+#             toolchain and an executable keeps its symbol table. SYMBOL is a function name from
+#             retropp::net, which reads the same through any mangling.
 #
-# A declared map must exist. Asking the linker for one and finding none is a failure to report, never a
-# reason to reach for something else.
+#   strings   the image's own printable content. A Release PE keeps no symbol table for any reader to
+#             find, but it does keep its import table, and an imported library's name sits there as
+#             plain ASCII. SYMBOL is that library; the claim becomes "this binary does not depend on the
+#             OS socket library", which is the dependency the archive exists to keep out. Matching is
+#             case-folded here, since an import name's case belongs to whoever wrote the import.
 #
-# PROBE guards whichever instrument is used: it is a fragment every engine symbol carries, so a binary
-# whose output lacks it was never read successfully, and the script says so rather than reporting an
-# absence it did not observe.
-#
-# Run as: cmake -DSYMBOL=<identifier> -DPROBE=<fragment> -DREFERENCING=<binary> -DCONTROL=<binary>
-#              { -DTOOL=<symbol reader> | -DREFERENCING_MAP=<map> -DCONTROL_MAP=<map> }
+# Run as: cmake -DINSTRUMENT=tool|strings -DSYMBOL=<text> -DPROBE=<text>
+#              -DREFERENCING=<binary> -DCONTROL=<binary> [-DTOOL=<symbol reader>]
 #              -P tests/net_linkage.cmake
 
 cmake_minimum_required(VERSION 3.28)
 
-foreach(_required SYMBOL PROBE REFERENCING CONTROL)
+foreach(_required INSTRUMENT SYMBOL PROBE REFERENCING CONTROL)
     if(NOT DEFINED ${_required} OR "${${_required}}" STREQUAL "")
         message(FATAL_ERROR "net_linkage.cmake: -D${_required}=<value> is required")
     endif()
 endforeach()
 
-# Reads one binary's symbols and says which instrument answered.
-function(retropp_net_read_symbols _binary _map _label _out_text)
+if(NOT INSTRUMENT MATCHES "^(tool|strings)$")
+    message(FATAL_ERROR "net_linkage.cmake: -DINSTRUMENT must be tool or strings, not '${INSTRUMENT}'")
+endif()
+if(INSTRUMENT STREQUAL "tool" AND (NOT DEFINED TOOL OR "${TOOL}" STREQUAL ""))
+    message(FATAL_ERROR "net_linkage.cmake: -DINSTRUMENT=tool also needs -DTOOL=<symbol reader>")
+endif()
+
+# Reads one binary's evidence and says where it came from.
+function(retropp_net_read _binary _label _out_text)
     if(NOT EXISTS "${_binary}")
         message(FATAL_ERROR "net_linkage.cmake: the ${_label} binary is missing: ${_binary}")
     endif()
 
-    set(_text "")
-    set(_source "")
-
-    if(NOT "${_map}" STREQUAL "")
-        if(NOT EXISTS "${_map}")
-            message(FATAL_ERROR
-                "net_linkage.cmake: the linker was asked for a map of the ${_label} binary at\n"
-                "  ${_map}\n"
-                "and none is there, so the measurement cannot be made. Check that the /MAP: link option "
-                "reached this target's link step.")
-        endif()
-        file(READ "${_map}" _text)
-        set(_source "the linker map ${_map}")
-    elseif(DEFINED TOOL AND NOT "${TOOL}" STREQUAL "")
+    if(INSTRUMENT STREQUAL "tool")
         execute_process(COMMAND "${TOOL}" "${_binary}"
                         OUTPUT_VARIABLE _text
                         ERROR_VARIABLE  _tool_error
@@ -69,36 +62,38 @@ function(retropp_net_read_symbols _binary _map _label _out_text)
         endif()
         set(_source "${TOOL}")
     else()
-        message(FATAL_ERROR
-            "net_linkage.cmake: no instrument was declared for the ${_label} binary — pass -DTOOL or a "
-            "linker map. Without one the script can measure nothing.")
+        file(STRINGS "${_binary}" _found LENGTH_MINIMUM 4)
+        string(REPLACE ";" "\n" _text "${_found}")
+        string(TOLOWER "${_text}" _text)
+        set(_source "the image's own strings")
     endif()
 
     if(NOT _text MATCHES "${PROBE}")
         message(FATAL_ERROR
-            "net_linkage.cmake: ${_source} carries no '${PROBE}', so it is not reporting this build's "
-            "symbols. The measurement was not made — an absent symbol here would prove nothing.")
+            "net_linkage.cmake: ${_source} read the ${_label} binary ${_binary} but its content carries "
+            "no '${PROBE}', so it is not reporting this build. The measurement was not made — an absent "
+            "symbol here would prove nothing.")
     endif()
 
     message(STATUS "net linkage: read the ${_label} binary from ${_source}")
     set(${_out_text} "${_text}" PARENT_SCOPE)
 endfunction()
 
-retropp_net_read_symbols("${REFERENCING}" "${REFERENCING_MAP}" "referencing" _referencing_symbols)
-retropp_net_read_symbols("${CONTROL}"     "${CONTROL_MAP}"     "control"     _control_symbols)
+retropp_net_read("${REFERENCING}" "referencing" _referencing)
+retropp_net_read("${CONTROL}"     "control"     _control)
 
-if(NOT _referencing_symbols MATCHES "${SYMBOL}")
+if(NOT _referencing MATCHES "${SYMBOL}")
     message(FATAL_ERROR
-        "net linkage FAILED — the referencing binary ${REFERENCING} carries no '${SYMBOL}'. Either the "
-        "transport is absent from a link that names it, or the identifier this test asserts on has been "
-        "renamed. Until this direction holds, the control's silence measures nothing.")
+        "net linkage FAILED — the referencing binary ${REFERENCING} shows no '${SYMBOL}'. Either the "
+        "transport is absent from a link that names it, or what this test asserts on has been renamed. "
+        "Until this direction holds, the control's silence measures nothing.")
 endif()
 
-if(_control_symbols MATCHES "${SYMBOL}")
+if(_control MATCHES "${SYMBOL}")
     message(FATAL_ERROR
-        "net linkage FAILED — ${CONTROL} declares no transport yet carries '${SYMBOL}'. Something "
-        "references the transport unconditionally, so every game that links the platform now carries a "
-        "socket it never asked for.")
+        "net linkage FAILED — ${CONTROL} declares no transport yet shows '${SYMBOL}'. Something reaches "
+        "the transport unconditionally, so every game that links the platform now carries a socket it "
+        "never asked for.")
 endif()
 
-message(STATUS "net linkage: '${SYMBOL}' is present where it is named and absent where it is not — OK")
+message(STATUS "net linkage: '${SYMBOL}' is present where the transport is named and absent where it is not — OK")
