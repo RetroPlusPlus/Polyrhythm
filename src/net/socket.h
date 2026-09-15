@@ -32,6 +32,10 @@ enum class Status : std::uint8_t {
     Unreachable,  // no route to the address
     TimedOut,
     Other,
+    // A datagram arrived larger than the buffer offered it. What fit was copied and the rest is gone —
+    // a datagram is delivered once, and the remainder cannot be asked for again. Appended rather than
+    // placed among its neighbours so no existing enumerator's value moves.
+    Truncated,
 };
 
 // How far a transfer got, and how many bytes moved. A short count on a stream is ordinary — the rest

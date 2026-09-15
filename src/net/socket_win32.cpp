@@ -366,11 +366,21 @@ Transfer sendDatagram(SocketHandle socket, const SocketAddress& to,
 
 Transfer receiveDatagram(SocketHandle socket, std::span<std::byte> into, SocketAddress& from) {
     ::sockaddr_storage sender{};
-    int                size  = static_cast<int>(sizeof(sender));
-    const int          moved = ::recvfrom(socketOf(socket), reinterpret_cast<char*>(into.data()),
-                                          transferLength(into.size()), 0,
-                                          reinterpret_cast<::sockaddr*>(&sender), &size);
-    if (moved == SOCKET_ERROR) return Transfer{.status = lastStatus(), .bytes = 0};
+    int                size    = static_cast<int>(sizeof(sender));
+    const int          offered = transferLength(into.size());
+    const int          moved   = ::recvfrom(socketOf(socket), reinterpret_cast<char*>(into.data()),
+                                            offered, 0, reinterpret_cast<::sockaddr*>(&sender), &size);
+    if (moved == SOCKET_ERROR) {
+        // Winsock reports a datagram that did not fit as a failed call, having already filled the buffer
+        // with what fit. The bytes that arrived are worth keeping, and the caller is told the rest is
+        // gone rather than handed a silent short read.
+        const int code = ::WSAGetLastError();
+        if (code == WSAEMSGSIZE) {
+            addressFrom(reinterpret_cast<const ::sockaddr*>(&sender), size, from);
+            return Transfer{.status = Status::Truncated, .bytes = static_cast<std::size_t>(offered)};
+        }
+        return Transfer{.status = statusFromWsa(code), .bytes = 0};
+    }
 
     addressFrom(reinterpret_cast<const ::sockaddr*>(&sender), size, from);
     return Transfer{.status = Status::Ok, .bytes = static_cast<std::size_t>(moved)};

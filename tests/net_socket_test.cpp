@@ -223,6 +223,41 @@ TEST(NetSocket, DatagramCarriesItsSenderAddress) {
     closeSocket(receiver);
 }
 
+TEST(NetSocket, ADatagramTooLargeForItsBufferSaysSo) {
+    SocketHandle sender;
+    SocketHandle receiver;
+    ASSERT_EQ(bindDatagram({.host = "127.0.0.1", .port = 0}, sender), Status::Ok);
+    ASSERT_EQ(bindDatagram({.host = "127.0.0.1", .port = 0}, receiver), Status::Ok);
+
+    std::uint16_t senderPort   = 0;
+    std::uint16_t receiverPort = 0;
+    ASSERT_EQ(localPort(sender, senderPort), Status::Ok);
+    ASSERT_EQ(localPort(receiver, receiverPort), Status::Ok);
+
+    // Forty bytes offered a buffer of eight. A caller reading only the count could not tell this from an
+    // eight-byte datagram, and the thirty-two that did not fit are gone — a datagram is delivered once.
+    std::vector<std::byte> large(40);
+    for (std::size_t i = 0; i < large.size(); ++i) large[i] = static_cast<std::byte>(i + 1);
+    ASSERT_EQ(sendDatagram(sender, {.host = "127.0.0.1", .port = receiverPort}, large).status,
+              Status::Ok);
+
+    std::array<std::byte, 8> into{};
+    SocketAddress            from;
+    ASSERT_EQ(waitReadable(receiver, kSettle), Status::Ok);
+    const Transfer got = receiveDatagram(receiver, into, from);
+
+    EXPECT_EQ(got.status, Status::Truncated);
+    EXPECT_EQ(got.bytes, into.size());  // what fit, never what was sent
+    EXPECT_EQ(from.port, senderPort);   // and the sender is still named
+
+    // What did fit is the datagram's beginning, in order.
+    EXPECT_EQ(into.front(), static_cast<std::byte>(1));
+    EXPECT_EQ(into.back(), static_cast<std::byte>(8));
+
+    closeSocket(sender);
+    closeSocket(receiver);
+}
+
 TEST(NetSocket, ReceiveOnAnEmptySocketWouldBlockRatherThanFail) {
     SocketHandle clientSide;
     SocketHandle serverSide;

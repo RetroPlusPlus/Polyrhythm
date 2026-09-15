@@ -287,14 +287,28 @@ Transfer sendDatagram(SocketHandle socket, const SocketAddress& to,
 }
 
 Transfer receiveDatagram(SocketHandle socket, std::span<std::byte> into, SocketAddress& from) {
+    // recvmsg rather than recvfrom: it reports whether the datagram fit. recvfrom copies what it can and
+    // says nothing about the rest, which would hand a caller a short count indistinguishable from a
+    // short datagram.
     ::sockaddr_storage sender{};
-    ::socklen_t        size  = sizeof(sender);
-    const ::ssize_t    moved = ::recvfrom(descriptorOf(socket), into.data(), into.size(), 0,
-                                          reinterpret_cast<::sockaddr*>(&sender), &size);
+    ::iovec            buffer{};
+    buffer.iov_base = into.data();
+    buffer.iov_len  = into.size();
+
+    ::msghdr message{};
+    message.msg_name    = &sender;
+    message.msg_namelen = sizeof(sender);
+    message.msg_iov     = &buffer;
+    message.msg_iovlen  = 1;
+
+    const ::ssize_t moved = ::recvmsg(descriptorOf(socket), &message, 0);
     if (moved < 0) return Transfer{.status = statusFromErrno(errno), .bytes = 0};
 
-    addressFrom(reinterpret_cast<const ::sockaddr*>(&sender), size, from);
-    return Transfer{.status = Status::Ok, .bytes = static_cast<std::size_t>(moved)};
+    addressFrom(reinterpret_cast<const ::sockaddr*>(&sender), message.msg_namelen, from);
+
+    const bool fitted = (message.msg_flags & MSG_TRUNC) == 0;
+    return Transfer{.status = fitted ? Status::Ok : Status::Truncated,
+                    .bytes  = static_cast<std::size_t>(moved)};
 }
 
 Status waitReadable(SocketHandle socket, std::chrono::milliseconds timeout) {
