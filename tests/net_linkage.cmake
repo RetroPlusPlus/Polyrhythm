@@ -82,18 +82,25 @@ endfunction()
 retropp_net_read("${REFERENCING}" "referencing" _referencing)
 retropp_net_read("${CONTROL}"     "control"     _control)
 
-if(NOT _referencing MATCHES "${SYMBOL}")
-    message(FATAL_ERROR
-        "net linkage FAILED — the referencing binary ${REFERENCING} shows no '${SYMBOL}'. Either the "
-        "transport is absent from a link that names it, or what this test asserts on has been renamed. "
-        "Until this direction holds, the control's silence measures nothing.")
-endif()
+# SYMBOL is comma-separated rather than a CMake list, so it survives being handed through add_test as one
+# argument. Each entry is asserted in both directions.
+string(REPLACE "," ";" _wanted "${SYMBOL}")
 
-if(_control MATCHES "${SYMBOL}")
-    message(FATAL_ERROR
-        "net linkage FAILED — ${CONTROL} declares no transport yet shows '${SYMBOL}'. Something reaches "
-        "the transport unconditionally, so every game that links the platform now carries a socket it "
-        "never asked for.")
-endif()
+foreach(_needle IN LISTS _wanted)
+    if(NOT _referencing MATCHES "${_needle}")
+        message(FATAL_ERROR
+            "net linkage FAILED — the referencing binary ${REFERENCING} shows no '${_needle}'. Either "
+            "that part of the transport is absent from a link that names it, or what this test asserts "
+            "on has been renamed. Until this direction holds, the control's silence measures nothing.")
+    endif()
 
-message(STATUS "net linkage: '${SYMBOL}' is present where the transport is named and absent where it is not — OK")
+    if(_control MATCHES "${_needle}")
+        message(FATAL_ERROR
+            "net linkage FAILED — ${CONTROL} declares no transport yet shows '${_needle}'. Something "
+            "reaches it unconditionally, so every game that links the platform now carries a dependency "
+            "it never asked for. For an OS library this is usually a link line that records it whether "
+            "or not anything calls it.")
+    endif()
+
+    message(STATUS "net linkage: '${_needle}' is present where the transport is named and absent where it is not — OK")
+endforeach()

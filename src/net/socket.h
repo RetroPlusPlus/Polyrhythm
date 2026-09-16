@@ -36,6 +36,10 @@ enum class Status : std::uint8_t {
     // a datagram is delivered once, and the remainder cannot be asked for again. Appended rather than
     // placed among its neighbours so no existing enumerator's value moves.
     Truncated,
+    // The peer's certificate is not one this side accepts. A verdict rather than a stall: it does not
+    // change on a later call, and it is deliberately distinguishable from the catch-all, because "the
+    // certificate was refused" is the answer a caller most needs to be able to act on.
+    Untrusted,
 };
 
 // How far a transfer got, and how many bytes moved. A short count on a stream is ordinary — the rest

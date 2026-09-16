@@ -90,6 +90,11 @@ if(MSVC)
     add_link_options(/OPT:REF /OPT:ICF)       # drop unreferenced; fold identical
 elseif(APPLE)
     add_link_options(-Wl,-dead_strip)
+    # And the same for dynamic libraries: a framework on a link line is recorded as a load command even
+    # when nothing calls into it, which makes the dynamic loader map it at every start. This drops the
+    # ones a binary never reaches — the OS TLS library being the one that matters, since a game that does
+    # not network must not carry it. net_linkage_no_transport_symbols measures that it worked.
+    add_link_options(-Wl,-dead_strip_dylibs)
 elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     add_compile_options(-ffunction-sections -fdata-sections)
     add_link_options(-Wl,--gc-sections)
@@ -1234,6 +1239,13 @@ if(WIN32)
 else()
     set(_retropp_net_sources src/net/socket_posix.cpp src/net/in_process.cpp)
 endif()
+# TLS layers over the socket seam rather than replacing it, so its per-platform file joins the same
+# archive. A platform whose stack has not landed yet simply contributes no TLS translation unit, and the
+# cases that would exercise it register and skip visibly.
+if(APPLE)
+    list(APPEND _retropp_net_sources src/net/tls_securetransport.cpp)
+    set(RETROPP_TLS_STACK "SecureTransport")
+endif()
 add_library(retropp-net STATIC ${_retropp_net_sources})
 target_compile_features(retropp-net PUBLIC cxx_std_20)
 target_include_directories(retropp-net PRIVATE
@@ -1243,6 +1255,12 @@ if(WIN32)
     # An import library: it contributes to a binary's import table only when a symbol is used, so a
     # consumer that links the archive and calls nothing in it pays nothing for this either.
     target_link_libraries(retropp-net PRIVATE ws2_32)
+endif()
+if(APPLE)
+    # The OS's own TLS, dynamically linked. A framework on this archive's link line reaches every
+    # consumer, so -dead_strip_dylibs up in the link-options block is what keeps an uninterested binary
+    # from recording a dependency on it; net_linkage_no_transport_symbols measures that it works.
+    target_link_libraries(retropp-net PRIVATE "-framework Security" "-framework CoreFoundation")
 endif()
 
 add_library(retroppengine STATIC
@@ -1503,6 +1521,7 @@ if(RETROPP_BUILD_TESTS)
         tests/guest_input_test.cpp
         tests/vm_save_data_test.cpp
         tests/net_socket_test.cpp
+        tests/net_tls_test.cpp
         tests/vm_frame_sink_test.cpp
         tests/guest_nesting_test.cpp
         tests/sameboy_nesting_test.cpp
@@ -1573,6 +1592,14 @@ if(RETROPP_BUILD_TESTS)
     target_compile_definitions(retroppengine-tests PRIVATE
         RETROPP_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
         RETROPP_ASSETS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/examples/assets")
+    # The TLS cases register on every platform and skip visibly where the stack is not built yet, so the
+    # counts stay identical across machines. Each platform's stack landing is one line here.
+    if(RETROPP_TLS_STACK)
+        target_compile_definitions(retroppengine-tests PRIVATE RETROPP_TLS_READY)
+        message(STATUS "TLS stack: ${RETROPP_TLS_STACK}")
+    else()
+        message(STATUS "TLS stack: none built for this platform — the TLS cases will skip")
+    endif()
     # Link the NAMESPACED aliases exactly as a mode-3 consumer would. This test
     # executable IS the in-tree consumer fixture for the link surface: it proves
     # both retropp::engine and retropp::testkit resolve as aliases and link cleanly.
@@ -1642,9 +1669,25 @@ if(RETROPP_BUILD_TESTS)
             -DINSTRUMENT=strings
             -DSYMBOL=ws2_32.dll
             -DPROBE=kernel32.dll)
+    elseif(APPLE)
+        # The image's own strings here too, for a reason worth stating: what an unused OS library costs on
+        # this platform is a recorded load command, not an undefined symbol. A framework a binary never
+        # calls still gets mapped at every start if its path is in the image — so the path IS the claim,
+        # and asserting on a symbol instead would pass while the cost stayed. Reading the image covers
+        # both needles at once, since a Mach-O keeps its symbol names as text as well.
+        set(_retropp_net_symbols "connectstream")
+        if(RETROPP_TLS_STACK)
+            set(_retropp_net_symbols "${_retropp_net_symbols},security.framework")
+        endif()
+        set(_retropp_net_instrument
+            -DINSTRUMENT=strings
+            -DSYMBOL=${_retropp_net_symbols}
+            -DPROBE=retropp)
     else()
-        # nm ships with the toolchain and an executable here keeps its symbol table, so the claim is read
-        # from the seam's own function name. PROBE is a fragment every engine symbol carries.
+        # nm ships with the toolchain and an executable here keeps its symbol table, so the socket claim
+        # is read from the seam's own function name. PROBE is a fragment every engine symbol carries.
+        # NB the TLS needle for this platform lands with its stack, and wants the same treatment Apple
+        # gets above: a recorded DT_NEEDED entry is the cost, which `--as-needed` is what removes.
         find_program(RETROPP_SYMBOL_TOOL NAMES nm)
         if(NOT RETROPP_SYMBOL_TOOL)
             message(FATAL_ERROR
