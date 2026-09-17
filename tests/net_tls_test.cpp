@@ -358,8 +358,15 @@ TEST(NetTls, ClosedIsAStableStateThroughTls) {
 
     { TlsStream leaving = std::move(ends.server); }  // the peer goes away
 
+    // The close is a state that arrives, not one that is already true the instant the peer leaves: until
+    // its bytes land, the honest answer is WouldBlock. So wait for them, as a caller would.
     std::array<std::byte, 16> into{};
-    const Transfer            first = ends.client.receive(into);
+    Transfer                  first{};
+    const auto                deadline = std::chrono::steady_clock::now() + kLiveness;
+    do {
+        if (ends.client.waitReadable(kSettle) == Status::TimedOut) break;
+        first = ends.client.receive(into);
+    } while (first.status == Status::WouldBlock && std::chrono::steady_clock::now() < deadline);
     EXPECT_EQ(first.status, Status::Closed);
 
     // Asking again reports the same state rather than turning into an error.
