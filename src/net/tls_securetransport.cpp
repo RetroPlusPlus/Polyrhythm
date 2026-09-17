@@ -111,43 +111,52 @@ bool sameBytes(CFDataRef data, const Certificate& expected) {
     return std::memcmp(CFDataGetBytePtr(data), expected.data(), length) == 0;
 }
 
-// Reads a PKCS#12 container into the identity array SSLSetCertificate wants. Returns nullptr on any
-// failure; the caller reports it rather than guessing at a cause.
+// Reads a PKCS#12 container into the identity array SSLSetCertificate wants, holding the key in this
+// process's memory and nowhere else. Returns nullptr on any failure; the caller reports it rather than
+// guessing at a cause.
+//
+// On macOS the import's default destination is the user's default keychain — so without the memory-only
+// option, presenting a server identity would write a private key into the keychain of whoever is logged
+// in, and on a machine with no unlocked keychain (a service, a CI runner) the import fails outright. That
+// option exists from macOS 15. Below that there is no way to import an identity without a keychain, and
+// this refuses rather than write a key into one the caller never offered.
 CFArrayRef importIdentity(const std::vector<std::byte>& container, const std::string& password) {
-    CFDataRef blob = CFDataCreate(nullptr, reinterpret_cast<const UInt8*>(container.data()),
-                                  static_cast<CFIndex>(container.size()));
-    if (blob == nullptr) return nullptr;
+    if (__builtin_available(macOS 15.0, *)) {
+        CFDataRef blob = CFDataCreate(nullptr, reinterpret_cast<const UInt8*>(container.data()),
+                                      static_cast<CFIndex>(container.size()));
+        if (blob == nullptr) return nullptr;
 
-    CFStringRef secret = CFStringCreateWithBytes(nullptr,
-                                                 reinterpret_cast<const UInt8*>(password.data()),
-                                                 static_cast<CFIndex>(password.size()),
-                                                 kCFStringEncodingUTF8, false);
-    const void* keys[]   = {kSecImportExportPassphrase};
-    const void* values[] = {secret};
-    CFDictionaryRef options =
-        CFDictionaryCreate(nullptr, keys, values, 1, &kCFTypeDictionaryKeyCallBacks,
-                           &kCFTypeDictionaryValueCallBacks);
+        CFStringRef secret = CFStringCreateWithBytes(nullptr,
+                                                     reinterpret_cast<const UInt8*>(password.data()),
+                                                     static_cast<CFIndex>(password.size()),
+                                                     kCFStringEncodingUTF8, false);
+        const void* keys[]   = {kSecImportExportPassphrase, kSecImportToMemoryOnly};
+        const void* values[] = {secret, kCFBooleanTrue};
+        CFDictionaryRef options =
+            CFDictionaryCreate(nullptr, keys, values, 2, &kCFTypeDictionaryKeyCallBacks,
+                               &kCFTypeDictionaryValueCallBacks);
 
-    CFArrayRef items  = nullptr;
-    const OSStatus rc = SecPKCS12Import(blob, options, &items);
+        CFArrayRef     items = nullptr;
+        const OSStatus rc    = SecPKCS12Import(blob, options, &items);
 
-    CFArrayRef identities = nullptr;
-    if (rc == errSecSuccess && items != nullptr && CFArrayGetCount(items) > 0) {
-        auto entry = static_cast<CFDictionaryRef>(CFArrayGetValueAtIndex(items, 0));
-        auto identity =
-            static_cast<SecIdentityRef>(const_cast<void*>(CFDictionaryGetValue(entry,
-                                                                              kSecImportItemIdentity)));
-        if (identity != nullptr) {
-            const void* one[] = {identity};
-            identities = CFArrayCreate(nullptr, one, 1, &kCFTypeArrayCallBacks);
+        CFArrayRef identities = nullptr;
+        if (rc == errSecSuccess && items != nullptr && CFArrayGetCount(items) > 0) {
+            auto entry    = static_cast<CFDictionaryRef>(CFArrayGetValueAtIndex(items, 0));
+            auto identity = static_cast<SecIdentityRef>(
+                const_cast<void*>(CFDictionaryGetValue(entry, kSecImportItemIdentity)));
+            if (identity != nullptr) {
+                const void* one[] = {identity};
+                identities        = CFArrayCreate(nullptr, one, 1, &kCFTypeArrayCallBacks);
+            }
         }
-    }
 
-    if (items != nullptr) CFRelease(items);
-    if (options != nullptr) CFRelease(options);
-    if (secret != nullptr) CFRelease(secret);
-    CFRelease(blob);
-    return identities;
+        if (items != nullptr) CFRelease(items);
+        if (options != nullptr) CFRelease(options);
+        if (secret != nullptr) CFRelease(secret);
+        CFRelease(blob);
+        return identities;
+    }
+    return nullptr;
 }
 
 }  // namespace
