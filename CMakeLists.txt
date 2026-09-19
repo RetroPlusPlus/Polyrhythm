@@ -98,6 +98,11 @@ elseif(APPLE)
 elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     add_compile_options(-ffunction-sections -fdata-sections)
     add_link_options(-Wl,--gc-sections)
+    # And the same for shared libraries: one named on a link line is recorded as a DT_NEEDED entry even
+    # when nothing calls into it, which makes the dynamic loader open it at every start. This drops the
+    # ones a binary never reaches — the OS TLS library being the one that matters, since a game that does
+    # not network must not carry it. net_linkage_no_transport_symbols measures that it worked.
+    add_link_options(-Wl,--as-needed)
 endif()
 
 # ── Warning flags (clean-warnings bar from day one) ────────────────────────────
@@ -1245,6 +1250,14 @@ endif()
 if(APPLE)
     list(APPEND _retropp_net_sources src/net/tls_securetransport.cpp)
     set(RETROPP_TLS_STACK "SecureTransport")
+elseif(NOT WIN32)
+    # The system's own OpenSSL, which every desktop Linux already carries — a declared dependency for a
+    # game that opts into the transport rather than a free one. Required rather than optional on purpose:
+    # a platform whose TLS quietly did not build would take its cases with it, and a measurement that can
+    # be absent measures nothing.
+    find_package(OpenSSL REQUIRED)
+    list(APPEND _retropp_net_sources src/net/tls_openssl.cpp)
+    set(RETROPP_TLS_STACK "OpenSSL ${OPENSSL_VERSION}")
 endif()
 add_library(retropp-net STATIC ${_retropp_net_sources})
 target_compile_features(retropp-net PUBLIC cxx_std_20)
@@ -1261,6 +1274,11 @@ if(APPLE)
     # consumer, so -dead_strip_dylibs up in the link-options block is what keeps an uninterested binary
     # from recording a dependency on it; net_linkage_no_transport_symbols measures that it works.
     target_link_libraries(retropp-net PRIVATE "-framework Security" "-framework CoreFoundation")
+elseif(NOT WIN32)
+    # The same arrangement in this platform's idiom: the libraries reach every consumer's link line, and
+    # --as-needed up in the link-options block is what keeps an uninterested binary from recording
+    # either one.
+    target_link_libraries(retropp-net PRIVATE OpenSSL::SSL OpenSSL::Crypto)
 endif()
 
 add_library(retroppengine STATIC
@@ -1684,20 +1702,18 @@ if(RETROPP_BUILD_TESTS)
             -DSYMBOL=${_retropp_net_symbols}
             -DPROBE=retropp)
     else()
-        # nm ships with the toolchain and an executable here keeps its symbol table, so the socket claim
-        # is read from the seam's own function name. PROBE is a fragment every engine symbol carries.
-        # NB the TLS needle for this platform lands with its stack, and wants the same treatment Apple
-        # gets above: a recorded DT_NEEDED entry is the cost, which `--as-needed` is what removes.
-        find_program(RETROPP_SYMBOL_TOOL NAMES nm)
-        if(NOT RETROPP_SYMBOL_TOOL)
-            message(FATAL_ERROR
-                "nm was not found. The transport's linkage test reads a linked binary's symbols with it; "
-                "without it the test would report an absence it never measured.")
+        # The image's own strings, for the reason Apple reads them: what an unused shared library costs
+        # here is a recorded DT_NEEDED entry, not an undefined symbol. A library a binary never calls is
+        # still opened at every start if its name is in the image — so the name IS the claim, and
+        # asserting on a symbol instead would pass while the cost stayed. One read covers both needles,
+        # since an ELF executable keeps its symbol names as text as well.
+        set(_retropp_net_symbols "connectstream")
+        if(RETROPP_TLS_STACK)
+            set(_retropp_net_symbols "${_retropp_net_symbols},libssl")
         endif()
         set(_retropp_net_instrument
-            -DINSTRUMENT=tool
-            -DTOOL=${RETROPP_SYMBOL_TOOL}
-            -DSYMBOL=connectStream
+            -DINSTRUMENT=strings
+            -DSYMBOL=${_retropp_net_symbols}
             -DPROBE=retropp)
     endif()
 

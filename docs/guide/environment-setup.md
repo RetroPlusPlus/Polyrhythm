@@ -144,8 +144,10 @@ Studio Installer rather than reinstalling.
 
 ## Linux
 
-Two things catch people out here: **CMake is often too old in the distro repos**, and **SDL3 is built
-from source**, so its development headers must be present even though SDL itself is not installed.
+Three things trip people up here. **CMake is often too old in the distro repos.** **SDL3 is built from
+source**, so its development headers must be present even though SDL itself is not installed. And the
+transport's TLS is **the system's own OpenSSL** — the library is already on the machine, but its
+development headers are a separate package and the build needs them.
 
 ### Debian / Ubuntu
 
@@ -156,7 +158,8 @@ sudo apt install -y build-essential git cmake ninja-build glslang-tools \
     libxss-dev libxtst-dev \
     libwayland-dev wayland-protocols libxkbcommon-dev \
     libasound2-dev libpulse-dev libudev-dev \
-    libgl1-mesa-dev libegl1-mesa-dev libgbm-dev libdrm-dev libvulkan-dev
+    libgl1-mesa-dev libegl1-mesa-dev libgbm-dev libdrm-dev libvulkan-dev \
+    libssl-dev
 ```
 
 **Check the CMake version before going further:**
@@ -177,7 +180,8 @@ sudo dnf install -y gcc-c++ git cmake ninja-build glslang \
     libXScrnSaver-devel libXtst-devel \
     wayland-devel wayland-protocols-devel libxkbcommon-devel \
     alsa-lib-devel pulseaudio-libs-devel systemd-devel \
-    mesa-libGL-devel mesa-libEGL-devel mesa-libgbm-devel libdrm-devel vulkan-loader-devel
+    mesa-libGL-devel mesa-libEGL-devel mesa-libgbm-devel libdrm-devel vulkan-loader-devel \
+    openssl-devel
 ```
 
 ### Arch
@@ -186,7 +190,7 @@ sudo dnf install -y gcc-c++ git cmake ninja-build glslang \
 sudo pacman -S --needed base-devel git cmake ninja glslang \
     libx11 libxext libxrandr libxi libxcursor libxfixes libxss libxtst \
     wayland wayland-protocols libxkbcommon alsa-lib libpulse \
-    mesa libdrm vulkan-icd-loader
+    mesa libdrm vulkan-icd-loader openssl
 ```
 
 Verify:

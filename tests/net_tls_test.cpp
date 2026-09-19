@@ -33,8 +33,7 @@ using namespace std::chrono_literals;
 
 #if !defined(RETROPP_TLS_READY)
 constexpr const char* kPendingStack =
-    "this platform's TLS stack is not built yet — OpenSSL lands in the Linux session, SChannel in the "
-    "Windows session";
+    "this platform has no TLS stack yet — SChannel is not implemented";
 #endif
 
 #if defined(RETROPP_TLS_READY)

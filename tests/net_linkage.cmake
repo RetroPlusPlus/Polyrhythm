@@ -13,17 +13,19 @@
 # a fragment both binaries must carry, so one whose output lacks it was never read successfully and the
 # script says so rather than reporting an absence it did not observe.
 #
-# Two instruments, one per platform, because the two platforms keep different evidence:
+# Two instruments, because a binary's evidence is not kept the same way everywhere:
 #
-#   tool      a symbol reader over the linked binary — nm on Apple and Unix, where it ships with the
-#             toolchain and an executable keeps its symbol table. SYMBOL is a function name from
-#             retropp::net, which reads the same through any mangling.
+#   strings   the image's own printable content, and what every platform is read with. It answers both
+#             halves of the claim at once: a symbol name from retropp::net is in there as text, and so is
+#             the name of every OS library the image records a dependency on — which is the cost that
+#             matters, since a library nothing calls is still opened at every start when the link line
+#             recorded it. A Release PE keeps no symbol table for any reader to find, and its import
+#             table is the only place the claim survives. Matching is case-folded, since a library name's
+#             case belongs to whoever wrote the import.
 #
-#   strings   the image's own printable content. A Release PE keeps no symbol table for any reader to
-#             find, but it does keep its import table, and an imported library's name sits there as
-#             plain ASCII. SYMBOL is that library; the claim becomes "this binary does not depend on the
-#             OS socket library", which is the dependency the archive exists to keep out. Matching is
-#             case-folded here, since an import name's case belongs to whoever wrote the import.
+#   tool      a symbol reader over the linked binary, such as nm. SYMBOL is a function name, which reads
+#             the same through any mangling. It sees symbols only, so it cannot answer what a binary
+#             merely depends on.
 #
 # Run as: cmake -DINSTRUMENT=tool|strings -DSYMBOL=<text> -DPROBE=<text>
 #              -DREFERENCING=<binary> -DCONTROL=<binary> [-DTOOL=<symbol reader>]
