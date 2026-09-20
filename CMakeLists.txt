@@ -1277,10 +1277,10 @@ if(APPLE)
     # from recording a dependency on it; net_linkage_no_transport_symbols measures that it works.
     target_link_libraries(retropp-net PRIVATE "-framework Security" "-framework CoreFoundation")
 elseif(WIN32)
-    # The OS's own TLS and its certificate handling, both through import libraries — so the same property
-    # the socket library has holds here without a link flag to arrange it, and a binary that calls neither
-    # imports neither.
-    target_link_libraries(retropp-net PRIVATE secur32 crypt32)
+    # The OS's own TLS, its certificate handling, and the two key stores a server identity's key is
+    # removed from — all through import libraries, so the same property the socket library has holds here
+    # without a link flag to arrange it, and a binary that calls none of them imports none of them.
+    target_link_libraries(retropp-net PRIVATE secur32 crypt32 ncrypt advapi32)
 else()
     # The same arrangement in this platform's idiom: the libraries reach every consumer's link line, and
     # --as-needed up in the link-options block is what keeps an uninterested binary from recording

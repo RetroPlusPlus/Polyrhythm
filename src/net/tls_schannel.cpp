@@ -14,8 +14,10 @@
 // a pinned certificate is compared byte for byte and an unpinned one goes to the OS's own chain check —
 // and there is no third answer that accepts whatever arrives.
 //
-// A private key read from a PKCS#12 container stays in this process: the import is told not to persist
-// it, so presenting a server identity never writes a key into the key storage of whoever is logged in.
+// A server's private key is removed again when the connection that presented it goes away. The platform
+// runs the server side of a handshake outside this process, and a key that was never written down cannot
+// reach it — so the import writes one, and this file deletes the container it went into, which is the
+// removal the platform prescribes for a key nobody wants kept.
 
 #include "src/net/tls.h"
 
@@ -43,11 +45,13 @@
 
 #include <ntsecapi.h>
 
+#include <ncrypt.h>
 #include <schannel.h>
 #include <security.h>
 
 #include <algorithm>
 #include <array>
+#include <cstdio>
 #include <cstring>
 #include <utility>
 
@@ -57,6 +61,14 @@ namespace {
 // One hop between the carrier and this file's buffers. A TLS record tops out just above 16 KiB, so a
 // whole record usually crosses in one pass.
 constexpr std::size_t kHop = 16384;
+
+// Where a server's private key was written, so it can be removed once the connection is done with it.
+struct KeyLocation {
+    std::wstring  container;
+    std::wstring  provider;
+    unsigned long type  = 0;  // zero names a key storage provider; anything else a legacy provider
+    unsigned long flags = 0;
+};
 
 std::wstring widen(const std::string& text) {
     if (text.empty()) return {};
@@ -79,9 +91,11 @@ struct TlsStream::State {
     bool       hasCredentials = false;
     bool       hasContext     = false;
 
-    // The server's own certificate and the store the container was read into. A client has neither.
+    // The server's own certificate, the store the container was read into, and where its key landed. A
+    // client has none of the three.
     HCERTSTORE     identityStore = nullptr;
     PCCERT_CONTEXT identity      = nullptr;
+    KeyLocation    key;
 
     std::vector<std::byte> inbound;   // ciphertext taken off the carrier, not yet consumed
     std::vector<std::byte> unsent;    // ciphertext the provider produced, not yet put on the carrier
@@ -305,7 +319,11 @@ Status acquire(TlsStream::State& state, unsigned long use) {
     const SECURITY_STATUS rc =
         ::AcquireCredentialsHandleA(nullptr, const_cast<SEC_CHAR*>(UNISP_NAME_A), use, nullptr,
                                     &credentials, nullptr, nullptr, &state.credentials, &expiry);
-    if (rc != SEC_E_OK) return Status::Other;
+    if (rc != SEC_E_OK) {
+        std::fprintf(stderr, "retropp net: AcquireCredentialsHandle failed, status 0x%08lx\n",
+                     static_cast<unsigned long>(rc));
+        return Status::Other;
+    }
 
     state.hasCredentials = true;
     return Status::Ok;
@@ -318,25 +336,75 @@ Status openTls(std::unique_ptr<Stream> over, bool asClient, TlsStream::State& st
     return Status::Ok;
 }
 
-// Reads a PKCS#12 container and finds the certificate whose key came with it.
+// Removes the key container a server identity was written into. Nothing to do for a client, which
+// presents no identity and writes nothing.
+void forgetKey(const KeyLocation& key) {
+    if (key.container.empty()) return;
+
+    if (key.type == 0) {
+        NCRYPT_PROV_HANDLE provider = 0;
+        const LPCWSTR      named    = key.provider.empty() ? nullptr : key.provider.c_str();
+        if (::NCryptOpenStorageProvider(&provider, named, 0) == ERROR_SUCCESS) {
+            NCRYPT_KEY_HANDLE handle = 0;
+            if (::NCryptOpenKey(provider, &handle, key.container.c_str(), 0,
+                                key.flags & NCRYPT_MACHINE_KEY_FLAG) == ERROR_SUCCESS) {
+                // Deleting the key frees its handle, so there is nothing further to release here.
+                ::NCryptDeleteKey(handle, 0);
+            }
+            ::NCryptFreeObject(provider);
+        }
+        return;
+    }
+
+    HCRYPTPROV    legacy = 0;
+    const LPCWSTR named  = key.provider.empty() ? nullptr : key.provider.c_str();
+    static_cast<void>(::CryptAcquireContextW(&legacy, key.container.c_str(), named, key.type,
+                                             CRYPT_DELETEKEYSET | (key.flags & CRYPT_MACHINE_KEYSET)));
+}
+
+// Reads a PKCS#12 container, finds the certificate whose key came with it, and notes where that key was
+// written so it can be removed again.
 //
-// The key is held in this process and nowhere else: the import's ordinary destination is the key storage
-// of whoever is logged in, so without being told otherwise, presenting a server identity would leave a
-// private key behind on the machine that did it — and on a machine with no such storage the import fails
-// outright.
+// The key has to be written somewhere: the platform runs the server side of a handshake outside this
+// process, and a key kept only in this one cannot reach it. So the import puts it under the account that
+// is running, which needs no special rights, and the connection deletes it on the way out — the removal
+// the platform's own guidance names for a key that is not wanted beyond its use.
 bool presentIdentity(TlsStream::State& state, const TlsServerConfig& presenting) {
     CRYPT_DATA_BLOB container{};
     container.cbData = static_cast<unsigned long>(presenting.identity.size());
     container.pbData = const_cast<BYTE*>(reinterpret_cast<const BYTE*>(presenting.identity.data()));
 
     const std::wstring secret = widen(presenting.password);
-    state.identityStore       = ::PFXImportCertStore(&container, secret.c_str(), PKCS12_NO_PERSIST_KEY);
-    if (state.identityStore == nullptr) return false;
+    state.identityStore = ::PFXImportCertStore(&container, secret.c_str(), CRYPT_USER_KEYSET);
+    if (state.identityStore == nullptr) {
+        std::fprintf(stderr, "retropp net: PFXImportCertStore failed, error %lu\n", ::GetLastError());
+        return false;
+    }
 
     state.identity = ::CertFindCertificateInStore(state.identityStore,
                                                   X509_ASN_ENCODING | PKCS_7_ASN_ENCODING, 0,
                                                   CERT_FIND_HAS_PRIVATE_KEY, nullptr, nullptr);
-    return state.identity != nullptr;
+    if (state.identity == nullptr) {
+        std::fprintf(stderr, "retropp net: no certificate with a key in the container, error %lu\n",
+                     ::GetLastError());
+        return false;
+    }
+
+    unsigned long size = 0;
+    if (::CertGetCertificateContextProperty(state.identity, CERT_KEY_PROV_INFO_PROP_ID, nullptr,
+                                            &size) != FALSE &&
+        size > 0) {
+        std::vector<std::byte> room(size);
+        if (::CertGetCertificateContextProperty(state.identity, CERT_KEY_PROV_INFO_PROP_ID, room.data(),
+                                                &size) != FALSE) {
+            const auto* where = reinterpret_cast<const CRYPT_KEY_PROV_INFO*>(room.data());
+            if (where->pwszContainerName != nullptr) state.key.container = where->pwszContainerName;
+            if (where->pwszProvName != nullptr) state.key.provider = where->pwszProvName;
+            state.key.type  = where->dwProvType;
+            state.key.flags = where->dwFlags;
+        }
+    }
+    return true;
 }
 
 }  // namespace
@@ -364,6 +432,8 @@ TlsStream::State::~State() {
         ::DeleteSecurityContext(&context);
     }
     if (hasCredentials) ::FreeCredentialsHandle(&credentials);
+    // After the credential is released, so the container goes only once its last user has.
+    forgetKey(key);
     if (identity != nullptr) ::CertFreeCertificateContext(identity);
     if (identityStore != nullptr) ::CertCloseStore(identityStore, 0);
 }
