@@ -121,10 +121,11 @@ Then Visual Studio 2022 Build Tools, with the C++ workload, the ClangCL toolset,
 (the SDK is what provides `dxc.exe`, the DXIL shader compiler):
 
 ```powershell
-winget install --id Microsoft.VisualStudio.2022.BuildTools --exact --silent `
-    --accept-source-agreements --accept-package-agreements `
-    --override "--quiet --wait --norestart --nocache --add Microsoft.VisualStudio.Workload.VCTools --add Microsoft.VisualStudio.Component.VC.Tools.x86.x64 --add Microsoft.VisualStudio.Component.VC.Llvm.Clang --add Microsoft.VisualStudio.Component.VC.Llvm.ClangToolset --add Microsoft.VisualStudio.Component.Windows11SDK.22621 --includeRecommended"
+winget install --id Microsoft.VisualStudio.2022.BuildTools --exact --silent --accept-source-agreements --accept-package-agreements --override "--quiet --wait --norestart --nocache --add Microsoft.VisualStudio.Workload.VCTools --add Microsoft.VisualStudio.Component.VC.Tools.x86.x64 --add Microsoft.VisualStudio.Component.VC.Llvm.Clang --add Microsoft.VisualStudio.Component.VC.Llvm.ClangToolset --add Microsoft.VisualStudio.Component.Windows11SDK.22621 --includeRecommended"
 ```
+
+It is one line. On an ARM64 machine, add `--add Microsoft.VisualStudio.Component.VC.Tools.ARM64` inside
+the `--override` string so the native toolset is installed alongside the x64 one.
 
 That single command takes a while and prints nothing while it works. This is normal.
 
@@ -222,13 +223,25 @@ git submodule update --init --recursive
 
 ## Build and verify
 
-The same three commands on every OS:
+On macOS and Linux:
 
 ```sh
 cmake -S . -B build
 cmake --build build --parallel
 ctest --test-dir build --output-on-failure
 ```
+
+On Windows, name the generator, the architecture and the toolset:
+
+```powershell
+cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -T ClangCL
+cmake --build build --config Release --parallel
+ctest --test-dir build -C Release --output-on-failure
+```
+
+Use `-A ARM64` on an ARM64 machine. **`-T ClangCL` is required, not a preference:** SameBoy's Windows
+headers use `#include_next`, which MSVC does not implement, so leaving the toolset unset selects `cl` and
+the build stops with `error C1021: invalid preprocessor command 'include_next'`.
 
 The first configure takes a few minutes — it fetches GoogleTest and configures SDL3. Later builds are
 incremental.
