@@ -4,15 +4,11 @@
 // Client and server are both ours, entirely on loopback, which is what makes the refusal assertable at
 // all: asserting that an untrusted certificate is rejected needs something to present one.
 //
-// Every case registers on every platform. Where a platform's TLS stack has not landed yet the body is
-// replaced by a visible skip naming what lifts it, so the counts stay identical across machines and the
-// gap is legible in CI output rather than absent from it.
+// Every case runs on every platform, against whichever stack that platform's TLS is built on.
 
 #include "src/net/in_process.h"
 #include "src/net/socket.h"
-#if defined(RETROPP_TLS_READY)
 #include "src/net/tls.h"
-#endif
 
 #include <gtest/gtest.h>
 
@@ -30,13 +26,6 @@
 namespace {
 
 using namespace std::chrono_literals;
-
-#if !defined(RETROPP_TLS_READY)
-constexpr const char* kPendingStack =
-    "this platform has no TLS stack yet — SChannel is not implemented";
-#endif
-
-#if defined(RETROPP_TLS_READY)
 
 using retropp::net::acceptStream;
 using retropp::net::certificateExpiry;
@@ -213,12 +202,7 @@ testing::AssertionResult bringUp(std::unique_ptr<Stream> clientCarrier,
     return testing::AssertionSuccess();
 }
 
-#endif  // RETROPP_TLS_READY
-
 TEST(NetTls, HandshakeCompletesOverLoopback) {
-#if !defined(RETROPP_TLS_READY)
-    GTEST_SKIP() << kPendingStack;
-#else
     std::unique_ptr<Stream> clientCarrier;
     std::unique_ptr<Stream> serverCarrier;
     ASSERT_TRUE(socketPair(clientCarrier, serverCarrier));
@@ -229,13 +213,9 @@ TEST(NetTls, HandshakeCompletesOverLoopback) {
     EXPECT_EQ(driveHandshake(ends.client, ends.server), Status::Ok);
     EXPECT_TRUE(ends.client.settled());
     EXPECT_TRUE(ends.server.settled());
-#endif
 }
 
 TEST(NetTls, BytesRoundTripThroughTls) {
-#if !defined(RETROPP_TLS_READY)
-    GTEST_SKIP() << kPendingStack;
-#else
     std::unique_ptr<Stream> clientCarrier;
     std::unique_ptr<Stream> serverCarrier;
     ASSERT_TRUE(socketPair(clientCarrier, serverCarrier));
@@ -249,13 +229,9 @@ TEST(NetTls, BytesRoundTripThroughTls) {
 
     const std::vector<std::byte> got = readExactly(ends.server, sent.size(), sent.size());
     EXPECT_EQ(got, sent);
-#endif
 }
 
 TEST(NetTls, AnUntrustedCertificateIsRefused) {
-#if !defined(RETROPP_TLS_READY)
-    GTEST_SKIP() << kPendingStack;
-#else
     std::unique_ptr<Stream> clientCarrier;
     std::unique_ptr<Stream> serverCarrier;
     ASSERT_TRUE(socketPair(clientCarrier, serverCarrier));
@@ -268,13 +244,9 @@ TEST(NetTls, AnUntrustedCertificateIsRefused) {
     EXPECT_EQ(verdict, Status::Untrusted);
     EXPECT_NE(verdict, Status::Other);  // a refusal, never the catch-all
     EXPECT_FALSE(ends.client.settled());
-#endif
 }
 
 TEST(NetTls, TlsCarriesTheInProcessTransport) {
-#if !defined(RETROPP_TLS_READY)
-    GTEST_SKIP() << kPendingStack;
-#else
     std::unique_ptr<Stream> clientCarrier;
     std::unique_ptr<Stream> serverCarrier;
     ASSERT_TRUE(inProcessPair("tls in process", clientCarrier, serverCarrier));
@@ -289,13 +261,9 @@ TEST(NetTls, TlsCarriesTheInProcessTransport) {
 
     const std::vector<std::byte> got = readExactly(ends.client, sent.size(), sent.size());
     EXPECT_EQ(got, sent);
-#endif
 }
 
 TEST(NetTls, HandshakeResumesAfterWouldBlock) {
-#if !defined(RETROPP_TLS_READY)
-    GTEST_SKIP() << kPendingStack;
-#else
     std::unique_ptr<Stream> clientCarrier;
     std::unique_ptr<Stream> serverCarrier;
     ASSERT_TRUE(socketPair(clientCarrier, serverCarrier));
@@ -312,13 +280,9 @@ TEST(NetTls, HandshakeResumesAfterWouldBlock) {
     // Resuming with both ends driven settles it, from exactly where it stopped.
     EXPECT_EQ(driveHandshake(ends.client, ends.server), Status::Ok);
     EXPECT_TRUE(ends.client.settled());
-#endif
 }
 
 TEST(NetTls, PartialRecordsReassembleThroughTls) {
-#if !defined(RETROPP_TLS_READY)
-    GTEST_SKIP() << kPendingStack;
-#else
     std::unique_ptr<Stream> clientCarrier;
     std::unique_ptr<Stream> serverCarrier;
     ASSERT_TRUE(socketPair(clientCarrier, serverCarrier));
@@ -340,13 +304,9 @@ TEST(NetTls, PartialRecordsReassembleThroughTls) {
 
     const std::vector<std::byte> got = readExactly(ends.server, sent.size(), 100);
     EXPECT_EQ(got, sent);
-#endif
 }
 
 TEST(NetTls, ClosedIsAStableStateThroughTls) {
-#if !defined(RETROPP_TLS_READY)
-    GTEST_SKIP() << kPendingStack;
-#else
     std::unique_ptr<Stream> clientCarrier;
     std::unique_ptr<Stream> serverCarrier;
     ASSERT_TRUE(socketPair(clientCarrier, serverCarrier));
@@ -371,13 +331,9 @@ TEST(NetTls, ClosedIsAStableStateThroughTls) {
     // Asking again reports the same state rather than turning into an error.
     const Transfer second = ends.client.receive(into);
     EXPECT_EQ(second.status, Status::Closed);
-#endif
 }
 
 TEST(NetTls, TheFixtureCertificateHasLifeLeft) {
-#if !defined(RETROPP_TLS_READY)
-    GTEST_SKIP() << kPendingStack;
-#else
     const std::vector<std::byte> pinned = readFixture("loopback-cert.der");
     ASSERT_FALSE(pinned.empty());
 
@@ -393,7 +349,6 @@ TEST(NetTls, TheFixtureCertificateHasLifeLeft) {
     constexpr std::int64_t kOneYear = 365LL * 24 * 60 * 60;
     EXPECT_GT(expires, now + kOneYear)
         << "the TLS test certificate expires within a year — regenerate tests/fixtures/tls/";
-#endif
 }
 
 }  // namespace

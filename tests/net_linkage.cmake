@@ -13,71 +13,42 @@
 # a fragment both binaries must carry, so one whose output lacks it was never read successfully and the
 # script says so rather than reporting an absence it did not observe.
 #
-# Two instruments, because a binary's evidence is not kept the same way everywhere:
+# The evidence is the image's own printable content, on every platform and with no tool to locate. It
+# answers both halves of the claim at once: a symbol name from retropp::net is in there as text, and so
+# is the name of every OS library the image records a dependency on — which is the cost that matters,
+# since a library nothing calls is still opened at every start when the link line recorded it. A symbol
+# reader sees only the first half, and a Release PE keeps no symbol table for one to find. Matching is
+# case-folded, since a library name's case belongs to whoever wrote the import.
 #
-#   strings   the image's own printable content, and what every platform is read with. It answers both
-#             halves of the claim at once: a symbol name from retropp::net is in there as text, and so is
-#             the name of every OS library the image records a dependency on — which is the cost that
-#             matters, since a library nothing calls is still opened at every start when the link line
-#             recorded it. A Release PE keeps no symbol table for any reader to find, and its import
-#             table is the only place the claim survives. Matching is case-folded, since a library name's
-#             case belongs to whoever wrote the import.
-#
-#   tool      a symbol reader over the linked binary, such as nm. SYMBOL is a function name, which reads
-#             the same through any mangling. It sees symbols only, so it cannot answer what a binary
-#             merely depends on.
-#
-# Run as: cmake -DINSTRUMENT=tool|strings -DSYMBOL=<text> -DPROBE=<text>
-#              -DREFERENCING=<binary> -DCONTROL=<binary> [-DTOOL=<symbol reader>]
+# Run as: cmake -DSYMBOL=<text> -DPROBE=<text> -DREFERENCING=<binary> -DCONTROL=<binary>
 #              -P tests/net_linkage.cmake
 
 cmake_minimum_required(VERSION 3.28)
 
-foreach(_required INSTRUMENT SYMBOL PROBE REFERENCING CONTROL)
+foreach(_required SYMBOL PROBE REFERENCING CONTROL)
     if(NOT DEFINED ${_required} OR "${${_required}}" STREQUAL "")
         message(FATAL_ERROR "net_linkage.cmake: -D${_required}=<value> is required")
     endif()
 endforeach()
 
-if(NOT INSTRUMENT MATCHES "^(tool|strings)$")
-    message(FATAL_ERROR "net_linkage.cmake: -DINSTRUMENT must be tool or strings, not '${INSTRUMENT}'")
-endif()
-if(INSTRUMENT STREQUAL "tool" AND (NOT DEFINED TOOL OR "${TOOL}" STREQUAL ""))
-    message(FATAL_ERROR "net_linkage.cmake: -DINSTRUMENT=tool also needs -DTOOL=<symbol reader>")
-endif()
-
-# Reads one binary's evidence and says where it came from.
+# Reads one binary's evidence.
 function(retropp_net_read _binary _label _out_text)
     if(NOT EXISTS "${_binary}")
         message(FATAL_ERROR "net_linkage.cmake: the ${_label} binary is missing: ${_binary}")
     endif()
 
-    if(INSTRUMENT STREQUAL "tool")
-        execute_process(COMMAND "${TOOL}" "${_binary}"
-                        OUTPUT_VARIABLE _text
-                        ERROR_VARIABLE  _tool_error
-                        RESULT_VARIABLE _tool_status)
-        if(NOT _tool_status EQUAL 0)
-            message(FATAL_ERROR
-                "net_linkage.cmake: ${TOOL} failed on the ${_label} binary ${_binary} "
-                "(status ${_tool_status}).\n  ${_tool_error}")
-        endif()
-        set(_source "${TOOL}")
-    else()
-        file(STRINGS "${_binary}" _found LENGTH_MINIMUM 4)
-        string(REPLACE ";" "\n" _text "${_found}")
-        string(TOLOWER "${_text}" _text)
-        set(_source "the image's own strings")
-    endif()
+    file(STRINGS "${_binary}" _found LENGTH_MINIMUM 4)
+    string(REPLACE ";" "\n" _text "${_found}")
+    string(TOLOWER "${_text}" _text)
 
     if(NOT _text MATCHES "${PROBE}")
         message(FATAL_ERROR
-            "net_linkage.cmake: ${_source} read the ${_label} binary ${_binary} but its content carries "
-            "no '${PROBE}', so it is not reporting this build. The measurement was not made — an absent "
+            "net_linkage.cmake: the ${_label} binary ${_binary} was read but its content carries no "
+            "'${PROBE}', so it is not reporting this build. The measurement was not made — an absent "
             "symbol here would prove nothing.")
     endif()
 
-    message(STATUS "net linkage: read the ${_label} binary from ${_source}")
+    message(STATUS "net linkage: read the ${_label} binary from the image's own strings")
     set(${_out_text} "${_text}" PARENT_SCOPE)
 endfunction()
 

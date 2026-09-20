@@ -1245,12 +1245,14 @@ else()
     set(_retropp_net_sources src/net/socket_posix.cpp src/net/in_process.cpp)
 endif()
 # TLS layers over the socket seam rather than replacing it, so its per-platform file joins the same
-# archive. A platform whose stack has not landed yet simply contributes no TLS translation unit, and the
-# cases that would exercise it register and skip visibly.
+# archive. Every platform has a stack, and exactly one of these compiles.
 if(APPLE)
     list(APPEND _retropp_net_sources src/net/tls_securetransport.cpp)
     set(RETROPP_TLS_STACK "SecureTransport")
-elseif(NOT WIN32)
+elseif(WIN32)
+    list(APPEND _retropp_net_sources src/net/tls_schannel.cpp)
+    set(RETROPP_TLS_STACK "SChannel")
+else()
     # The system's own OpenSSL, which every desktop Linux already carries — a declared dependency for a
     # game that opts into the transport rather than a free one. Required rather than optional on purpose:
     # a platform whose TLS quietly did not build would take its cases with it, and a measurement that can
@@ -1274,7 +1276,12 @@ if(APPLE)
     # consumer, so -dead_strip_dylibs up in the link-options block is what keeps an uninterested binary
     # from recording a dependency on it; net_linkage_no_transport_symbols measures that it works.
     target_link_libraries(retropp-net PRIVATE "-framework Security" "-framework CoreFoundation")
-elseif(NOT WIN32)
+elseif(WIN32)
+    # The OS's own TLS and its certificate handling, both through import libraries — so the same property
+    # the socket library has holds here without a link flag to arrange it, and a binary that calls neither
+    # imports neither.
+    target_link_libraries(retropp-net PRIVATE secur32 crypt32)
+else()
     # The same arrangement in this platform's idiom: the libraries reach every consumer's link line, and
     # --as-needed up in the link-options block is what keeps an uninterested binary from recording
     # either one.
@@ -1610,14 +1617,9 @@ if(RETROPP_BUILD_TESTS)
     target_compile_definitions(retroppengine-tests PRIVATE
         RETROPP_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
         RETROPP_ASSETS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/examples/assets")
-    # The TLS cases register on every platform and skip visibly where the stack is not built yet, so the
-    # counts stay identical across machines. Each platform's stack landing is one line here.
-    if(RETROPP_TLS_STACK)
-        target_compile_definitions(retroppengine-tests PRIVATE RETROPP_TLS_READY)
-        message(STATUS "TLS stack: ${RETROPP_TLS_STACK}")
-    else()
-        message(STATUS "TLS stack: none built for this platform — the TLS cases will skip")
-    endif()
+    # Which stack the TLS cases exercise here, named in the configure log so a job says what it ran
+    # against rather than only that it passed.
+    message(STATUS "TLS stack: ${RETROPP_TLS_STACK}")
     # Link the NAMESPACED aliases exactly as a mode-3 consumer would. This test
     # executable IS the in-tree consumer fixture for the link surface: it proves
     # both retropp::engine and retropp::testkit resolve as aliases and link cleanly.
@@ -1671,57 +1673,32 @@ if(RETROPP_BUILD_TESTS)
     target_link_libraries(net_linkage_control PRIVATE retropp::engine)
     retropp_set_warnings(net_linkage_control)
 
-    # The evidence that answers whether the transport reached a binary, chosen per platform because the
-    # two platforms keep different evidence. Resolved at configure time — a measurement this unit exists
-    # to make is never answered with a skip.
-    set(_retropp_net_instrument "")
+    # What a binary records about the transport is read out of the image's own strings, on every
+    # platform. The cost of an OS library a binary never calls is a recorded dependency — a load command,
+    # a DT_NEEDED entry, an import table entry — and none of those is a symbol, so the library's name is
+    # the claim and a symbol reader would pass while the cost stayed. Which names to look for differs,
+    # and the probe that proves the read happened with them. Resolved at configure time — a measurement
+    # this unit exists to make is never answered with a skip.
     if(MSVC)
-        # A Release PE keeps no symbol table, so no symbol reader can answer here: nm, llvm-nm and
-        # dumpbin all report an empty executable, and a clang-cl toolchain's own directory holds no
-        # dumpbin to find. The import table survives, and an imported library's name sits in it as plain
-        # ASCII — so the claim is read straight out of the image with no tool to locate and nothing a
-        # Release build strips. It is also the stronger claim: the socket library IS the dependency the
-        # separate archive exists to keep out of a game that does not network. kernel32 is in every PE,
-        # which is what proves the read happened.
-        set(_retropp_net_instrument
-            -DINSTRUMENT=strings
-            -DSYMBOL=ws2_32.dll
-            -DPROBE=kernel32.dll)
+        # The seam's own symbols are not among the needles here: a Release PE keeps no symbol table, so
+        # the imported libraries are the whole of what the image says. kernel32 is in every PE, which is
+        # what proves the read happened.
+        set(_retropp_net_symbols "ws2_32.dll,secur32.dll")
+        set(_retropp_net_probe kernel32.dll)
     elseif(APPLE)
-        # The image's own strings here too, for a reason worth stating: what an unused OS library costs on
-        # this platform is a recorded load command, not an undefined symbol. A framework a binary never
-        # calls still gets mapped at every start if its path is in the image — so the path IS the claim,
-        # and asserting on a symbol instead would pass while the cost stayed. Reading the image covers
-        # both needles at once, since a Mach-O keeps its symbol names as text as well.
-        set(_retropp_net_symbols "connectstream")
-        if(RETROPP_TLS_STACK)
-            set(_retropp_net_symbols "${_retropp_net_symbols},security.framework")
-        endif()
-        set(_retropp_net_instrument
-            -DINSTRUMENT=strings
-            -DSYMBOL=${_retropp_net_symbols}
-            -DPROBE=retropp)
+        set(_retropp_net_symbols "connectstream,security.framework")
+        set(_retropp_net_probe retropp)
     else()
-        # The image's own strings, for the reason Apple reads them: what an unused shared library costs
-        # here is a recorded DT_NEEDED entry, not an undefined symbol. A library a binary never calls is
-        # still opened at every start if its name is in the image — so the name IS the claim, and
-        # asserting on a symbol instead would pass while the cost stayed. One read covers both needles,
-        # since an ELF executable keeps its symbol names as text as well.
-        set(_retropp_net_symbols "connectstream")
-        if(RETROPP_TLS_STACK)
-            set(_retropp_net_symbols "${_retropp_net_symbols},libssl")
-        endif()
-        set(_retropp_net_instrument
-            -DINSTRUMENT=strings
-            -DSYMBOL=${_retropp_net_symbols}
-            -DPROBE=retropp)
+        set(_retropp_net_symbols "connectstream,libssl")
+        set(_retropp_net_probe retropp)
     endif()
 
     add_test(NAME net_linkage_no_transport_symbols
              COMMAND ${CMAKE_COMMAND}
                      -DREFERENCING=$<TARGET_FILE:retroppengine-tests>
                      -DCONTROL=$<TARGET_FILE:net_linkage_control>
-                     ${_retropp_net_instrument}
+                     -DSYMBOL=${_retropp_net_symbols}
+                     -DPROBE=${_retropp_net_probe}
                      -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/net_linkage.cmake)
 endif()
 
