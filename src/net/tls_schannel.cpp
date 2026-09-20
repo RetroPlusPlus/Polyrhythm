@@ -37,13 +37,14 @@
 #endif
 
 #include <windows.h>
-// wincrypt.h declares the certificate types schannel.h names, and security.h the string type its
-// credential structure carries; both must precede it.
+// schannel.h names types it does not declare: its credential structures carry certificate types from
+// wincrypt.h and a counted string type from ntsecapi.h, so both must precede it.
 #include <wincrypt.h>
 
-#include <security.h>
+#include <ntsecapi.h>
 
 #include <schannel.h>
+#include <security.h>
 
 #include <algorithm>
 #include <array>
