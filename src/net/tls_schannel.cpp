@@ -51,7 +51,6 @@
 
 #include <algorithm>
 #include <array>
-#include <cstdio>
 #include <cstring>
 #include <utility>
 
@@ -319,11 +318,7 @@ Status acquire(TlsStream::State& state, unsigned long use) {
     const SECURITY_STATUS rc =
         ::AcquireCredentialsHandleA(nullptr, const_cast<SEC_CHAR*>(UNISP_NAME_A), use, nullptr,
                                     &credentials, nullptr, nullptr, &state.credentials, &expiry);
-    if (rc != SEC_E_OK) {
-        std::fprintf(stderr, "retropp net: AcquireCredentialsHandle failed, status 0x%08lx\n",
-                     static_cast<unsigned long>(rc));
-        return Status::Other;
-    }
+    if (rc != SEC_E_OK) return Status::Other;
 
     state.hasCredentials = true;
     return Status::Ok;
@@ -376,19 +371,12 @@ bool presentIdentity(TlsStream::State& state, const TlsServerConfig& presenting)
 
     const std::wstring secret = widen(presenting.password);
     state.identityStore = ::PFXImportCertStore(&container, secret.c_str(), CRYPT_USER_KEYSET);
-    if (state.identityStore == nullptr) {
-        std::fprintf(stderr, "retropp net: PFXImportCertStore failed, error %lu\n", ::GetLastError());
-        return false;
-    }
+    if (state.identityStore == nullptr) return false;
 
     state.identity = ::CertFindCertificateInStore(state.identityStore,
                                                   X509_ASN_ENCODING | PKCS_7_ASN_ENCODING, 0,
                                                   CERT_FIND_HAS_PRIVATE_KEY, nullptr, nullptr);
-    if (state.identity == nullptr) {
-        std::fprintf(stderr, "retropp net: no certificate with a key in the container, error %lu\n",
-                     ::GetLastError());
-        return false;
-    }
+    if (state.identity == nullptr) return false;
 
     unsigned long size = 0;
     if (::CertGetCertificateContextProperty(state.identity, CERT_KEY_PROV_INFO_PROP_ID, nullptr,
