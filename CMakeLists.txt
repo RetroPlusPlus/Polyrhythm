@@ -90,19 +90,9 @@ if(MSVC)
     add_link_options(/OPT:REF /OPT:ICF)       # drop unreferenced; fold identical
 elseif(APPLE)
     add_link_options(-Wl,-dead_strip)
-    # And the same for dynamic libraries: a framework on a link line is recorded as a load command even
-    # when nothing calls into it, which makes the dynamic loader map it at every start. This drops the
-    # ones a binary never reaches — the OS TLS library being the one that matters, since a game that does
-    # not network must not carry it. net_linkage_no_transport_symbols measures that it worked.
-    add_link_options(-Wl,-dead_strip_dylibs)
 elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     add_compile_options(-ffunction-sections -fdata-sections)
     add_link_options(-Wl,--gc-sections)
-    # And the same for shared libraries: one named on a link line is recorded as a DT_NEEDED entry even
-    # when nothing calls into it, which makes the dynamic loader open it at every start. This drops the
-    # ones a binary never reaches — the OS TLS library being the one that matters, since a game that does
-    # not network must not carry it. net_linkage_no_transport_symbols measures that it worked.
-    add_link_options(-Wl,--as-needed)
 endif()
 
 # ── Warning flags (clean-warnings bar from day one) ────────────────────────────
@@ -1229,65 +1219,6 @@ add_custom_target(retropp-shaders DEPENDS ${_retropp_shader_headers})
 # The platform layer (SdlPlatform) is compiled on every platform so its live SDL_GPU
 # usage cannot silently rot; the live device is exercised by the window demo, never
 # in CI (CI runs the headless suites against MockPlatform).
-# ── The transport ────────────────────────────────────────────────────────────────
-# Its own static library, linked PRIVATE into the engine below. An archive member reaches a link only to
-# satisfy an undefined symbol, so a game that names nothing under retropp::net carries no socket — and
-# that holds with no build flag for a consumer to set and no option for one to forget.
-#
-# Deliberately NOT anchored: retropp_anchor_registry exists to defeat archive pruning for the
-# registries, and here pruning is the property. net_linkage_no_transport_symbols measures it.
-#
-# Exactly one socket implementation compiles. Both files also guard their own bodies, so the archive is
-# well-formed whichever way a consumer's build reaches it.
-if(WIN32)
-    set(_retropp_net_sources src/net/socket_win32.cpp src/net/in_process.cpp)
-else()
-    set(_retropp_net_sources src/net/socket_posix.cpp src/net/in_process.cpp)
-endif()
-# TLS layers over the socket seam rather than replacing it, so its per-platform file joins the same
-# archive. Every platform has a stack, and exactly one of these compiles.
-if(APPLE)
-    list(APPEND _retropp_net_sources src/net/tls_securetransport.cpp)
-    set(RETROPP_TLS_STACK "SecureTransport")
-elseif(WIN32)
-    list(APPEND _retropp_net_sources src/net/tls_schannel.cpp)
-    set(RETROPP_TLS_STACK "SChannel")
-else()
-    # The system's own OpenSSL, which every desktop Linux already carries — a declared dependency for a
-    # game that opts into the transport rather than a free one. Required rather than optional on purpose:
-    # a platform whose TLS quietly did not build would take its cases with it, and a measurement that can
-    # be absent measures nothing.
-    find_package(OpenSSL REQUIRED)
-    list(APPEND _retropp_net_sources src/net/tls_openssl.cpp)
-    set(RETROPP_TLS_STACK "OpenSSL ${OPENSSL_VERSION}")
-endif()
-add_library(retropp-net STATIC ${_retropp_net_sources})
-target_compile_features(retropp-net PUBLIC cxx_std_20)
-target_include_directories(retropp-net PRIVATE
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>)
-retropp_set_warnings(retropp-net)
-if(WIN32)
-    # An import library: it contributes to a binary's import table only when a symbol is used, so a
-    # consumer that links the archive and calls nothing in it pays nothing for this either.
-    target_link_libraries(retropp-net PRIVATE ws2_32)
-endif()
-if(APPLE)
-    # The OS's own TLS, dynamically linked. A framework on this archive's link line reaches every
-    # consumer, so -dead_strip_dylibs up in the link-options block is what keeps an uninterested binary
-    # from recording a dependency on it; net_linkage_no_transport_symbols measures that it works.
-    target_link_libraries(retropp-net PRIVATE "-framework Security" "-framework CoreFoundation")
-elseif(WIN32)
-    # The OS's own TLS, its certificate handling, and the two key stores a server identity's key is
-    # removed from — all through import libraries, so the same property the socket library has holds here
-    # without a link flag to arrange it, and a binary that calls none of them imports none of them.
-    target_link_libraries(retropp-net PRIVATE secur32 crypt32 ncrypt advapi32)
-else()
-    # The same arrangement in this platform's idiom: the libraries reach every consumer's link line, and
-    # --as-needed up in the link-options block is what keeps an uninterested binary from recording
-    # either one.
-    target_link_libraries(retropp-net PRIVATE OpenSSL::SSL OpenSSL::Crypto)
-endif()
-
 add_library(retroppengine STATIC
     src/version.cpp
     src/clock.cpp
@@ -1373,10 +1304,6 @@ target_link_libraries(retroppengine PRIVATE retropp-lodepng)
 # PRIVATE: the audio-pack backend's WAV/OGG decoders back src/audio/pcm_decode.cpp; no public header
 # exposes a decoder symbol, so consumers link them transitively but never see them.
 target_link_libraries(retroppengine PRIVATE retropp-audiodecode)
-# PRIVATE: the transport is an implementation detail the engine's own networking layers sit on; no
-# public header exposes a retropp::net symbol. The archive rides every consumer's link line and
-# contributes nothing to a binary that names none of it.
-target_link_libraries(retroppengine PRIVATE retropp-net)
 # PRIVATE: SameBoy is the VM backend's emulation core; the internal src/vm/ wrapper is
 # the only engine code that touches it. No public header exposes a GB_* symbol, so it stays an
 # implementation detail consumers link transitively but never see.
@@ -1545,8 +1472,6 @@ if(RETROPP_BUILD_TESTS)
         tests/guest_frame_content_test.cpp
         tests/guest_input_test.cpp
         tests/vm_save_data_test.cpp
-        tests/net_socket_test.cpp
-        tests/net_tls_test.cpp
         tests/vm_frame_sink_test.cpp
         tests/guest_nesting_test.cpp
         tests/sameboy_nesting_test.cpp
@@ -1617,9 +1542,6 @@ if(RETROPP_BUILD_TESTS)
     target_compile_definitions(retroppengine-tests PRIVATE
         RETROPP_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
         RETROPP_ASSETS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/examples/assets")
-    # Which stack the TLS cases exercise here, named in the configure log so a job says what it ran
-    # against rather than only that it passed.
-    message(STATUS "TLS stack: ${RETROPP_TLS_STACK}")
     # Link the NAMESPACED aliases exactly as a mode-3 consumer would. This test
     # executable IS the in-tree consumer fixture for the link surface: it proves
     # both retropp::engine and retropp::testkit resolve as aliases and link cleanly.
@@ -1661,45 +1583,6 @@ if(RETROPP_BUILD_TESTS)
              COMMAND ${CMAKE_COMMAND}
                      -DSHADER_ROOT=${CMAKE_CURRENT_SOURCE_DIR}/shaders
                      -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/shader_lint.cmake)
-
-    # ── The transport's linkage measurement (device-free, every platform) ────────────
-    # The transport is its own static library, so a game that never names it links no socket. That is a
-    # property of the link, and this measures it: net_linkage_control names only the platform's version
-    # string, retroppengine-tests names the seam, and the transport's symbols must be in the second and
-    # absent from the first. A control in the tests block rather than an example, because the examples
-    # are behind an option and a control that can silently not exist measures nothing.
-    add_executable(net_linkage_control tests/net_linkage_control.cpp)
-    target_compile_features(net_linkage_control PRIVATE cxx_std_20)
-    target_link_libraries(net_linkage_control PRIVATE retropp::engine)
-    retropp_set_warnings(net_linkage_control)
-
-    # What a binary records about the transport is read out of the image's own strings, on every
-    # platform. The cost of an OS library a binary never calls is a recorded dependency — a load command,
-    # a DT_NEEDED entry, an import table entry — and none of those is a symbol, so the library's name is
-    # the claim and a symbol reader would pass while the cost stayed. Which names to look for differs,
-    # and the probe that proves the read happened with them. Resolved at configure time — a measurement
-    # this unit exists to make is never answered with a skip.
-    if(MSVC)
-        # The seam's own symbols are not among the needles here: a Release PE keeps no symbol table, so
-        # the imported libraries are the whole of what the image says. kernel32 is in every PE, which is
-        # what proves the read happened.
-        set(_retropp_net_symbols "ws2_32.dll,secur32.dll")
-        set(_retropp_net_probe kernel32.dll)
-    elseif(APPLE)
-        set(_retropp_net_symbols "connectstream,security.framework")
-        set(_retropp_net_probe retropp)
-    else()
-        set(_retropp_net_symbols "connectstream,libssl")
-        set(_retropp_net_probe retropp)
-    endif()
-
-    add_test(NAME net_linkage_no_transport_symbols
-             COMMAND ${CMAKE_COMMAND}
-                     -DREFERENCING=$<TARGET_FILE:retroppengine-tests>
-                     -DCONTROL=$<TARGET_FILE:net_linkage_control>
-                     -DSYMBOL=${_retropp_net_symbols}
-                     -DPROBE=${_retropp_net_probe}
-                     -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/net_linkage.cmake)
 endif()
 
 # ── Runnable example hosts (mode 1 only by default) ──────────────────────────────
