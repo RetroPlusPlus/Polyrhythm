@@ -243,6 +243,20 @@ else()
     target_compile_options(retropp-sameboy PRIVATE -w)
 endif()
 
+# ── Snaggletooth (vendored submodule — the SNES VM backend's core + assemblers) ──
+# Snaggletooth's SNES machine and its two assemblers. MIT, C++20 stdlib only, no
+# external dependencies. Added EXCLUDE_FROM_ALL so only the targets something links
+# are built — a binary that names no SNES core builds none of it — and SYSTEM so its
+# headers are not held to the engine's warning bar (the SameBoy and SDL precedent).
+# The tool libraries are on so the 65816 and SPC700 assemblers exist as targets for
+# test fixtures and examples to author cartridges from source; the test suite and the
+# player stay off, the parent build running its own. The build type and the link-time
+# dead-strip the engine sets reach it through the ordinary subdirectory inheritance.
+set(SNAGGLETOOTH_BUILD_TOOLS  ON  CACHE BOOL "" FORCE)
+set(SNAGGLETOOTH_BUILD_TESTS  OFF CACHE BOOL "" FORCE)
+set(SNAGGLETOOTH_BUILD_PLAYER OFF CACHE BOOL "" FORCE)
+add_subdirectory(third_party/snaggletooth EXCLUDE_FROM_ALL SYSTEM)
+
 # ── Build-time shader generation (per-platform native toolchain) ──────────────
 # Every build compiles shaders/src/*.hlsl to the ONE format this platform's SDL_GPU
 # backend runs, using the platform's native tools — nothing is cross-built and no
@@ -1545,6 +1559,7 @@ if(RETROPP_BUILD_TESTS)
         tests/guest_frame_content_test.cpp
         tests/guest_input_test.cpp
         tests/vm_save_data_test.cpp
+        tests/snaggletooth_link_test.cpp
         tests/net_socket_test.cpp
         tests/net_tls_test.cpp
         tests/vm_frame_sink_test.cpp
@@ -1623,10 +1638,16 @@ if(RETROPP_BUILD_TESTS)
     # Link the NAMESPACED aliases exactly as a mode-3 consumer would. This test
     # executable IS the in-tree consumer fixture for the link surface: it proves
     # both retropp::engine and retropp::testkit resolve as aliases and link cleanly.
+    # The two Snaggletooth assemblers, for snaggletooth_link_test: it authors a
+    # cartridge from 65816 source, runs it on a snaggletooth::Snes, and assembles a
+    # line of SPC700. Both reach the core and the shared assembler through their own
+    # PUBLIC links, so naming them here is the whole of what the suite needs.
     target_link_libraries(retroppengine-tests PRIVATE
         retropp::engine
         retropp::testkit
         retropp-registry-linkage-fixture
+        snaggletooth_cpu65816
+        snaggletooth_spc700
         GTest::gtest_main)
     # custom_stage_test drives the probe shader's generated packer DIRECTLY (device-free) — it has no
     # registerPostProcessStage(...) call for the scan to discover — so its shader is declared explicitly
