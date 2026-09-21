@@ -71,6 +71,8 @@ namespace retropp {
 
 namespace vm {
 struct VmTestAccess;  // src/vm/vm_testing.h — the internal deterministic seam for device-free tests
+class VmBackend;  // src/vm/vm_backend.h — the seam a core implements
+struct VmCoreAccess;  // src/vm/vm_core_access.h — builds a Vm from a resolved core
 }  // namespace vm
 
 // The target system whose VM backend runs the routine. Each enumerator selects a per-system backend;
@@ -98,6 +100,30 @@ enum class VMPlatform { GameBoy, GameBoyColor, Snes, Nes, Genesis, MasterSystem 
     }
     return Isa::Sm83;
 }
+
+namespace detail {
+
+// How a machine's core is built. A Vm constructor resolves the core for its platform where the game
+// writes the constructor, so a game's binary carries the cores it names.
+using CoreFactory = std::unique_ptr<vm::VmBackend> (*)(VMPlatform);
+
+std::unique_ptr<vm::VmBackend> gameBoyCore(VMPlatform platform);  // src/vm/gameboy/sameboy_backend.cpp
+
+[[nodiscard]] inline CoreFactory coreFor(VMPlatform platform) noexcept {
+    switch (platform) {
+        case VMPlatform::GameBoy:
+        case VMPlatform::GameBoyColor:
+            return &gameBoyCore;
+        case VMPlatform::Snes:
+        case VMPlatform::Nes:
+        case VMPlatform::Genesis:
+        case VMPlatform::MasterSystem:
+            break;
+    }
+    return nullptr;  // no core is built for this platform; constructing the Vm throws std::runtime_error
+}
+
+}  // namespace detail
 
 // How a routine is paced. HostSpeed runs the routine as fast as the host allows — the form for a
 // routine you CALL for a return value (RNG). HardwareSpeed throttles to the CPU clock for a real-time
@@ -349,7 +375,8 @@ struct VmConfig {
 
 class Vm {
 public:
-    explicit Vm(VMPlatform platform, TimingProfile timing = TimingProfile::GameBoyColor);
+    explicit Vm(VMPlatform platform, TimingProfile timing = TimingProfile::GameBoyColor)
+        : Vm(detail::coreFor(platform), platform, timing, VmConfig{}) {}
 
     // The same, with what the machine is and produces declared up front:
     //
@@ -360,8 +387,10 @@ public:
     //
     // Throws std::invalid_argument for a key that is more than one path component (a separator, "."
     // or ".."), and std::logic_error for a keyed machine on a platform whose core keeps nothing.
-    Vm(VMPlatform platform, VmConfig config);
-    Vm(VMPlatform platform, TimingProfile timing, VmConfig config);
+    Vm(VMPlatform platform, VmConfig config)
+        : Vm(detail::coreFor(platform), platform, TimingProfile::GameBoyColor, std::move(config)) {}
+    Vm(VMPlatform platform, TimingProfile timing, VmConfig config)
+        : Vm(detail::coreFor(platform), platform, timing, std::move(config)) {}
 
     ~Vm();
 
@@ -809,9 +838,12 @@ public:
     [[nodiscard]] std::vector<std::uint8_t> assemble(std::string_view source);
 
 private:
+    Vm(detail::CoreFactory core, VMPlatform platform, TimingProfile timing, VmConfig config);
+
     template <typename Sig>
     friend class Routine;
     friend struct vm::VmTestAccess;  // the deterministic seam device-free tests step the run through
+    friend struct vm::VmCoreAccess;
     friend class EscapeRef;    // the two escape views below reach the declared table through
     friend class EscapeTable;  // the private by-key core, so it is not public surface
     friend class WatchRef;     // and the two watch views, through their own
@@ -870,16 +902,17 @@ private:
 // platform + timing pre-bound. No new state — construction is the only thing they fix.
 class Vm::GB : public Vm {
 public:
-    GB() : Vm(VMPlatform::GameBoy, TimingProfile::GameBoy) {}
+    GB() : Vm(&detail::gameBoyCore, VMPlatform::GameBoy, TimingProfile::GameBoy, VmConfig{}) {}
     explicit GB(VmConfig config)
-        : Vm(VMPlatform::GameBoy, TimingProfile::GameBoy, std::move(config)) {}
+        : Vm(&detail::gameBoyCore, VMPlatform::GameBoy, TimingProfile::GameBoy, std::move(config)) {}
 };
 
 class Vm::GBC : public Vm {
 public:
-    GBC() : Vm(VMPlatform::GameBoyColor, TimingProfile::GameBoyColor) {}
+    GBC() : Vm(&detail::gameBoyCore, VMPlatform::GameBoyColor, TimingProfile::GameBoyColor, VmConfig{}) {}
     explicit GBC(VmConfig config)
-        : Vm(VMPlatform::GameBoyColor, TimingProfile::GameBoyColor, std::move(config)) {}
+        : Vm(&detail::gameBoyCore, VMPlatform::GameBoyColor, TimingProfile::GameBoyColor,
+             std::move(config)) {}
 };
 
 // ── Template definitions ──────────────────────────────────────────────────────────────────────

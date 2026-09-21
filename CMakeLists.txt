@@ -1721,6 +1721,56 @@ if(RETROPP_BUILD_TESTS)
                      -DSYMBOL=${_retropp_net_symbols}
                      -DPROBE=${_retropp_net_probe}
                      -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/net_linkage.cmake)
+
+    # ── The cores' linkage measurement (device-free, every platform) ─────────────────
+    # A Vm constructor resolves its platform's core where the game writes it, so a binary carries the
+    # cores its own code names and no other. Three controls, built and read, never run: a pre-bound Game
+    # Boy Color machine, the same machine from its platform value, and a machine for a platform with no
+    # core. The needle is a literal only the Game Boy core holds; the probe is the transport guard's.
+    add_executable(vm_linkage_prebound_gameboy tests/vm_linkage_prebound_gameboy.cpp)
+    target_compile_features(vm_linkage_prebound_gameboy PRIVATE cxx_std_20)
+    target_link_libraries(vm_linkage_prebound_gameboy PRIVATE retropp::engine)
+    retropp_set_warnings(vm_linkage_prebound_gameboy)
+
+    add_executable(vm_linkage_raw_gameboy tests/vm_linkage_raw_gameboy.cpp)
+    target_compile_features(vm_linkage_raw_gameboy PRIVATE cxx_std_20)
+    target_link_libraries(vm_linkage_raw_gameboy PRIVATE retropp::engine)
+    retropp_set_warnings(vm_linkage_raw_gameboy)
+
+    add_executable(vm_linkage_unbuilt_platform tests/vm_linkage_unbuilt_platform.cpp)
+    target_compile_features(vm_linkage_unbuilt_platform PRIVATE cxx_std_20)
+    target_link_libraries(vm_linkage_unbuilt_platform PRIVATE retropp::engine)
+    retropp_set_warnings(vm_linkage_unbuilt_platform)
+
+    set(_retropp_vm_gameboy_needle "game boy routine arena exhausted")
+
+    add_test(NAME vm_linkage_prebound_carries_its_core
+             COMMAND ${CMAKE_COMMAND}
+                     -DREFERENCING=$<TARGET_FILE:vm_linkage_prebound_gameboy>
+                     -DCONTROL=$<TARGET_FILE:net_linkage_control>
+                     "-DNEEDLE=${_retropp_vm_gameboy_needle}"
+                     -DPROBE=${_retropp_net_probe}
+                     -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/vm_linkage.cmake)
+
+    add_test(NAME vm_linkage_raw_form_carries_its_core
+             COMMAND ${CMAKE_COMMAND}
+                     -DREFERENCING=$<TARGET_FILE:vm_linkage_raw_gameboy>
+                     -DCONTROL=$<TARGET_FILE:net_linkage_control>
+                     "-DNEEDLE=${_retropp_vm_gameboy_needle}"
+                     -DPROBE=${_retropp_net_probe}
+                     -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/vm_linkage.cmake)
+
+    add_test(NAME vm_linkage_unbuilt_platform_carries_no_core
+             COMMAND ${CMAKE_COMMAND}
+                     -DREFERENCING=$<TARGET_FILE:vm_linkage_raw_gameboy>
+                     -DCONTROL=$<TARGET_FILE:vm_linkage_unbuilt_platform>
+                     "-DNEEDLE=${_retropp_vm_gameboy_needle}"
+                     -DPROBE=${_retropp_net_probe}
+                     -DCONFIG=$<CONFIG>
+                     -DFOLDED_CONTROL=ON
+                     -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/vm_linkage.cmake)
+    set_tests_properties(vm_linkage_unbuilt_platform_carries_no_core
+                         PROPERTIES SKIP_REGULAR_EXPRESSION "vm linkage SKIPPED")
 endif()
 
 # ── Runnable example hosts (mode 1 only by default) ──────────────────────────────

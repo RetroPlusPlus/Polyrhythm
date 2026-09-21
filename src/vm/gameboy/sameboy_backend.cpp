@@ -18,6 +18,7 @@
 #include <vector>
 
 #include "retropp/gb.h"  // gb::Reg — the SM83 register-id authority (the generic layer stays neutral)
+#include "retropp/vm.h"
 #include "src/vm/gameboy/gb_symbols.h"      // gbHardwareSymbols() — shared with the compile-time bake
 #include "src/vm/gameboy/sm83_assembler.h"
 
@@ -1016,3 +1017,14 @@ bool SameBoyBackend::takeSaveDataChanged() {
 }
 
 }  // namespace retropp::vm
+
+namespace retropp::detail {
+
+// The Game Boy family's core; the model follows the platform.
+std::unique_ptr<vm::VmBackend> gameBoyCore(VMPlatform platform) {
+    return std::make_unique<vm::SameBoyBackend>(platform == VMPlatform::GameBoy
+                                                    ? vm::ConsoleModel::GameBoy
+                                                    : vm::ConsoleModel::GameBoyColor);
+}
+
+}  // namespace retropp::detail

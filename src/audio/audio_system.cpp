@@ -51,6 +51,7 @@
 #include "src/audio/pcm_decode.h"      // detail::g_pcmDecode — the Pcm decode hook (installed by the no-ISA registerAudio)
 #include "src/audio/produce_step.h"    // detail::mixFrames / rampFrame — the pure mixdown + release fade
 #include "src/audio/ring_buffer.h"
+#include "src/vm/vm_core_access.h"   // vm::VmCoreAccess — builds a voice's machine on the core the game named
 #include "src/vm/vm_runner.h"        // vm::VmRunner — the machine a voice steps through
 
 namespace retropp {
@@ -291,6 +292,7 @@ struct AudioSystem::Impl {
     unsigned                          sampleRate;
     AudioKind                         kind_;          // the system's fixed backend — Chiptune or Pcm
     VMPlatform                        platform_;      // the console each chiptune voice's VM is built as
+    detail::CoreFactory               core_;          // the core those VMs are built on
     TimingProfile                     timing_;        // the CPU-timing block those VMs run under
     std::size_t                       targetFrames;   // keep the buffer filled to ~this (latency buffer)
     std::size_t                       ringFloor;      // buffered frames above which the mix waits for a
@@ -370,12 +372,14 @@ struct AudioSystem::Impl {
     std::thread              productionThread;
 
     // BORROW: `ownedSink` stays null; `sink` binds the external reference (non-owning).
-    Impl(AudioKind kind, AudioSink& s, VMPlatform platform, TimingProfile timing, unsigned rate)
+    Impl(detail::CoreFactory core, AudioKind kind, AudioSink& s, VMPlatform platform, TimingProfile timing,
+         unsigned rate)
         : ownedSink(nullptr),
           sink(s),
           sampleRate(rate),
           kind_(kind),
           platform_(platform),
+          core_(core),
           timing_(timing),
           targetFrames(rate / 20),
           ringFloor(rate / 40),
@@ -390,13 +394,14 @@ struct AudioSystem::Impl {
 
     // OWN: move the sink into `ownedSink`; `sink` binds to it. `ownedSink` is initialised before `sink`
     // (declaration order), so `*ownedSink` is live when the reference binds.
-    Impl(AudioKind kind, std::unique_ptr<AudioSink> s, VMPlatform platform, TimingProfile timing,
-         unsigned rate)
+    Impl(detail::CoreFactory core, AudioKind kind, std::unique_ptr<AudioSink> s, VMPlatform platform,
+         TimingProfile timing, unsigned rate)
         : ownedSink(std::move(s)),
           sink(*ownedSink),
           sampleRate(rate),
           kind_(kind),
           platform_(platform),
+          core_(core),
           timing_(timing),
           targetFrames(rate / 20),
           ringFloor(rate / 40),
@@ -653,7 +658,7 @@ struct AudioSystem::Impl {
     // hostDriver because hostDriver resets the machine — the sink + rate are set once the reset is
     // behind us. The voice rides the VMDriver bus (its `type`).
     void initResidentVoice(Voice& v) {
-        v.runner = std::make_unique<vm::VmRunner>(Vm{platform_, timing_},
+        v.runner = std::make_unique<vm::VmRunner>(vm::VmCoreAccess::make(core_, platform_, timing_),
                                                   vm::VmRunner::StepKind::Resident, cyclesPerFrame,
                                                   runnerMode());
 
@@ -821,9 +826,9 @@ struct AudioSystem::Impl {
             // The voice's own machine, behind its runner. The bytes are resolved here and placed by the
             // thread that steps the machine; the sample callback's raw-pointer capture is safe because
             // the voice lives behind unique_ptr (stable address) and its machine leaves before it does.
-            voice->runner = std::make_unique<vm::VmRunner>(Vm{platform_, timing_},
-                                                            vm::VmRunner::StepKind::Started,
-                                                            cyclesPerFrame, runnerMode());
+            voice->runner = std::make_unique<vm::VmRunner>(
+                vm::VmCoreAccess::make(core_, platform_, timing_), vm::VmRunner::StepKind::Started,
+                cyclesPerFrame, runnerMode());
             if (index >= asmCache.size()) {
                 asmCache.resize(index + 1);
             }
@@ -1212,29 +1217,30 @@ struct AudioSystem::Impl {
     }
 };
 
-AudioSystem::AudioSystem(AudioKind kind, AudioSink& sink, VMPlatform platform, TimingProfile timing,
-                         unsigned sampleRate)
-    : impl_(std::make_unique<Impl>(kind, sink, platform, timing, sampleRate)) {
+AudioSystem::AudioSystem(detail::CoreFactory core, AudioKind kind, AudioSink& sink, VMPlatform platform,
+                         TimingProfile timing, unsigned sampleRate)
+    : impl_(std::make_unique<Impl>(core, kind, sink, platform, timing, sampleRate)) {
     impl_->startProductionThread();
 }
 
-AudioSystem::AudioSystem(AudioKind kind, std::unique_ptr<AudioSink> sink, VMPlatform platform,
-                         TimingProfile timing, unsigned sampleRate)
-    : impl_(std::make_unique<Impl>(kind, std::move(sink), platform, timing, sampleRate)) {
+AudioSystem::AudioSystem(detail::CoreFactory core, AudioKind kind, std::unique_ptr<AudioSink> sink,
+                         VMPlatform platform, TimingProfile timing, unsigned sampleRate)
+    : impl_(std::make_unique<Impl>(core, kind, std::move(sink), platform, timing, sampleRate)) {
     impl_->startProductionThread();
 }
 
 // The zero-boilerplate default: own an internally-constructed production sink. Delegates to the owning
 // ctor with a fresh SdlAudioSink — adds only an include, no new library dependency (sdl_platform.cpp is
 // already in this static lib). A non-SDL audio backend uses the injection seam (the two ctors above).
-AudioSystem::AudioSystem(AudioKind kind, VMPlatform platform, TimingProfile timing, unsigned sampleRate)
-    : AudioSystem(kind, std::make_unique<SdlAudioSink>(), platform, timing, sampleRate) {}
+AudioSystem::AudioSystem(detail::CoreFactory core, AudioKind kind, VMPlatform platform,
+                         TimingProfile timing, unsigned sampleRate)
+    : AudioSystem(core, kind, std::make_unique<SdlAudioSink>(), platform, timing, sampleRate) {}
 
 // Manual (thread-suppressed) construction for the internal test seam. Borrows `sink`; leaves `threaded`
 // false so play()/stop() apply inline and the test drives production via AudioSystemTestAccess.
-AudioSystem::AudioSystem(ManualTag, AudioKind kind, AudioSink& sink, VMPlatform platform,
-                         TimingProfile timing, unsigned sampleRate)
-    : impl_(std::make_unique<Impl>(kind, sink, platform, timing, sampleRate)) {}
+AudioSystem::AudioSystem(ManualTag, detail::CoreFactory core, AudioKind kind, AudioSink& sink,
+                         VMPlatform platform, TimingProfile timing, unsigned sampleRate)
+    : impl_(std::make_unique<Impl>(core, kind, sink, platform, timing, sampleRate)) {}
 
 AudioSystem::~AudioSystem() {
     // Stop the sink first so its audio thread stops pulling the ring, THEN join the production thread so
@@ -1312,13 +1318,6 @@ std::size_t AudioSystem::driverUnderflowFrames(AudioId driver) const {
 // and impl_. Drives production synchronously on the calling thread — the deterministic path device-free
 // tests use in place of the autonomous production thread.
 namespace detail {
-
-std::unique_ptr<AudioSystem> AudioSystemTestAccess::makeManual(AudioKind kind, AudioSink& sink,
-                                                               VMPlatform platform, TimingProfile timing,
-                                                               unsigned sampleRate) {
-    return std::unique_ptr<AudioSystem>(
-        new AudioSystem(AudioSystem::ManualTag{}, kind, sink, platform, timing, sampleRate));
-}
 
 void AudioSystemTestAccess::step(AudioSystem& sys) {
     sys.impl_->drainCues();

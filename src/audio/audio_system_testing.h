@@ -11,7 +11,8 @@
 // `stepDriverRaw` drive it by hand on the calling thread. Reachable only through this internal header (a
 // friend of AudioSystem); never in include/retropp/.
 //
-// INTERNAL — under src/audio/. Definitions live in audio_system.cpp, where AudioSystem::Impl is complete.
+// INTERNAL — under src/audio/. Definitions live in audio_system.cpp, where AudioSystem::Impl is
+// complete; makeManual is defined here, so the core is resolved where the test names the platform.
 #ifndef RETROPP_SRC_AUDIO_AUDIO_SYSTEM_TESTING_H
 #define RETROPP_SRC_AUDIO_AUDIO_SYSTEM_TESTING_H
 
@@ -36,7 +37,10 @@ struct AudioSystemTestAccess {
                                                    AudioSink&    sink,
                                                    VMPlatform    platform   = VMPlatform::GameBoyColor,
                                                    TimingProfile timing     = TimingProfile::GameBoyColor,
-                                                   unsigned      sampleRate = kAudioSampleRate);
+                                                   unsigned      sampleRate = kAudioSampleRate) {
+        return std::unique_ptr<AudioSystem>(
+            new AudioSystem(AudioSystem::ManualTag{}, kind, sink, platform, timing, sampleRate));
+    }
 
     // One production iteration on the calling thread: drain any pending cues, then, if playing, run one
     // frame-quantized refill-to-target produce pass and the auto-close check. The deterministic,

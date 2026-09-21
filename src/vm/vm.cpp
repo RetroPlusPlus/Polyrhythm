@@ -24,7 +24,6 @@
 #include "retropp/asset_registry.h"    // assetRoot — the single project-relative resource root (no routine root)
 #include "retropp/routine_registry.h"  // detail::findEmbeddedRoutine
 #include "retropp/user_files.h"        // UserFiles — where a keyed machine's own files live
-#include "src/vm/gameboy/sameboy_backend.h"
 #include "src/vm/run_governor.h"       // RunGovernor — what a running cartridge owes the wall clock
 #include "src/vm/save_writer.h"        // SaveWriter — the thread a keyed machine's bytes reach disk on
 #include "src/vm/vm_backend.h"
@@ -32,30 +31,6 @@
 #include "src/vm/vm_testing.h"         // VmTestAccess — the deterministic seam, defined at file end
 
 namespace retropp {
-
-namespace {
-
-// Construct the backend for a platform. GameBoy / GameBoyColor → the SM83 / SameBoy backend (the
-// only one built in v1). Other systems are drop-in: add a backend and a case here; the rest of the
-// host is unchanged. An unbuilt system throws — the seam exists, the implementation lands when a
-// consumer exercises it.
-std::unique_ptr<vm::VmBackend> makeBackend(VMPlatform platform) {
-    switch (platform) {
-        case VMPlatform::GameBoy:
-            return std::make_unique<vm::SameBoyBackend>(vm::ConsoleModel::GameBoy);
-        case VMPlatform::GameBoyColor:
-            return std::make_unique<vm::SameBoyBackend>(vm::ConsoleModel::GameBoyColor);
-        case VMPlatform::Snes:
-        case VMPlatform::Nes:
-        case VMPlatform::Genesis:
-        case VMPlatform::MasterSystem:
-            break;
-    }
-    throw std::runtime_error("VMPlatform (" + std::to_string(static_cast<int>(platform)) +
-                             "): no backend built in v1 (only GameBoy / GameBoyColor)");
-}
-
-}  // namespace
 
 // How a registered routine is called. A routine the engine placed gets a frame of the engine's own —
 // the register file replaced, the stack seated at a scratch top — which is why it cannot run while a
@@ -625,7 +600,8 @@ struct Vm::Impl {
     // thread) is gone before the machine it steps.
     RomRunState romRun;
 
-    Impl(VMPlatform p, TimingProfile t) : platform(p), timing(t), backend(makeBackend(p)) {}
+    Impl(detail::CoreFactory core, VMPlatform p, TimingProfile t)
+        : platform(p), timing(t), backend(core(p)) {}
 
     // Whether the hosted cartridge is running — the gate every machine-mutating verb checks, since
     // a running machine belongs to its own thread.
@@ -1216,15 +1192,13 @@ namespace {
 constexpr std::uint64_t kInitCycleCap = 1u << 24;  // ~4 s of SM83 time — an init returns in far less
 }  // namespace
 
-Vm::Vm(VMPlatform platform, TimingProfile timing)
-    : impl_(std::make_unique<Impl>(platform, timing)) {
+Vm::Vm(detail::CoreFactory core, VMPlatform platform, TimingProfile timing, VmConfig config) {
+    if (core == nullptr) {
+        throw std::runtime_error("VMPlatform (" + std::to_string(static_cast<int>(platform)) +
+                                 "): no backend built in v1 (only GameBoy / GameBoyColor)");
+    }
+    impl_ = std::make_unique<Impl>(core, platform, timing);
     impl_->owner = this;
-}
-
-Vm::Vm(VMPlatform platform, VmConfig config)
-    : Vm(platform, TimingProfile::GameBoyColor, std::move(config)) {}
-
-Vm::Vm(VMPlatform platform, TimingProfile timing, VmConfig config) : Vm(platform, timing) {
     if (!config.key.empty()) {
         requireFlatName(config.key, "the machine's key");
         if (!impl_->backend->keepsSaveData()) {
