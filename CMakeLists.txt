@@ -1569,6 +1569,7 @@ if(RETROPP_BUILD_TESTS)
         tests/region_access_test.cpp
         tests/gb_regions_test.cpp
         tests/cycle_budget_test.cpp
+        tests/snes_timing_test.cpp
         tests/vm_runner_test.cpp
         tests/free_run_park_test.cpp
         tests/driver_hosting_vm_test.cpp

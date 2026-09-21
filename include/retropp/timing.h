@@ -21,6 +21,8 @@ namespace retropp {
 enum class TickPeriodNs : std::int64_t {
     GameBoy      = 16'742'706,  // 59.7275 Hz — one real GB frame (70'224 cycles @ 4'194'304 Hz)
     GameBoyColor = 16'742'706,  // identical refresh; double-speed is CPU-only (see CpuTiming)
+    Snes         = 16'639'263,  // 60.0988 Hz — one SNES frame (357'366 cycles @ 236'250'000/11 Hz)
+    SnesPal      = 19'997'208,  // 50.0070 Hz — one PAL SNES frame (425'568 cycles @ 21'281'370 Hz)
     Hz60         = 16'666'667,  // a clean 60 Hz for an original game that just wants a round rate
 };
 
@@ -38,14 +40,17 @@ struct CycleDraw {
 // A machine's CPU model for the VM (RNG / audio / co-execution). OPTIONAL: an original game with no
 // CPU model omits it.
 //
-// `cpuClockHz` is the machine's own rate and is the authority: how many cycles a tick is worth is
-// derived from it and the period actually being run (see cyclesFor). doubleSpeedCyclesPerFrame is
-// the per-frame budget when the machine runs at double speed; the display refresh is unchanged, so
-// double speed is a larger cycle budget, not a faster loop cadence.
+// `cpuClockHz / cpuClockHzDivisor` is the machine's own rate and is the authority: how many cycles a
+// tick is worth is derived from it and the period actually being run (see cyclesFor).
+// doubleSpeedCyclesPerFrame is the per-frame budget when the machine runs at double speed; the
+// display refresh is unchanged, so double speed is a larger cycle budget, not a faster loop cadence.
+// A clock that is not a whole number of hertz is carried as the exact ratio it is: the 60 Hz SNES
+// master clock is 236'250'000 / 11 Hz.
 struct CpuTiming {
     std::uint32_t cpuClockHz;
     std::uint32_t cyclesPerFrame;            // the machine's OWN frame budget, at its own refresh
     std::uint32_t doubleSpeedCyclesPerFrame;
+    std::uint32_t cpuClockHzDivisor = 1;     // the clock is cpuClockHz / cpuClockHzDivisor Hz
     [[nodiscard]] constexpr bool operator==(const CpuTiming&) const noexcept = default;
 
     // The cycles this machine runs in `span`, carrying the sub-cycle remainder. Exact integer
@@ -55,15 +60,17 @@ struct CpuTiming {
     //   CycleDraw d{};
     //   for (each tick) { d = cpu.cyclesFor(enginePeriod, d.carryNs); step(d.cycles); }
     //
-    // A negative or zero span draws nothing and preserves the carry.
+    // A negative or zero span draws nothing and preserves the carry, and so does a zero divisor,
+    // which names no clock.
     [[nodiscard]] constexpr CycleDraw cyclesFor(std::chrono::nanoseconds span,
                                                 std::uint64_t carryNs = 0) const noexcept {
-        if (span.count() <= 0) {
+        if (span.count() <= 0 || cpuClockHzDivisor == 0) {
             return CycleDraw{.cycles = 0, .carryNs = carryNs};
         }
+        const std::uint64_t scale = static_cast<std::uint64_t>(cpuClockHzDivisor) * 1'000'000'000u;
         const std::uint64_t acc =
             carryNs + static_cast<std::uint64_t>(cpuClockHz) * static_cast<std::uint64_t>(span.count());
-        return CycleDraw{.cycles = acc / 1'000'000'000u, .carryNs = acc % 1'000'000'000u};
+        return CycleDraw{.cycles = acc / scale, .carryNs = acc % scale};
     }
 };
 
@@ -72,7 +79,7 @@ struct CpuTiming {
 // Color cadence, so a default-constructed profile needs no arguments for the common case.
 //
 // The named presets (TimingProfile::GameBoyColor, …) are static members of the type, usable in
-// constexpr contexts including the RunLoop default argument. The GB-family presets fill both fields.
+// constexpr contexts including the RunLoop default argument. The console presets fill both fields.
 struct TimingProfile {
     TickPeriodNs             tickPeriodNs = TickPeriodNs::GameBoyColor;  // identity, first member
     std::optional<CpuTiming> cpu{};
@@ -140,11 +147,26 @@ struct TimingProfile {
 
     static const TimingProfile GameBoy;
     static const TimingProfile GameBoyColor;
+    static const TimingProfile Snes;
+    static const TimingProfile SnesPal;
 };
 
 inline constexpr TimingProfile TimingProfile::GameBoy{
     TickPeriodNs::GameBoy,      CpuTiming{4'194'304, 70'224, 140'448}};
 inline constexpr TimingProfile TimingProfile::GameBoyColor{
     TickPeriodNs::GameBoyColor, CpuTiming{4'194'304, 70'224, 140'448}};
+// The SNES has no double speed, so that field repeats the frame budget.
+inline constexpr TimingProfile TimingProfile::Snes{
+    .tickPeriodNs = TickPeriodNs::Snes,
+    .cpu          = CpuTiming{.cpuClockHz                = 236'250'000,
+                              .cyclesPerFrame            = 357'366,
+                              .doubleSpeedCyclesPerFrame = 357'366,
+                              .cpuClockHzDivisor         = 11}};
+inline constexpr TimingProfile TimingProfile::SnesPal{
+    .tickPeriodNs = TickPeriodNs::SnesPal,
+    .cpu          = CpuTiming{.cpuClockHz                = 21'281'370,
+                              .cyclesPerFrame            = 425'568,
+                              .doubleSpeedCyclesPerFrame = 425'568,
+                              .cpuClockHzDivisor         = 1}};
 
 }  // namespace retropp
