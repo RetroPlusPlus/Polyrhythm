@@ -59,8 +59,8 @@ namespace retropp {
 namespace {
 // The output buffer is kept filled to ~`targetFrames` (a small latency buffer, sampleRate / 20 ≈ 50 ms)
 // and sized far larger (sampleRate / 4 ≈ 250 ms) so device-drain bursts never starve it. Production
-// steps every chiptune voice in WHOLE-FRAME cycle units (the frame quantum,
-// TimingProfile::cpuCyclesPerTick) and mixes after each step; the frame quantum is a scheduling choice
+// steps every chiptune voice in WHOLE-FRAME cycle units (the frame quantum — one frame of the voice
+// machine's own clock) and mixes after each step; the frame quantum is a scheduling choice
 // that does not change any voice's samples (each VM core is deterministic).
 
 // How long the production thread parks between periodic refills WHILE PLAYING. Must be strictly less than
@@ -293,7 +293,8 @@ struct AudioSystem::Impl {
     AudioKind                         kind_;          // the system's fixed backend — Chiptune or Pcm
     VMPlatform                        platform_;      // the console each chiptune voice's VM is built as
     detail::CoreFactory               core_;          // the core those VMs are built on
-    TimingProfile                     timing_;        // the CPU-timing block those VMs run under
+    TimingProfile                     timing_;        // the profile each voice's Vm is constructed with; a voice is stepped by its machine's clock
+    std::optional<vm::MachineClock>   clock_;         // the clock of the machine this system's core builds; empty on a platform with no core
     std::size_t                       targetFrames;   // keep the buffer filled to ~this (latency buffer)
     std::size_t                       ringFloor;      // buffered frames above which the mix waits for a
                                                       // straggling machine instead of substituting silence
@@ -381,13 +382,14 @@ struct AudioSystem::Impl {
           platform_(platform),
           core_(core),
           timing_(timing),
+          clock_(core != nullptr ? vm::VmCoreAccess::clockOf(core, platform) : std::nullopt),
           targetFrames(rate / 20),
           ringFloor(rate / 40),
           autoStopSilenceFrames(rate / 4),
           releaseFrames(rate * 8 / 1000),
-          cyclesPerFrame(cyclesPerFrameFor(timing)),
-          maxStepsPerWake(maxStepsPerWakeFor(timing, rate)),
-          framesPerStep(framesPerStepFor(timing, rate)),
+          cyclesPerFrame(cyclesPerFrameFor(clock_)),
+          maxStepsPerWake(maxStepsPerWakeFor(clock_, rate)),
+          framesPerStep(framesPerStepFor(clock_, rate)),
           ring(rate / 4) {
         wire();
     }
@@ -403,38 +405,41 @@ struct AudioSystem::Impl {
           platform_(platform),
           core_(core),
           timing_(timing),
+          clock_(core != nullptr ? vm::VmCoreAccess::clockOf(core, platform) : std::nullopt),
           targetFrames(rate / 20),
           ringFloor(rate / 40),
           autoStopSilenceFrames(rate / 4),
           releaseFrames(rate * 8 / 1000),
-          cyclesPerFrame(cyclesPerFrameFor(timing)),
-          maxStepsPerWake(maxStepsPerWakeFor(timing, rate)),
-          framesPerStep(framesPerStepFor(timing, rate)),
+          cyclesPerFrame(cyclesPerFrameFor(clock_)),
+          maxStepsPerWake(maxStepsPerWakeFor(clock_, rate)),
+          framesPerStep(framesPerStepFor(clock_, rate)),
           ring(rate / 4) {
         wire();
     }
 
-    // The frame quantum: the CPU cycles in one render tick (= one driver frame). Falls back to the Game
-    // Boy frame if the profile carries no CPU model (degenerate — every GB-family preset carries one).
-    static std::uint64_t cyclesPerFrameFor(TimingProfile timing) {
-        const std::uint32_t perFrame = timing.cpuCyclesPerTick();
-        return perFrame != 0 ? perFrame : 70'224u;
+    // The frame quantum: one frame of the voice machine's own clock, in its own cycles. Zero on a
+    // platform with no core — no machine is ever built there, so nothing steps by it.
+    static std::uint64_t cyclesPerFrameFor(const std::optional<vm::MachineClock>& clock) {
+        return clock ? clock->cyclesPerFrame : 0u;
     }
 
-    // The audio frames one step of a machine produces: the frame quantum's share of a second, at this
-    // system's rate. At least one, so an atypical profile still makes progress.
-    static std::size_t framesPerStepFor(TimingProfile timing, unsigned rate) {
-        const std::uint64_t cpuClock = timing.cpu ? timing.cpu->cpuClockHz : 4'194'304u;
-        return static_cast<std::size_t>(
-            std::max<std::uint64_t>(cyclesPerFrameFor(timing) * rate / cpuClock, 1));
+    // The audio frames one step of a machine produces: the frame quantum's share of a second, at
+    // this system's rate. At least one, so a very short frame still makes progress.
+    static std::size_t framesPerStepFor(const std::optional<vm::MachineClock>& clock, unsigned rate) {
+        if (!clock || clock->hertzNumerator == 0) {
+            return 1;
+        }
+        return static_cast<std::size_t>(std::max<std::uint64_t>(
+            static_cast<std::uint64_t>(clock->cyclesPerFrame) * rate * clock->hertzDivisor /
+                clock->hertzNumerator,
+            1));
     }
 
-    // Steps needed to fill the latency buffer from empty (ceil(target / framesPerStep)) plus slack. The
-    // device drains the ring on its own clock, so a wake usually needs far fewer; this only bounds a
-    // fill-from-empty pass (and any runaway). Rate-independent ≈ 3 for the GB family, but derived so an
-    // atypical profile (much smaller per-frame budget) still fills rather than under-running silently.
-    static int maxStepsPerWakeFor(TimingProfile timing, unsigned rate) {
-        const std::uint64_t perStep = framesPerStepFor(timing, rate);
+    // Steps needed to fill the latency buffer from empty (ceil(target / framesPerStep)) plus slack.
+    // The device drains the ring on its own clock, so a wake usually needs far fewer; this only
+    // bounds a fill-from-empty pass (and any runaway).
+    static int maxStepsPerWakeFor(const std::optional<vm::MachineClock>& clock, unsigned rate) {
+        const std::uint64_t perStep = framesPerStepFor(clock, rate);
         const std::uint64_t target  = rate / 20;
         return static_cast<int>((target + perStep - 1) / perStep) + 2;  // ceil + slack
     }

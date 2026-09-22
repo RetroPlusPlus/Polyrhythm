@@ -81,6 +81,7 @@ struct RomRunState {
     bool booted = false;  // the image booted once; run() after stop() resumes rather than re-boots
 
     std::optional<vm::RunGovernor> governor;  // survives across run/stop episodes (factor + carry)
+    vm::MachineClock governorClock{};  // the clock `governor` was built from
 
     // The seqlock publish (the DriverSnapshot idiom): even = stable, odd = a publish is in flight.
     // `published` is laid out by `table` and sized once per run(), written in place by the stepping
@@ -212,7 +213,7 @@ void requireFlatName(std::string_view name, const char* what) {
 
 struct Vm::Impl {
     VMPlatform                   platform;
-    TimingProfile                timing;  // held for the hardware-speed path; unused here
+    TimingProfile                timing;  // the profile this Vm was constructed with; nothing here reads it
     std::unique_ptr<vm::VmBackend> backend;
     std::vector<ResolvedRoutine> routines;
     HostedDriverState            driver;
@@ -419,12 +420,16 @@ struct Vm::Impl {
 
     // What one tick of `enginePeriod` is worth to a running cartridge, at the factor as it stands.
     // Two exact conversions, each carrying its own remainder: the period into this machine's cycles,
-    // then those cycles scaled by the factor. cyclesForTick answers the first, and at the machine's
-    // own cadence it hands back the stored frame count — the exact hardware fact, where deriving a
-    // count from the rounded period would lose a cycle every tick. At {1, 1} the scaling is the
-    // identity and the budget is the draw.
+    // then those cycles scaled by the factor. The machine's own clock answers the first, and at the
+    // machine's own frame period it hands back the exact frame count — the exact hardware fact, where
+    // deriving a count from the rounded period would lose a cycle every tick. At {1, 1} the scaling
+    // is the identity and the budget is the draw.
     std::uint64_t tickBudget(std::chrono::nanoseconds enginePeriod) {
-        const CycleDraw draw = timing.cyclesForTick(enginePeriod, cycleCarryNs);
+        const std::optional<vm::MachineClock> clock = backend->clock();
+        if (!clock) {
+            return 0;  // a core that keeps no clock has nothing a tick is worth
+        }
+        const CycleDraw draw = clock->cyclesFor(enginePeriod, cycleCarryNs);
         cycleCarryNs         = draw.carryNs;
         const std::pair<std::uint32_t, std::uint32_t> f =
             romRun.governor ? romRun.governor->factor()
@@ -974,16 +979,25 @@ struct Vm::Impl {
         }
     }
 
-    // The governor, created on first need. Runs and speed factors both require a CPU model — with
-    // no clock rate, the platform's speed is undefined.
+    // The governor, created on first need and built from the machine's own clock. A machine whose
+    // clock differs from the one its governor was built from — a cartridge of the other region
+    // hosted between runs — gets a governor at the new rate carrying the factor it had. A machine
+    // whose clock never changes keeps the one governor, and its sub-cycle carry, for life. The clock
+    // of a running machine does not change: hosting a cartridge refuses a running machine.
     vm::RunGovernor& ensureGovernor() {
-        if (!romRun.governor) {
-            if (!timing.cpu) {
-                throw std::logic_error(
-                    "run/speed: this VM's timing profile carries no CPU model, so the platform's "
-                    "speed is undefined");
-            }
-            romRun.governor.emplace(timing.cpu->cpuClockHz);
+        const std::optional<vm::MachineClock> clock = backend->clock();
+        if (!clock) {
+            throw std::logic_error(
+                "run/speed: this machine's core keeps no clock of its own, so its speed is "
+                "undefined");
+        }
+        if (!romRun.governor || romRun.governorClock != *clock) {
+            const std::pair<std::uint32_t, std::uint32_t> factor =
+                romRun.governor ? romRun.governor->factor()
+                                : std::pair<std::uint32_t, std::uint32_t>{1u, 1u};
+            romRun.governor.emplace(clock->hertzNumerator, clock->hertzDivisor);
+            romRun.governor->setFactor(factor.first, factor.second);
+            romRun.governorClock = *clock;
         }
         return *romRun.governor;
     }
@@ -1136,8 +1150,8 @@ struct Vm::Impl {
             throw std::logic_error("run: the machine is already running");
         }
         vm::RunGovernor& gov = ensureGovernor();
-        if (timing.cpuCyclesPerTick() == 0) {
-            throw std::logic_error("run: the CPU model's per-frame budget is zero");
+        if (romRun.governorClock.cyclesPerFrame == 0) {
+            throw std::logic_error("run: the machine's frame is zero cycles long");
         }
         buildPublishTable();
         if (!romRun.booted) {
@@ -1146,7 +1160,7 @@ struct Vm::Impl {
         }
         publishStep();
         auto runner = std::make_unique<vm::VmRunner>(self, vm::VmRunner::StepKind::Started,
-                                                     timing.cpuCyclesPerTick(), mode);
+                                                     romRun.governorClock.cyclesPerFrame, mode);
         runner->beforeEachStep([this] {
             // The machine's own step says which thread it belongs to; a call into the guest is made
             // from there or not at all.
@@ -1280,9 +1294,6 @@ void Vm::advanceClock(std::uint64_t cycles) {
 }
 
 void Vm::advanceTick(std::chrono::nanoseconds enginePeriod) {
-    if (!impl_->timing.cpu.has_value()) {
-        return;  // no CPU model: nothing to advance
-    }
     if (impl_->running()) {
         if (impl_->romRun.runner->mode() != vm::VmRunner::Mode::Inline) {
             throw std::logic_error(
@@ -1297,16 +1308,24 @@ void Vm::advanceTick(std::chrono::nanoseconds enginePeriod) {
     }
     // The carry rides on the VM, so consecutive ticks compose: the fraction of a cycle this tick
     // leaves behind is spent by a later one, and the running total never drifts from the machine's
-    // true rate however the tick period relates to it.
-    const CycleDraw draw = impl_->timing.cyclesForTick(enginePeriod, impl_->cycleCarryNs);
-    impl_->cycleCarryNs = draw.carryNs;
-    if (draw.cycles != 0) {
-        impl_->backend->advanceClock(draw.cycles);
+    // true rate however the tick period relates to it. A core that keeps no clock advances nothing;
+    // its picture still latches.
+    if (const std::optional<vm::MachineClock> clock = impl_->backend->clock()) {
+        const CycleDraw draw = clock->cyclesFor(enginePeriod, impl_->cycleCarryNs);
+        impl_->cycleCarryNs  = draw.carryNs;
+        if (draw.cycles != 0) {
+            impl_->backend->advanceClock(draw.cycles);
+        }
     }
     impl_->latchVideo();
 }
 
-void Vm::advanceTick() { advanceTick(impl_->timing.tickPeriod()); }
+// One tick of a machine is one frame of its own clock. A core that keeps no clock has no frame to
+// spend, and its picture still latches.
+void Vm::advanceTick() {
+    const std::optional<vm::MachineClock> clock = impl_->backend->clock();
+    advanceTick(clock ? clock->framePeriod() : std::chrono::nanoseconds::zero());
+}
 
 void Vm::enableAudio(unsigned sampleRate,
                      std::function<void(std::int16_t, std::int16_t)> onSample) {

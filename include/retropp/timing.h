@@ -9,8 +9,9 @@ namespace retropp {
 // The host-selected timing profile for the run loop.
 //
 // The platform targets the 8-/16-bit console family, so the loop cadence is a developer-selectable
-// profile rather than a fixed rate: pass a named preset or a raw period. The render loop reads the
-// tick PERIOD; the SM83 VM reads the optional CPU block (cycle budget + double-speed). See
+// profile rather than a fixed rate: pass a named preset or a raw period. The run loop reads the
+// tick PERIOD; the optional CPU block is a console's cycle arithmetic, for a game that spends
+// cycles by hand (Vm::advanceClock, Vm::stepDriver). A hosted machine keeps its own clock. See
 // vm-and-routines.md for the VM side.
 
 // Render tick period in NANOSECONDS — named presets whose underlying value IS the exact period
@@ -37,8 +38,8 @@ struct CycleDraw {
     std::uint64_t carryNs = 0;
 };
 
-// A machine's CPU model for the VM (RNG / audio / co-execution). OPTIONAL: an original game with no
-// CPU model omits it.
+// A console's CPU clock as numbers a game can do cycle arithmetic with. OPTIONAL: an original game
+// with no CPU model omits it.
 //
 // `cpuClockHz / cpuClockHzDivisor` is the machine's own rate and is the authority: how many cycles a
 // tick is worth is derived from it and the period actually being run (see cyclesFor).
@@ -75,8 +76,9 @@ struct CpuTiming {
 };
 
 // The timing bundle the host hands the run loop: a render cadence (required) + an optional CPU-
-// timing block. RunLoop schedules on tickPeriod(); the VM reads cpu. Defaults to the Game Boy
-// Color cadence, so a default-constructed profile needs no arguments for the common case.
+// timing block. RunLoop schedules on tickPeriod(); a game reads cpu for its own cycle arithmetic.
+// Defaults to the Game Boy Color cadence, so a default-constructed profile needs no arguments for
+// the common case.
 //
 // The named presets (TimingProfile::GameBoyColor, …) are static members of the type, usable in
 // constexpr contexts including the RunLoop default argument. The console presets fill both fields.

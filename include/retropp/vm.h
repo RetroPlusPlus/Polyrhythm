@@ -473,15 +473,15 @@ public:
     // fraction is kept and spent later, so the running total is exact over any number of ticks and the
     // instantaneous error never exceeds one cycle.
     //
-    // Pass the period the run loop is actually ticking at. The no-argument form uses this VM's own
-    // profile cadence, which is the common case: a machine running at its native rate.
+    // Pass the period the run loop is actually ticking at. The no-argument form spends one frame of
+    // the machine's own clock, which is the common case: a machine running at its native rate.
     //
     // On a cartridge running Advance::OnTick this is the step that advances it: queued writes and
     // escape and watch switches land, the machine runs the tick's worth of cycles, and its declared
     // regions publish. The speed factor scales what the tick is worth. Throws std::logic_error on a
     // cartridge running Advance::Continuously — that machine keeps its own clock.
     //
-    // Does nothing if this VM's timing profile carries no CPU model.
+    // A machine whose core keeps no clock of its own advances nothing.
     void advanceTick(std::chrono::nanoseconds enginePeriod);
     void advanceTick();
 
@@ -553,8 +553,8 @@ public:
 
     // Boot the hosted image and run it. After stop(), running again resumes from where the machine
     // parked; reset() first for a fresh boot. Throws std::logic_error unless this VM hosts a
-    // cartridge (hostRom first), if the machine is already running, or if the timing profile carries
-    // no CPU model — with no clock rate, the platform's speed is undefined.
+    // cartridge (hostRom first), if the machine is already running, or on a machine whose core keeps
+    // no clock of its own.
     void run(Advance how = Advance::Continuously);
 
     // Execution speed as a fraction of the platform's own: {1, 1} is the hardware's speed (the
@@ -563,7 +563,7 @@ public:
     // none. Adjustable at any time, running or not;
     // the pace is exact — owed cycles carry their sub-cycle remainder, never rounding, at any
     // factor. Throws std::invalid_argument for a zero denominator or a term past 1024, and
-    // std::logic_error if the timing profile carries no CPU model.
+    // std::logic_error on a machine whose core keeps no clock of its own.
     void speed(std::uint32_t num, std::uint32_t den);
     [[nodiscard]] std::pair<std::uint32_t, std::uint32_t> speed() const;
 

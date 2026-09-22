@@ -300,7 +300,8 @@ The OS time / refresh / sleep primitives are the `Platform` pacing seam (`nowMon
 ## Timing profile
 
 `TimingProfile` sets the cadence. It carries a tick **period** (always) and an optional CPU-timing block
-(for the [VM](vm-and-routines.md)).
+(a console's cycle arithmetic, for a game that spends cycles by hand — see
+[vm-and-routines.md](vm-and-routines.md)).
 
 ```cpp
 enum class TickPeriodNs : std::int64_t {
@@ -311,7 +312,7 @@ enum class TickPeriodNs : std::int64_t {
     Hz60         = 16'666'667,   // a round 60 Hz
 };
 
-struct CpuTiming {                // optional; for the SM83 VM
+struct CpuTiming {                // optional; a console's cycle arithmetic
     std::uint32_t cpuClockHz;
     std::uint32_t cyclesPerFrame;
     std::uint32_t doubleSpeedCyclesPerFrame;

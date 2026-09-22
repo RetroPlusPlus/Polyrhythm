@@ -70,10 +70,8 @@ In v1 the **GameBoy / GameBoyColor** backend is the only one built; any other en
 declared seam — a new system is a drop-in backend, not a change to this surface.
 (`vm.platform()` reports back the system a `Vm` was constructed for.)
 
-The constructor takes a second, optional parameter — the stepping cadence:
-`Vm(VMPlatform platform, TimingProfile timing = TimingProfile::GameBoyColor)`. It defaults to the Game
-Boy Color clock; pass a different `TimingProfile` to step the routine at another console's rate. A `Vm`
-is non-copyable but movable.
+A machine runs at its core's own speed — a Game Boy at 4'194'304 Hz, one tick of it one 70'224-cycle
+frame — and `speed()` is what scales it. A `Vm` is non-copyable but movable.
 
 Each platform maps to an instruction-set architecture — `Isa` (`retropp/isa.h`), via
 `isaFor(VMPlatform)`. The ISA is the real compatibility unit: several consoles can share one (the Game

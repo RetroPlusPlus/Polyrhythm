@@ -10,9 +10,11 @@
 #ifndef RETROPP_SRC_VM_VM_BACKEND_H
 #define RETROPP_SRC_VM_VM_BACKEND_H
 
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <optional>
 #include <span>
 #include <string_view>
 #include <vector>
@@ -21,7 +23,9 @@
 #include "retropp/guest_frame.h"     // GuestPixelFormat — the layout a completed frame arrives in
 #include "retropp/guest_watch.h"     // AccessVerdict — what a watched access is answered with
 #include "retropp/memory_region.h"   // MemoryRegion — a declared place in the guest's address space
+#include "retropp/timing.h"          // CycleDraw — a draw of cycles and the fraction carried
 #include "src/vm/assembler.h"        // AssembledRoutine — the assemble() return shape (bytes + labels)
+#include "src/vm/wide_math.h"        // mulAddDiv — a clock that is a ratio passes 64 bits
 
 namespace retropp::vm {
 
@@ -38,6 +42,49 @@ struct ResidentRegister {
 enum class CallStack {
     Guest,    // the machine's live stack, exactly where the guest's own call would push
     Scratch,  // the backend's own scratch stack — the machine has no guest context yet
+};
+
+// A machine's own clock: its rate as the exact ratio it is, and the cycles one of its frames takes.
+// The generic host paces a machine from this and from nothing else.
+struct MachineClock {
+    std::uint32_t hertzNumerator;  // the clock is hertzNumerator / hertzDivisor cycles a second
+    std::uint32_t hertzDivisor;
+    std::uint32_t cyclesPerFrame;  // one frame of the machine's own, in those cycles
+    [[nodiscard]] constexpr bool operator==(const MachineClock&) const noexcept = default;
+
+    // One frame of the machine's own in whole nanoseconds, the fraction dropped: 16'742'706 for the
+    // Game Boy family. Zero for a clock with a zero in it, which is no clock.
+    [[nodiscard]] constexpr std::chrono::nanoseconds framePeriod() const noexcept {
+        if (hertzNumerator == 0 || hertzDivisor == 0) {
+            return std::chrono::nanoseconds::zero();
+        }
+        return std::chrono::nanoseconds{static_cast<std::chrono::nanoseconds::rep>(
+            mulAddDiv(static_cast<std::uint64_t>(cyclesPerFrame) * hertzDivisor, 1'000'000'000u, 0,
+                      hertzNumerator)
+                .quotient)};
+    }
+
+    // The cycles a span of wall time is worth to this machine, with the fraction of a cycle left
+    // over carried into the next draw so the running total never drifts. Hand back the carry the
+    // last draw returned; zero is the right start.
+    //
+    // A span of exactly one of the machine's own frames is worth exactly cyclesPerFrame, and the
+    // carry passes through untouched. The frame count is the hardware fact and the whole-nanosecond
+    // period is the rounded one, so deriving the count back out of the period comes up a cycle short
+    // every frame. A zero or negative span, or a clock with a zero in it, draws nothing.
+    [[nodiscard]] constexpr CycleDraw cyclesFor(std::chrono::nanoseconds span,
+                                                std::uint64_t carry) const noexcept {
+        if (span.count() <= 0 || hertzNumerator == 0 || hertzDivisor == 0) {
+            return CycleDraw{.cycles = 0, .carryNs = carry};
+        }
+        if (span == framePeriod()) {
+            return CycleDraw{.cycles = cyclesPerFrame, .carryNs = carry};
+        }
+        const WideQuotient draw =
+            mulAddDiv(hertzNumerator, static_cast<std::uint64_t>(span.count()), carry,
+                      static_cast<std::uint64_t>(hertzDivisor) * 1'000'000'000u);
+        return CycleDraw{.cycles = draw.quotient, .carryNs = draw.remainder};
+    }
 };
 
 // The lifecycle the generic host drives per system. A call is: beginCall(entry) → writeRegister /
@@ -57,6 +104,16 @@ public:
     // on always-running hardware. Must not disturb routine-visible state (registers/RAM the next call
     // marshals); only the timing/divider state advances.
     virtual void advanceClock(std::uint64_t cycles) = 0;
+
+    // The machine's own clock, as the machine stands. This is the ONE answer to how fast a machine
+    // runs and how long its frame is: the generic host builds its pacing from it and reads a rate
+    // from nowhere else. A core whose rate depends on what it hosts answers for what it hosts now.
+    //
+    // Asked from the game's thread while the machine runs on its own, so a backend answers from
+    // what it fixed when the cartridge was hosted and never from the running machine.
+    //
+    // A core that keeps no time of its own answers nothing, and the generic host refuses to run it.
+    [[nodiscard]] virtual std::optional<MachineClock> clock() const { return std::nullopt; }
 
     // Inject a routine's extracted bytes into the code space and return the absolute entry address of
     // its first byte. Throws (std::runtime_error) if the backend's code arena cannot hold it, or
@@ -162,10 +219,10 @@ public:
     // cycle budget at a time by runForCycles while its APU writes produce audio.
     virtual void beginContinuous(std::uint32_t entry) = 0;
 
-    // Run the positioned driver for `cpuCycles` CPU cycles (the TimingProfile CPU unit — 4 MHz
-    // T-cycles, e.g. TimingProfile::cpuCyclesPerTick()); the APU produces ~rate/frameRate frames into
-    // the enabled sink during the run. Returns the CPU cycles actually run (≥ cpuCycles; a partial
-    // last instruction overshoots — the caller carries the remainder for drift-free pacing).
+    // Run the positioned driver for `cpuCycles` CPU cycles (the machine's own cycles — the unit
+    // clock() counts in); the APU produces ~rate/frameRate frames into the enabled sink during the
+    // run. Returns the CPU cycles actually run (≥ cpuCycles; a partial last instruction overshoots —
+    // the caller carries the remainder for drift-free pacing).
     virtual std::uint64_t runForCycles(std::uint64_t cpuCycles) = 0;
 
     // ── Guest input ───────────────────────────────────────────────────────────────────────────────
