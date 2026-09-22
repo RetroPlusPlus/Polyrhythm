@@ -167,6 +167,7 @@ runtime third-party dependency to install.
 
 ## License
 
-Dual-licensed: **AGPL-3.0** for open use, plus a separate **commercial license**. See
+Polyrhythm is source-available commercial software: **PolyForm Noncommercial 1.0.0** for
+noncommercial use, plus a separate **commercial license** for any commercial use. See
 `LICENSING.md` and `LICENSE` at the repository root. Vendored dependencies retain their own
 licenses.

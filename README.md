@@ -160,6 +160,7 @@ above. A game ships as one file, with nothing to install beside it.
 
 ## License
 
-Dual-licensed: **AGPL-3.0** for open use, plus a separate **commercial license**.
-See [`LICENSING.md`](LICENSING.md) and [`LICENSE`](LICENSE). Vendored dependencies
-retain their own licenses.
+Polyrhythm is source-available commercial software, licensed two ways: **PolyForm Noncommercial
+1.0.0** for noncommercial use, and a separate **commercial license** for any commercial use. See
+[`LICENSING.md`](LICENSING.md) and [`LICENSE`](LICENSE). Vendored dependencies retain their own
+licenses.
