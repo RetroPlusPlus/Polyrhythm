@@ -1209,7 +1209,7 @@ constexpr std::uint64_t kInitCycleCap = 1u << 24;  // ~4 s of SM83 time — an i
 Vm::Vm(detail::CoreFactory core, VMPlatform platform, TimingProfile timing, VmConfig config) {
     if (core == nullptr) {
         throw std::runtime_error("VMPlatform (" + std::to_string(static_cast<int>(platform)) +
-                                 "): no backend built in v1 (only GameBoy / GameBoyColor)");
+                                 "): no backend built in v1 (only GameBoy / GameBoyColor / Snes)");
     }
     impl_ = std::make_unique<Impl>(core, platform, timing);
     impl_->owner = this;

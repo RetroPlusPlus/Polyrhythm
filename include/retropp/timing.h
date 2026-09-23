@@ -91,10 +91,9 @@ struct TimingProfile {
         return std::chrono::nanoseconds{static_cast<std::int64_t>(tickPeriodNs)};
     }
 
-    // The CPU cycles that elapse in one render tick — one tick is one frame of THIS machine, so this
-    // is the CPU block's per-frame budget (e.g. 70'224 for the Game Boy). It is the natural amount to
-    // advance a VM's free-running divider per tick (see vm.h Vm::advanceClock), so a consumer reads it
-    // from the profile rather than hardcoding it. Zero if the profile carries no CPU model.
+    // The CPU cycles in one render tick — one tick is one frame of this profile's model (e.g. 70'224
+    // for the Game Boy), for a game doing its own cycle arithmetic. Zero if the profile carries no CPU
+    // model.
     //
     // STORED, not derived, and that is deliberate. The cycle count is the exact hardware fact; the ns
     // period is the rounded one. A Game Boy frame IS 70'224 cycles at 4'194'304 Hz, which is
@@ -109,16 +108,11 @@ struct TimingProfile {
         return cpu ? cpu->cyclesPerFrame : 0u;
     }
 
-    // The cycles this machine runs in one tick of `enginePeriod`, carrying the sub-cycle remainder.
-    // This is the ONE rule for turning a tick into a cycle budget, and it has two arms because the
-    // two cases have different exact answers:
-    //
-    //   * At this profile's OWN cadence the stored frame count wins. It is the exact hardware fact,
-    //     and the ns period is the rounded one — a Game Boy frame is 70'224 cycles, which is
-    //     16'742'706.3 ns, so deriving the count back out of the stored 16'742'706 would lose a cycle
-    //     every frame. Nothing is carried, because nothing is lost.
-    //   * At any other cadence there is no frame count to reach for, so the clock rate answers and
-    //     the remainder is carried. That is the machine-hosted-at-a-foreign-rate case.
+    // The cycles this profile's model runs in one tick of `enginePeriod`, carrying the sub-cycle
+    // remainder, for a game's own cycle arithmetic. Two arms: at this profile's own cadence the stored
+    // frame count is exact — a Game Boy frame is 70'224 cycles, which is 16'742'706.3 ns, so deriving
+    // the count back out of the rounded 16'742'706 would lose a cycle a frame; at any other cadence the
+    // clock rate answers and the remainder is carried.
     //
     // Hand back the carry the previous call returned; zero is the right start. Yields nothing if the
     // profile carries no CPU model.

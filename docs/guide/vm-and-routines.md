@@ -65,9 +65,11 @@ enum class VMPlatform { GameBoy, GameBoyColor, Snes, Nes, Genesis, MasterSystem 
 routine's convention is sealed in its own binding; only the register/memory *vocabulary* a binding
 names is system-specific (and lives in a per-system header — `gb.h` for the Game Boy family).
 
-In v1 the **GameBoy / GameBoyColor** backend is the only one built; any other enumerator throws
-`std::runtime_error` ("no backend built in v1") at `Vm` construction. The other entries are the
-declared seam — a new system is a drop-in backend, not a change to this surface.
+The **GameBoy / GameBoyColor** backend and the **Snes** backend are built. A GameBoy machine runs
+routines (this page); a hosted SNES cartridge runs whole (`co-execution.md`) — `Vm::SNES` and its pad
+vocabulary in `snes.h`, with no `uploadRoutine` / `assemble` surface. Any other enumerator throws
+`std::runtime_error` ("no backend built") at `Vm` construction; a new system is a drop-in backend, not a
+change to this surface.
 (`vm.platform()` reports back the system a `Vm` was constructed for.)
 
 A machine runs at its core's own speed — a Game Boy at 4'194'304 Hz, one tick of it one 70'224-cycle
@@ -438,9 +440,10 @@ byte-reproducible in plain C++, so it is a porting job rather than a VM routine.
   needs the backend to serve it: a `GbHardwareMemory` value, its direct-access mapping in
   `src/vm/gameboy/sameboy_machine.cpp`, and its range in `regionFor` / `regionIsAddressable`
   (`src/vm/gameboy/sameboy_backend.cpp`). Updating one and not the others reddens the suite.
-- **Add a whole new system (SNES, NES, …):** add a `src/vm/<system>/` folder with that system's
-  backend (and its own ISA assembler + routines), and a factory case — the public `vm.h` surface does
-  not change. Every system's machine idiom stays behind its own backend; `vm.h` stays system-agnostic.
+- **Add a whole new system (NES, Genesis, …):** add a `src/vm/<system>/` folder with its backend and
+  its `detail::<system>Core` hook, its `VMPlatform` enumerators, its `detail::coreFor` case and its
+  pre-bound `Vm::` types in `vm.h` — the public `vm.h` surface does not change. Every system's machine
+  idiom stays behind its own backend; `vm.h` stays system-agnostic.
 
 ## Status
 

@@ -4,8 +4,8 @@
 //
 // vm.h is system-agnostic; this header supplies the Game Boy family's CPU register set as typed
 // Location constants a routine binding names. The SM83 CPU is shared by the DMG and the CGB, so this
-// vocabulary serves both (VMPlatform::GameBoy and ::GameBoyColor). A future system adds its own
-// header (snes.h with the 65816's registers, …) — vm.h never changes.
+// vocabulary serves both (VMPlatform::GameBoy and ::GameBoyColor). Each system has its own vocabulary
+// header beside this one; `retropp/snes.h` is the SNES's.
 //
 // Use the constants directly in a binding:
 //   RoutineBinding{ .inputs = {gb::A, gb::B}, .output = gb::A }

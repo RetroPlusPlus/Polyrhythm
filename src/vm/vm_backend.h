@@ -2,9 +2,9 @@
 //
 // This is the boundary that makes the VM host multi-system. The generic Vm (vm.cpp) owns one
 // VmBackend chosen by VMPlatform and drives it through this interface; it knows nothing about SM83,
-// the Game Boy memory map, or SameBoy. Each system supplies a concrete backend (SameBoyBackend is
-// the only one in v1; a SNES / NES / Genesis backend is a drop-in implementation of this same
-// interface). All machine idiom for a system lives behind its backend.
+// the Game Boy memory map, or SameBoy. Each system supplies a concrete backend (SameBoyBackend for the
+// Game Boy family, SnesBackend for the SNES; a NES / Genesis backend is a drop-in implementation of this
+// same interface). All machine idiom for a system lives behind its backend.
 //
 // This header is INTERNAL — under src/vm/, never include/retropp/. It pulls no backend-library type.
 #ifndef RETROPP_SRC_VM_VM_BACKEND_H

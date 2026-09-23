@@ -25,12 +25,11 @@ This is the deep end of **Conductor**, the platform's VM layer — the routine s
 **One property holds across all of it: the image is never modified.** Everything here happens against
 bytes exactly as they shipped, in memory this process owns, with the behaviour living in your code.
 
-> **Platform support today: the Game Boy and Game Boy Color only.** Every verb on this page is
-> available on `Vm::GB` and `Vm::GBC`, and constructing a `Vm` for any other `VMPlatform` throws.
-> **More consoles are planned**, and the surface is built for them: nothing on this page is
-> Game-Boy-shaped except the `gb::` vocabulary it names registers and memory areas with. A second
-> console brings its own backend and its own `<console>::` header, and the verbs, the declarations and
-> the calling conventions read identically. See [Status](#status).
+> **The co-execution verbs on this page run on `Vm::GB` and `Vm::GBC`.** A `Vm::SNES` hosts and runs a
+> whole cartridge — `hostRom` / `run` / `speed` / `stop` / `video` / `buttons` — but the naming, escape,
+> watch and routine-binding verbs below throw `std::logic_error` on it. Constructing a `Vm` for a
+> `VMPlatform` with no backend built throws. The verbs, declarations and calling conventions are the same
+> on every console; a console names its registers and memory areas through its own `<console>::` header.
 
 ## Contents
 
@@ -354,6 +353,17 @@ so the cartridge's own code tells a tap from a hold the way it does on hardware.
 
 It arrives at the next step boundary, like every other verb: a machine on your tick sees it at the
 next `advanceTick`, one running on its own clock at its next step. A core with no input path throws.
+
+The SNES pad is the same shape in `snes.h`: `snes::Button` — its twelve buttons — bound in an
+`ActionMap` and read back with `snes::held(input)`, handed over the same way:
+
+```cpp
+machine.buttons(snes::held(input));
+```
+
+The console has two controller ports, so `snes::Ports{.one = snes::held(input), .two = …}` drives both
+at once; an empty `std::optional` for a port is an empty socket, which a cartridge reads apart from a
+controller holding nothing.
 
 ## While it runs: one thread owns the machine
 
@@ -768,7 +778,7 @@ a resident sound driver are the neighbouring surface, in
 
 ## Status
 
-**Available on the Game Boy and Game Boy Color backend**, which is the only backend built today:
+**Available on the Game Boy and Game Boy Color backend:**
 `hostRom`; the `MemoryRegion` / `registerRegions` / `read` / `write` surface in both its declared and
 built-on-the-spot forms; the `gb::` memory constants and `gb::banked` addressing; `run` / `speed` /
 `stop` with seeded post-boot state and the per-step publish; `registerEscapes` with both kinds —
@@ -778,7 +788,10 @@ outcomes, `AccessSource` and the watch table on the same terms; `bindRoutine`, i
 context, nested to any depth; and `video`, declared through `VmConfig` or switched at runtime, on
 either clock.
 
-**Constructing a `Vm` for any other `VMPlatform` throws** — `Snes`, `Nes`, `Genesis` and
+On a `Vm::SNES`, `hostRom` / `run` / `speed` / `stop` / `video` / `buttons` run; the naming, escape,
+watch and routine-binding verbs above throw `std::logic_error`.
+
+**Constructing a `Vm` for a `VMPlatform` with no backend built throws** — `Nes`, `Genesis` and
 `MasterSystem` are enumerated so a consumer can name one, and each is a drop-in when its backend
 lands.
 

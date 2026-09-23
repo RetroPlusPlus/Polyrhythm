@@ -77,22 +77,24 @@ struct VmCoreAccess;  // src/vm/vm_core_access.h — builds a Vm from a resolved
 
 // The target system whose VM backend runs the routine. Each enumerator selects a per-system backend;
 // the call surface is identical across systems because each routine's convention is sealed in its
-// binding. GameBoy / GameBoyColor map to the SM83 / SameBoy backend — the only backend built in v1.
-// Any other enumerator throws at Vm construction ("no backend built in v1"); it is a drop-in when a
-// consumer exercises it (the ViewportResolution::Snes precedent). Extend this list as systems land.
+// binding. GameBoy / GameBoyColor map to the SM83 / SameBoy backend and Snes to the 65816 / Snaggletooth
+// backend; an enumerator with no backend built throws at Vm construction ("no backend built"). Extend this
+// list as systems land.
 enum class VMPlatform { GameBoy, GameBoyColor, Snes, Nes, Genesis, MasterSystem };
 
 // The ISA a VM of `platform` runs — the assembler it uses and the byte format it accepts. Several
 // platforms can share one ISA (the Game Boy and Game Boy Color both run SM83), which is why a chiptune's
 // compatibility is keyed on the ISA, not the exact platform. The audio system uses this to verify, at
-// play(), that a catalog entry's (developer-selected) ISA matches the VM it is being cued on. Unbuilt
-// platforms have no backend (Vm construction throws), so their mapping is a placeholder for now.
+// play(), that a catalog entry's (developer-selected) ISA matches the VM it is being cued on. A platform
+// whose backend is not built has no ISA to run, so its mapping is a placeholder (Vm construction throws
+// for it).
 [[nodiscard]] constexpr Isa isaFor(VMPlatform platform) noexcept {
     switch (platform) {
         case VMPlatform::GameBoy:
         case VMPlatform::GameBoyColor:
             return Isa::Sm83;
         case VMPlatform::Snes:
+            return Isa::Wdc65816;
         case VMPlatform::Nes:
         case VMPlatform::Genesis:
         case VMPlatform::MasterSystem:
@@ -108,6 +110,7 @@ namespace detail {
 using CoreFactory = std::unique_ptr<vm::VmBackend> (*)(VMPlatform);
 
 std::unique_ptr<vm::VmBackend> gameBoyCore(VMPlatform platform);  // src/vm/gameboy/sameboy_backend.cpp
+std::unique_ptr<vm::VmBackend> snesCore(VMPlatform platform);     // src/vm/snes/snes_backend.cpp
 
 [[nodiscard]] inline CoreFactory coreFor(VMPlatform platform) noexcept {
     switch (platform) {
@@ -115,6 +118,7 @@ std::unique_ptr<vm::VmBackend> gameBoyCore(VMPlatform platform);  // src/vm/game
         case VMPlatform::GameBoyColor:
             return &gameBoyCore;
         case VMPlatform::Snes:
+            return &snesCore;
         case VMPlatform::Nes:
         case VMPlatform::Genesis:
         case VMPlatform::MasterSystem:
@@ -439,6 +443,7 @@ public:
     // never lives in one.
     class GB;
     class GBC;
+    class SNES;
 
     Vm(const Vm&) = delete;
     Vm& operator=(const Vm&) = delete;
@@ -913,6 +918,14 @@ public:
     explicit GBC(VmConfig config)
         : Vm(&detail::gameBoyCore, VMPlatform::GameBoyColor, TimingProfile::GameBoyColor,
              std::move(config)) {}
+};
+
+// A SNES VM with its platform + timing pre-bound, on the same terms as GB / GBC.
+class Vm::SNES : public Vm {
+public:
+    SNES() : Vm(&detail::snesCore, VMPlatform::Snes, TimingProfile::Snes, VmConfig{}) {}
+    explicit SNES(VmConfig config)
+        : Vm(&detail::snesCore, VMPlatform::Snes, TimingProfile::Snes, std::move(config)) {}
 };
 
 // ── Template definitions ──────────────────────────────────────────────────────────────────────
