@@ -354,7 +354,7 @@ A driver with no state is `DriverId<NoSlots>` — pass no slots batch.
 - **Placement is declared, banked when a driver needs it.** Each image names a base; `gb::banked(bank, addr)`
   places a bank-qualified image and the VM bank-switches through the driver's own placed code, with the
   mapper (`gb::Mbc3`) declared on the binding. The Vm-layer placement mechanics are in
-  [vm-and-routines.md](vm-and-routines.md#hosting-a-resident-driver).
+  [vm-and-routines.md](vm/vm-and-routines.md#hosting-a-resident-driver).
 - **A hosted driver rides the `vmDriver` mixer bus** (see [Volume](#volume-the-audiomixer)) — a straight
   amplifier over the whole driver voice, unity by default. The system's `stop()` does **not** close a
   resident driver (that would discard its song position); only `HostedDriver::close()` or the system's

@@ -276,7 +276,7 @@ next one. It says which frame this is rather than when it arrived, which is what
 game's tick and a machine on a clock of its own be read the same way.
 
 The full picture surface — turning it on, what a machine owes, and how it composes with native layers —
-is in [co-execution.md](co-execution.md).
+is in [co-execution.md](vm/co-execution.md).
 
 #### A raster your program draws itself
 

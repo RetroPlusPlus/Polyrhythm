@@ -636,4 +636,4 @@ std::uint8_t n = roll();     // plain C++ at the call site
 
 Registers and addresses appear only in the binding, never at a call site. No game ROM is loaded or
 executed — the platform assembles your `.asm` in-process and injects it. A malformed binding throws at
-registration rather than failing quietly later. See [vm-and-routines.md](vm-and-routines.md).
+registration rather than failing quietly later. See [vm-and-routines.md](vm/vm-and-routines.md).

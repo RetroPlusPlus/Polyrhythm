@@ -2,7 +2,9 @@
 
 **Conductor** is the platform's VM layer: it hosts the machines, paces them, and coordinates them with
 your own code. This page is the routine surface; a whole cartridge running inside your game is
-[co-execution.md](co-execution.md).
+[co-execution.md](co-execution.md). The map of the layer — the seam, the consoles, which verbs every
+console shares — is [README.md](README.md), and each console has a page of its own for what its core is
+and answers: [gameboy.md](gameboy.md), [snes.md](snes.md).
 
 The VM host runs the narrow set of original-machine routines whose output a native re-implementation
 **cannot** reproduce exactly — gameplay RNG that reads a free-running hardware register, and a
@@ -167,7 +169,7 @@ The optional `policy` is the same `AssetPolicy` the asset and audio forms use:
   development, and logs a warning naming the routine. Take that warning seriously in a build you intend
   to ship: `Embed` promises the bytecode is inside the binary, and the disk read behind it succeeds only
   where the `.asm` is present. Registering from a static library needs no link settings of its own — see
-  [build-and-consume.md](build-and-consume.md#registering-code-in-a-library).
+  [build-and-consume.md](../build-and-consume.md#registering-code-in-a-library).
 - **`LoadFromPath`** — resolve `asmFilePath` against the platform's single `assetRoot()`, read it at
   registration, and assemble it in-process — the form for a copyright-derived routine you ship beside
   the binary rather than bake in. There is no separate routine root: routines resolve against the same
@@ -274,7 +276,7 @@ enum class Throttle { HostSpeed, HardwareSpeed };
 `HostSpeed` runs the routine as fast as the host allows — correct for a routine you CALL for a return
 value (RNG). `HardwareSpeed` throttles the routine to the CPU clock for a real-time consumer like a
 sound driver; it is **realized** and drives the audio chain — but you don't register a HardwareSpeed
-routine directly, the [`AudioSystem`](audio.md) does it for you (you register *audio*, not a routine).
+routine directly, the [`AudioSystem`](../audio.md) does it for you (you register *audio*, not a routine).
 `instances > 1` (multiple independent copies of a routine, for anti-channel-stealing audio) remains a
 **declared seam**: registering with it throws `std::logic_error` today and is realized with the
 anti-stealing backend. It is in the surface now so that work plugs in without an API break.
@@ -282,7 +284,7 @@ anti-stealing backend. It is in the surface now so that work plugs in without an
 The raw driver chain underneath the `AudioSystem` is three `Vm` members: `enableAudio(rate, onSample)`
 turns on the APU and routes each produced PCM frame, `startDriver(routine)` positions a `HardwareSpeed`
 routine to run continuously, and `stepDriver(cpuCycles)` advances it one cycle budget (producing audio
-into the sink). You normally let the [`AudioSystem`](audio.md) own these; reach for them directly only
+into the sink). You normally let the [`AudioSystem`](../audio.md) own these; reach for them directly only
 to host a driver yourself. A hosted cartridge's own sound comes through the same `enableAudio`, on
 every console — see [co-execution.md](co-execution.md#sound-hearing-it).
 
@@ -290,7 +292,7 @@ every console — see [co-execution.md](co-execution.md#sound-hearing-it).
 
 A sound driver is more than a called routine: it is a **resident machine** — one or more placed code
 images, a per-frame tick, and its own RAM — that runs for the life of the system. The normal way to host
-one is [`AudioSystem::host`](audio.md#hosting-your-own-sound-driver), which owns the VM and drives the
+one is [`AudioSystem::host`](../audio.md#hosting-your-own-sound-driver), which owns the VM and drives the
 driver through a typed handle; `Vm` exposes the raw placement + step surface underneath, for hosting a
 driver directly.
 
@@ -454,7 +456,7 @@ Available: the Game Boy / Game Boy Color backend, both registration forms — `u
 `Embed` / `LoadFromPath` policy) — the built-in SM83 assembler, the `Location` / `RoutineBinding`
 surface, the `gb::` register vocabulary, the `divRng` preset, `advanceTick` / `advanceClock` (the
 free-running-divider model), the host-speed / single-instance path, the `HardwareSpeed` throttle
-(driving the [audio chain](audio.md)), and the resident-driver surface (`hostDriver` / `tickDriver` /
+(driving the [audio chain](../audio.md)), and the resident-driver surface (`hostDriver` / `tickDriver` /
 `readSlot`, with banked placement via `gb::banked` + `gb::Mbc3`), and cartridge hosting (`hostRom`
 with the `MemoryRegion` / `registerRegions` / `read` / `write` surface and the `gb::` memory
 constants); and the SNES backend — `Vm::SNES`, hosting a whole cartridge with its pad vocabulary in
