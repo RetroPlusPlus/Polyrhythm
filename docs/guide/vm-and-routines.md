@@ -67,9 +67,10 @@ names is system-specific (and lives in a per-system header — `gb.h` for the Ga
 
 The **GameBoy / GameBoyColor** backend and the **Snes** backend are built. A GameBoy machine runs
 routines (this page); a hosted SNES cartridge runs whole (`co-execution.md`) — `Vm::SNES` and its pad
-vocabulary in `snes.h`, with no `uploadRoutine` / `assemble` surface. Any other enumerator throws
-`std::runtime_error` ("no backend built") at `Vm` construction; a new system is a drop-in backend, not a
-change to this surface.
+vocabulary in `snes.h`, with no `uploadRoutine` / `assemble` surface. The SNES core is the console
+alone: a cartridge whose header names a coprocessor does not boot. Any other enumerator throws
+`std::runtime_error` ("no backend built") at `Vm` construction; a new system is a drop-in backend,
+not a change to this surface.
 (`vm.platform()` reports back the system a `Vm` was constructed for.)
 
 A machine runs at its core's own speed — a Game Boy at 4'194'304 Hz, one tick of it one 70'224-cycle
@@ -456,5 +457,6 @@ free-running-divider model), the host-speed / single-instance path, the `Hardwar
 (driving the [audio chain](audio.md)), and the resident-driver surface (`hostDriver` / `tickDriver` /
 `readSlot`, with banked placement via `gb::banked` + `gb::Mbc3`), and cartridge hosting (`hostRom`
 with the `MemoryRegion` / `registerRegions` / `read` / `write` surface and the `gb::` memory
-constants). Declared seams, not yet realized: `instances > 1`, binding a
-location by label name, and non-Game-Boy backends.
+constants); and the SNES backend — `Vm::SNES`, hosting a whole cartridge with its pad vocabulary in
+`snes.h` (`co-execution.md`). Declared seams: `instances > 1` (registering with more than one throws
+`std::logic_error`) and binding a location by label name.

@@ -97,9 +97,9 @@ inline constexpr std::string_view kDemoCartridgeSource = R"asm(
         LDA #104
         STA $11                 ; sprite 0 Y
 
-        ; Fill VRAM tiles 0-63 with a solid block of colour 1, so a 32x32 sprite (a 4x4 grid of tiles) is
+        ; Fill VRAM tiles 0-63 with a solid block of color 1, so a 32x32 sprite (a 4x4 grid of tiles) is
         ; solid whichever tiles it reads. A16 lets one store write a whole VRAM word (low to $2118, high to
-        ; $2119) and step the address; each tile is eight rows of plane 0 set (colour 1) then eight blank.
+        ; $2119) and step the address; each tile is eight rows of plane 0 set (color 1) then eight blank.
         LDA #$80
         STA !$2115              ; VMAIN: the address steps one word after the high byte
         STZ !$2116              ; VMADDL
@@ -122,7 +122,7 @@ tblank: STZ !$2118              ; planes 2 and 3 clear
         BNE tfill
         SEP #$20                ; back to 8-bit accumulator
 
-        ; The sprite's colour: object palette 0, colour 1 is CGRAM word 129, set white.
+        ; The sprite's color: object palette 0, color 1 is CGRAM word 129, set white.
         LDA #$81
         STA !$2121              ; CGADD
         LDA #$FF

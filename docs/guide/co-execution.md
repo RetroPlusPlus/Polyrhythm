@@ -7,6 +7,7 @@
 #include "retropp/guest_frame.h"   // GuestFrameContent — a machine's video as layer content
 #include "retropp/memory_region.h" // MemoryRegion — where a place is
 #include "retropp/gb.h"            // gb::A … gb::PC, gb::VRam … gb::Hram, gb::banked
+#include "retropp/snes.h"          // snes::Button … snes::held, snes::Ports — the SNES pad, both ports
 ```
 
 Your game hands the platform a cartridge image and gets a whole machine: one that boots, runs its own
@@ -778,7 +779,7 @@ be discovered.
 
 ## Try it
 
-Five examples, each one act, one that puts the whole surface on a single screen, and one that runs your own cartridge.
+Seven examples: four of one act each, one that puts the whole surface on a single screen, and two that run a cartridge of your own.
 
 | | |
 |---|---|
@@ -788,8 +789,9 @@ Five examples, each one act, one that puts the whole surface on a single screen,
 | `examples/guest_nesting` | a replacement that answers the cartridge's damage rule by calling the cartridge's **own** generator, nested inside the escape; then, parked, calls its own decompressor on a table the game never reached |
 | `examples/coexecution` | windowed, and every verb on this page acts on one picture: the cartridge marches eight walkers of its own each frame, drawn from the per-step publish. Under its own pace rule they hold a column; with `.replaces` armed they scatter |
 | `examples/gb_player` | windowed: one ROM of your own on two machines side by side, one advanced by the engine's tick and one free-running on a clock of its own, both submitting their video as layer content. Asks for a ROM through the native file picker and ships none |
+| `examples/snes/player` | windowed: a SNES cartridge on two machines side by side — one advanced by the engine's tick, one free-running on a clock of its own — the same two pads driving both, each machine's sound in a queue of its own with a key choosing which is heard and a scope of what the device took. Asks for a ROM through the native file picker, and runs its own demo cartridge (`examples/snes/cartridge/`, authored as source and assembled as the program starts) when none is chosen |
 
-Every cartridge in the first five is authored in-code or by a committed generator script; the player takes a ROM of your own at runtime and ships none.
+Every cartridge in the first five is authored in-code or by a committed generator script; the two players take a ROM of your own at runtime and ship none.
 
 ## Where to change things
 
@@ -797,9 +799,11 @@ Every cartridge in the first five is authored in-code or by a committed generato
 |---|---|
 | The public surface | `include/retropp/vm.h`, `include/retropp/guest_escape.h`, `include/retropp/guest_watch.h`, `include/retropp/guest_frame.h`, `include/retropp/memory_region.h` |
 | The Game Boy vocabulary — registers, memory areas, `banked` | `include/retropp/gb.h` |
+| The SNES vocabulary — the pad, both ports | `include/retropp/snes.h` |
 | The host layer: declarations, validation, the escape and watch tables, the run loop | `src/vm/vm.cpp`, `src/vm/vm_runner.cpp` |
 | What a core must provide | `src/vm/vm_backend.h` |
 | The Game Boy backend | `src/vm/gameboy/sameboy_backend.cpp`, `src/vm/gameboy/sameboy_machine.cpp` |
+| The SNES backend | `src/vm/snes/snes_backend.cpp` |
 
 Registering an extracted routine from bytes or a `.asm` file, the `Throttle` pacing seam, and hosting
 a resident sound driver are the neighbouring surface, in
@@ -824,13 +828,13 @@ watch and routine-binding verbs above throw `std::logic_error`.
 `MasterSystem` are enumerated so a consumer can name one, and each is a drop-in when its backend
 lands.
 
-**Planned, and what a new console changes.** A second console brings a backend and a `<console>::`
-header naming its registers and memory areas; the verbs on this page, the declaration grammar and the
-binding vocabulary stay as they are, because none of them is console-shaped. Two capabilities depend
-on what a core can offer rather than on the surface: escapes need a per-instruction hook and watches
-need a per-access one, and a core that has neither refuses at declaration rather than accepting a
-declaration that could never fire. Video is a third of that kind — a core reports a completed frame,
-its dimensions and its pixel layout, and one that draws nothing refuses rather than accepting a
-request that could never be answered. A core with different dimensions or a different layout needs
-nothing new from the surface, because neither is the platform's to choose. A console also states its own access granularity — how many times
-a wide access fires a watch, and at which addresses.
+**What a console brings.** A console is a backend and a `<console>::` header naming its vocabulary;
+the verbs on this page, the declaration grammar and the binding vocabulary are the same on every
+console, because none of them is console-shaped. Three capabilities depend on what a core offers
+rather than on the surface: escapes need a per-instruction hook, watches a per-access one, and video
+a completed frame with its dimensions and pixel layout — a core without one refuses at the arming
+call rather than accepting a declaration it could never answer, which is what the SNES core does for
+escapes, watches and named places. A core with other dimensions or another layout needs nothing new
+from the surface, because neither is the platform's to choose: a SNES frame arrives 256 or 512 wide
+and 224 or 239 tall, as the cartridge's program has the chip draw it. A console also states its own
+access granularity — how many times a wide access fires a watch, and at which addresses.

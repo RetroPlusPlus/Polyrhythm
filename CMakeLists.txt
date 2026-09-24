@@ -2143,6 +2143,8 @@ if(RETROPP_BUILD_EXAMPLES)
     # ROM: the image is the developer's own, read at runtime. Dev-run only — it needs a display and a
     # file, so CI compiles it and never runs it.
     retropp_add_example(gb_player)
+    # ── SNES player — the same two-machine picture on the SNES core, with the cartridge's sound and a
+    # built-in demo cartridge, so it runs without a file. CI runs its --verify (the cadence test below).
     retropp_add_example(snes_player DIRECTORY snes/player)
     # The SNES player assembles the demo cartridge in process — its 65816 program and its SPC700 sound
     # driver — so it links both assemblers, reaches the tools/ headers, and includes the shared cartridge

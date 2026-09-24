@@ -81,7 +81,7 @@ jobs:
       # The rom-run example runs OUTSIDE the sweep so its measurements land in this log on every
       # run, pass or fail: the demo asserts each measured rate against its factor's target (--verify)
       # and a governor no longer holding wall-clock cadence turns this step red.
-      - name: Rom-run cadence — the example runs, measurements captured
+      - name: Cadence — the examples hold the hardware's rate, measurements captured
         run: |
           set -o pipefail
           ctest --test-dir /tmp/retropp-engine-ci-build -R HoldsHardwareCadenceLive --extra-verbose \
@@ -150,7 +150,7 @@ jobs:
 
       # See the linux job's twin step: the example's measurements always land in this log, and the
       # demo's own --verify gate reds the step if a rate drifts off its factor's target.
-      - name: Rom-run cadence — the example runs, measurements captured
+      - name: Cadence — the examples hold the hardware's rate, measurements captured
         run: |
           set -o pipefail
           ctest --test-dir /tmp/retropp-engine-ci-build -R HoldsHardwareCadenceLive --extra-verbose \
@@ -257,7 +257,7 @@ jobs:
 
       # See the linux job's twin step: the example's measurements always land in this log, and the
       # demo's own --verify gate reds the step if a rate drifts off its factor's target.
-      - name: Rom-run cadence — the example runs, measurements captured
+      - name: Cadence — the examples hold the hardware's rate, measurements captured
         shell: powershell
         run: |
           $results = "C:\ci-output\windows-test-results-${{ github.run_id }}-${{ github.run_attempt }}.txt"
@@ -328,7 +328,7 @@ jobs:
 
       # See the linux-x64 job's twin step: the example's measurements always land in this log, and
       # the demo's own --verify gate reds the step if a rate drifts off its factor's target.
-      - name: Rom-run cadence — the example runs, measurements captured
+      - name: Cadence — the examples hold the hardware's rate, measurements captured
         run: |
           set -o pipefail
           ctest --test-dir /tmp/retropp-engine-ci-build -R HoldsHardwareCadenceLive --extra-verbose \
@@ -430,7 +430,7 @@ jobs:
 
       # See the linux job's twin step: the example's measurements always land in this log, and the
       # demo's own --verify gate reds the step if a rate drifts off its factor's target.
-      - name: Rom-run cadence — the example runs, measurements captured
+      - name: Cadence — the examples hold the hardware's rate, measurements captured
         shell: powershell
         run: |
           $results = "C:\ci-output\windows-arm64-test-results-${{ github.run_id }}-${{ github.run_attempt }}.txt"

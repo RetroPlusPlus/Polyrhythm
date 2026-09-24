@@ -12,11 +12,10 @@
 [submodule "third_party/sdl"]
 	path = third_party/sdl
 	url = https://github.com/libsdl-org/SDL.git
-# Snaggletooth — the clean-room MIT SNES implementation (audio-first: SPC700 + S-DSP),
-# our own project developed IN PLACE in this checkout (its own repo; Polyrhythm pins the
-# gitlink like any vendored dependency, but the contents are authored here). The engine
-# consumes it behind the VmBackend seam (VMPlatform::Snes); not compiled until the
-# adapter unit wires it into the build.
+# Snaggletooth — pinned by commit; the gitlink is the authoritative pin. A clean-room, MIT-licensed
+# SNES implementation, the engine's own project in a repository of its own. The SNES core runs on its
+# machine behind the VmBackend seam (VMPlatform::Snes); its two assemblers are linked only by the
+# tests and the SNES examples, which assemble their cartridges in process.
 [submodule "third_party/snaggletooth"]
 	path = third_party/snaggletooth
 	url = https://github.com/etroimcasso/Snaggletooth.git

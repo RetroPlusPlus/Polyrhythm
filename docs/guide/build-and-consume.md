@@ -24,7 +24,7 @@ build you can verify. This section is the summary.
 
 - CMake 3.28+
 - A C++20 compiler: GCC 13+, Clang 16+, or MSVC 19.38+ (Visual Studio 2022 17.8+)
-- Git — SDL3 and SameBoy are submodules, so clone with `--recurse-submodules`
+- Git — SDL3, SameBoy and Snaggletooth are submodules, so clone with `--recurse-submodules`
 - A shader toolchain (build-time): `glslang` on Linux; `glslang` + `spirv-cross` on macOS; the
   Windows SDK's `dxc` on Windows. See the Shader toolchain note below.
 
@@ -139,6 +139,13 @@ It's an identity stamp a consumer can log or display, and carries no behavior.
   MIT-licensed; pulled transitively with
   `--recurse-submodules`. No `GB_*` symbol reaches a public header — consumers link it transitively
   but never see it.
+- **[Snaggletooth](https://github.com/etroimcasso/Snaggletooth)** — vendored as a submodule at
+  `third_party/snaggletooth/`, pinned by commit. A clean-room SNES implementation: the SNES core
+  runs on its machine (see [co-execution.md](co-execution.md)), and its two assemblers are linked
+  only by the tests and the SNES examples, which assemble their cartridges in process.
+  MIT-licensed; pulled transitively with `--recurse-submodules`. No `snaggletooth::` symbol reaches
+  a public header — a game that names the SNES links it transitively and never sees it, and one
+  that does not carries none of it.
 - **[lodepng](https://github.com/lvandeve/lodepng)** — the PNG decoder for image ingestion (see
   [images-and-transparency.md](images-and-transparency.md)). Vendored as single-file source at
   `third_party/lodepng/` (pinned upstream commit), compiled into the platform as its own
@@ -162,8 +169,8 @@ needs nothing. A missing shader tool fails the CMake configure with an install h
 (`brew install glslang spirv-cross` + `xcodebuild -downloadComponent MetalToolchain` / `apt install glslang-tools` / the Windows SDK's `dxc`).
 
 The shipped binary carries only the platform's own code plus the embedded shader bytecode and the
-statically-linked SDL3 / lodepng / SameBoy / audio-decoder (dr_wav + stb_vorbis) objects. There is no
-runtime third-party dependency to install.
+statically-linked SDL3 / lodepng / audio-decoder (dr_wav + stb_vorbis) objects and the cores the game
+names (SameBoy, Snaggletooth). There is no runtime third-party dependency to install.
 
 ## License
 
