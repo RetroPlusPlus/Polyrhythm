@@ -51,6 +51,14 @@ constexpr std::string_view kIdle =
     "        ORG $00:8000\n"
     "here:   BRA here\n";
 
+// A program that asks the chip to interlace and then rests: every frame after it is a field.
+constexpr std::string_view kInterlaces =
+    "        ORG $00:8000\n"
+    "        SEP #$20\n"
+    "        LDA #$01\n"
+    "        STA !$2133\n"
+    "here:   BRA here\n";
+
 std::vector<std::uint8_t> ntscCartridge() { return cartridgeFrom(kIdle); }
 
 // The same image with a PAL country byte, so the machine builds at the 50 Hz clock.
@@ -88,6 +96,27 @@ TEST(SnesVm, AHostedCartridgeRunsOnTheTickClock) {
     vm.advanceTick();
     EXPECT_EQ(vm.video().generation, g0 + 2);
 
+    vm.stop();
+}
+
+// On a running machine the video settings land with the switch at the next step boundary, where every
+// change issued to a running machine lands: asked between two ticks, the picture the game holds is the
+// one the last tick latched, and the tick after the call answers with the fields woven.
+TEST(SnesVm, VideoSettingsLandAtTheStepBoundaryOnARunningMachine) {
+    Vm::SNES vm{VmConfig{.video = true}};
+    vm.hostRom(cartridgeFrom(kInterlaces));
+    vm.run(Vm::Advance::OnTick);
+    for (int tick = 0; tick < 3; ++tick) {
+        vm.advanceTick();
+    }
+    EXPECT_EQ(vm.video().height, 224);   // fields, shown as they come
+
+    vm.video(true, {.interlacing = {.on = true}});
+    EXPECT_EQ(vm.video().height, 224);   // asked, not landed: the last latched picture
+
+    vm.advanceTick();                    // the change lands at the step's start; the step's field is woven
+    EXPECT_EQ(vm.video().height, 448);
+    EXPECT_EQ(vm.video().width, 256);
     vm.stop();
 }
 

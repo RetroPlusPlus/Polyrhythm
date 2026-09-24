@@ -982,9 +982,9 @@ void SameBoyBackend::setFrameSink(FrameSink sink) {
     }
     // The machine reports the dimensions it drew; the layout is this core's, declared once here. A
     // core whose PPU wrote a different layout would name a different enumerator, and nothing above
-    // would convert anything.
+    // would convert anything. The Game Boy draws whole frames, so every one is reported as one.
     machine_.setFrameSink([this](std::span<const std::uint8_t> pixels, int width, int height) {
-        frameSink_(pixels, width, height, RasterPixelFormat::Rgba8888);
+        frameSink_(pixels, width, height, RasterPixelFormat::Rgba8888, FrameField::Whole);
     });
 }
 

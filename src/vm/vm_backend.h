@@ -87,6 +87,12 @@ struct MachineClock {
     }
 };
 
+// Which part of the picture a completed frame is. A machine drawing whole frames reports each as Whole.
+// A machine whose program has the chip interlace hands over one field a frame — every other line of the
+// picture, at alternating parity — and reports which; the host weaves them into one picture or shows
+// each as it comes, as the game asked. A core that never interlaces always reports Whole.
+enum class FrameField : std::uint8_t { Whole, Even, Odd };
+
 // The lifecycle the generic host drives per system. A call is: beginCall(entry) → writeRegister /
 // writeMemory (marshal inputs) → run() → readRegister / readMemory (read the output). Registers are
 // named by the backend-defined register id carried in a Location (the platform header — gb.h — is
@@ -383,11 +389,11 @@ public:
     // asked of it.
 
     // The sink the backend calls when a frame completes. `pixels` is row-major and
-    // width * height * bytesPerPixel(format) bytes long, valid for the duration of the call. Installed
-    // once by the generic host, in the same posture as AudioSampleSink: it fires on the thread that
-    // steps the machine.
+    // width * height * bytesPerPixel(format) bytes long, valid for the duration of the call; `field` says
+    // whether it is a whole frame or which field of an interlaced picture. Installed once by the generic
+    // host, in the same posture as AudioSampleSink: it fires on the thread that steps the machine.
     using FrameSink = std::function<void(std::span<const std::uint8_t> pixels, int width, int height,
-                                         RasterPixelFormat format)>;
+                                         RasterPixelFormat format, FrameField field)>;
 
     // Install the sink. Idempotent; an empty sink detaches.
     virtual void setFrameSink(FrameSink sink) = 0;

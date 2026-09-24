@@ -278,6 +278,32 @@ the machine knows nothing about any of it.
 routines or its driver never draws a pixel and never pays for one. `video(true)` turns that cost on
 per machine and `video(false)` turns it back off; both are idempotent.
 
+**The same switch takes the machine's video settings beside it.** What is set here is held by the
+machine and applies to every frame it hands over from then on; an option left unset keeps its held
+value, so a call states only what it changes and `video(true)` alone changes nothing but the switch.
+Interlacing is the setting:
+
+```cpp
+vm.video(true, {.interlacing = {.on = true, .type = Weave::Straight}});   // weave the fields
+vm.video(true, {.interlacing = {.on = false}});                          // each field as it comes
+vm.video(false, {.interlacing = {.on = true}});                          // off; woven when next on
+```
+
+A machine whose program has the chip interlace hands over one **field** a frame — every other line of
+its picture, at alternating parity — and each field is a frame it finished, so each advances
+`generation`. With interlacing off, the host shows each field as it comes, at a field's height. With
+it on, the host **weaves** them into one picture twice a field's height: line *y* of the field of
+parity *p* is line *2y + p* of the picture, the picture holds the newest field of each parity, and the
+first field after weaving starts fills both parities so no line waits empty for the other. `Weave`
+names how: `Straight` lands each field's lines at their own parity — exact for a still picture and for
+hi-res text, combing at a moving edge for the frame it moves in — and `Blend` averages each line of
+that weave with the line below it, so a moving edge blends instead of combing, at the cost of vertical
+sharpness. A whole frame from the same machine passes through as it is, whatever the settings say. The
+guest decides whether to interlace; this decides only how the host shows it, and a machine that never
+interlaces is unaffected by it.
+
+Asked of a running machine, the settings land with the switch at its next step boundary, below.
+
 **Declare it at construction if you know then**, which is the same setting reached the other way:
 
 ```cpp
@@ -312,11 +338,13 @@ several of its frames — the platform shows the last one it completed, and hold
 tick where it completed none. A machine slower than the display repeats a frame rather than blanking,
 which is what a console on a faster screen does.
 
-**What the picture carries is the machine's, not the platform's:** its own `width` and `height`, its
-own `RasterPixelFormat`, and `generation` — the platform's count of the frames the machine has
-finished, which is how a submission says whether it carries a new one. Nothing asks a machine how fast
-it runs or which frame it is on. `pixels` is valid until the next `advanceTick`, which is exactly the
-lifetime a submission needs.
+**What the picture carries is the machine's, not the platform's:** its own `width` and `height` — a
+woven picture's height is twice a field's — its own `RasterPixelFormat`, and `generation` — the
+platform's count of the frames the machine has finished, which is how a submission says whether it
+carries a new one. Nothing asks a machine how fast it runs or which frame it is on. `pixels` is valid
+until the next `advanceTick`, which is exactly the lifetime a submission needs. A machine whose picture
+comes in more than one size lands in one slot through the raster's `fit`, the size it is shown at;
+which sizes a console draws is on its page.
 
 The content type itself is in [draw-state.md](../draw-state.md#rastercontent--a-raster-of-pixels).
 
@@ -807,6 +835,7 @@ Every cartridge in the first five is authored in-code or by a committed generato
 | What a core must provide | `src/vm/vm_backend.h` |
 | The Game Boy backend | `src/vm/gameboy/sameboy_backend.cpp`, `src/vm/gameboy/sameboy_machine.cpp` |
 | The SNES backend | `src/vm/snes/snes_backend.cpp` |
+| The weave — where a field lands, what the first fills, the two weaves | `src/vm/vm.cpp` (`weaveField`) |
 
 Registering an extracted routine from bytes or a `.asm` file, the `Throttle` pacing seam, and hosting
 a resident sound driver are the neighbouring surface, in
@@ -821,8 +850,8 @@ built-on-the-spot forms; the `gb::` memory constants and `gb::banked` addressing
 `.handler` and `.replaces` — the escape table (`armed` / `remove` / `contains` / `size`) including
 changing it while the machine runs; `registerWatches` with both directions, the `AccessVerdict`
 outcomes, `AccessSource` and the watch table on the same terms; `bindRoutine`, in the guest's own
-context, nested to any depth; and `video`, declared through `VmConfig` or switched at runtime, on
-either clock.
+context, nested to any depth; and `video`, declared through `VmConfig` or switched at runtime, with its
+settings, on either clock.
 
 On a `Vm::SNES`, `hostRom` / `run` / `speed` / `stop` / `video` / `buttons` / `enableAudio` run; the naming, escape,
 watch and routine-binding verbs above refuse at the declaration — the exception each throws is on
@@ -840,5 +869,6 @@ a completed frame with its dimensions and pixel layout — a core without one re
 call rather than accepting a declaration it could never answer, which is what the SNES core does for
 escapes, watches and named places. A core with other dimensions or another layout needs nothing new
 from the surface, because neither is the platform's to choose: a SNES frame arrives 256 or 512 wide
-and 224 or 239 tall, as the cartridge's program has the chip draw it. A console also states its own
+and 224 or 239 tall, whole or one field of an interlaced picture, as the cartridge's program has the
+chip draw it. A console also states its own
 access granularity — how many times a wide access fires a watch, and at which addresses.

@@ -54,7 +54,7 @@ The seam carries everything the host needs to run a machine without knowing whic
 | loading an image, booting it, running it for a cycle budget | `hostRom`, `run`, `speed`, `stop`, `advanceTick` |
 | whether a place is reachable, and reading and writing one | `registerRegions`, `read`, `write` |
 | a per-instruction hook and a per-access hook | `registerEscapes`, `registerWatches`, and the two tables |
-| a completed frame, with its dimensions and pixel layout | `video()` as a layer's `RasterContent` |
+| a completed frame, with its dimensions, its pixel layout, and whether it is a whole frame or a field of an interlaced picture | `video()` as a layer's `RasterContent`, the fields woven or shown as they come |
 | the sound chip's frames, converted to the rate asked for | `enableAudio` |
 | a button word | `buttons` |
 | whether the core keeps battery-backed data, and its file extension | `VmConfig{.key}` and `batterySave` |
@@ -125,7 +125,7 @@ that owns it; a console page adds only what its hardware makes different.
 | `hostRom(bytes)` — an image on the machine, every byte addressable | [co-execution.md § Hosting a cartridge](co-execution.md#hosting-a-cartridge) |
 | `run(Advance)` · `speed(num, den)` · `stop()` · `reset()` — boot, pace, park, fresh boot | [co-execution.md § Running it](co-execution.md#running-it) |
 | `advanceTick()` — the step, on your tick | [co-execution.md § Advancing it on your own tick instead](co-execution.md#advancing-it-on-your-own-tick-instead) |
-| `video(on)` · `video()` · `VmConfig{.video}` — the picture as a layer's content | [co-execution.md § Video](co-execution.md#video-showing-its-picture) |
+| `video(on)` · `video(on, options)` · `video()` · `VmConfig{.video}` — the picture as a layer's content, the fields of an interlaced picture woven | [co-execution.md § Video](co-execution.md#video-showing-its-picture) |
 | `enableAudio(rate, onSample)` — the sound chip's frames at the rate you name | [co-execution.md § Sound](co-execution.md#sound-hearing-it) |
 | `buttons(held)` — the pad, a level landing at the next step boundary | [co-execution.md § Input](co-execution.md#input-playing-it) |
 | `VmConfig{.key}` · `batterySave(name)` — the guest's battery-backed data, kept for the player | [vm-and-routines.md § Keeping what the guest writes](vm-and-routines.md#keeping-what-the-guest-writes) |

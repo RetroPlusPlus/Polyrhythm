@@ -1,6 +1,7 @@
 // A hosted machine's picture reaches the engine through the frame sink, at the machine's own
-// dimensions, and only when video is asked for — a raster costs cycles, so a machine nobody watches
-// draws nothing and its state is the same either way (snes.h:543-544).
+// dimensions, reported as a whole frame or as a field of an interlaced picture, and only when video is
+// asked for — a raster costs cycles, so a machine nobody watches draws nothing and its state is the same
+// either way (snes.h:543-544).
 
 #include <algorithm>
 #include <cstddef>
@@ -47,12 +48,21 @@ constexpr std::string_view kIdle =
     "        ORG $00:8000\n"
     "here:   BRA here\n";
 
+// A program that asks the chip to interlace and then rests.
+constexpr std::string_view kInterlaces =
+    "        ORG $00:8000\n"
+    "        SEP #$20\n"
+    "        LDA #$01\n"
+    "        STA !$2133\n"   // SETINI: interlace
+    "here:   BRA here\n";
+
 // What a frame the sink received looked like.
 struct FrameReport {
     int               width  = 0;
     int               height = 0;
     RasterPixelFormat format = RasterPixelFormat::Rgba8888;
     int               count  = 0;
+    std::vector<vm::FrameField> fields;  // what each frame was reported as, in order
 };
 
 TEST(SnesBackendFrame, AFrameArrivesWithTheMachinesOwnDimensions) {
@@ -60,11 +70,12 @@ TEST(SnesBackendFrame, AFrameArrivesWithTheMachinesOwnDimensions) {
     FrameReport report;
     backend.setVideoEnabled(true);
     backend.setFrameSink([&report](std::span<const std::uint8_t> pixels, int width, int height,
-                                   RasterPixelFormat format) {
+                                   RasterPixelFormat format, vm::FrameField field) {
         report.width  = width;
         report.height = height;
         report.format = format;
         ++report.count;
+        report.fields.push_back(field);
         EXPECT_EQ(pixels.size(),
                   static_cast<std::size_t>(width) * static_cast<std::size_t>(height) *
                       bytesPerPixel(format));
@@ -76,13 +87,16 @@ TEST(SnesBackendFrame, AFrameArrivesWithTheMachinesOwnDimensions) {
     EXPECT_EQ(report.format, RasterPixelFormat::Rgba8888);
     EXPECT_EQ(report.width, 256);   // a fixture that never widens draws 256 across
     EXPECT_GT(report.height, 0);
+    for (const vm::FrameField field : report.fields) {
+        EXPECT_EQ(field, vm::FrameField::Whole);   // a program that never interlaces draws whole frames
+    }
 
     // The height is the machine's own, not a number this test picked: a second run reports the same.
     SnesBackend second;
     FrameReport again;
     second.setVideoEnabled(true);
     second.setFrameSink([&again](std::span<const std::uint8_t>, int width, int height,
-                                 RasterPixelFormat) {
+                                 RasterPixelFormat, vm::FrameField) {
         again.width  = width;
         again.height = height;
         ++again.count;
@@ -97,7 +111,7 @@ TEST(SnesBackendFrame, AFrameArrivesWithTheMachinesOwnDimensions) {
 TEST(SnesBackendFrame, VideoOffDeliversNoFrameAndDoesNotChangeState) {
     SnesBackend off;
     int frames = 0;
-    off.setFrameSink([&frames](std::span<const std::uint8_t>, int, int, RasterPixelFormat) { ++frames; });
+    off.setFrameSink([&frames](std::span<const std::uint8_t>, int, int, RasterPixelFormat, vm::FrameField) { ++frames; });
     off.loadRom(cartridgeFrom(kIdle));  // video off is the default
     off.runForCycles(kOneFrame + 20'000);
     EXPECT_EQ(frames, 0);
@@ -106,7 +120,7 @@ TEST(SnesBackendFrame, VideoOffDeliversNoFrameAndDoesNotChangeState) {
     // not the program's state.
     SnesBackend on;
     on.setVideoEnabled(true);
-    on.setFrameSink([](std::span<const std::uint8_t>, int, int, RasterPixelFormat) {});
+    on.setFrameSink([](std::span<const std::uint8_t>, int, int, RasterPixelFormat, vm::FrameField) {});
     on.loadRom(cartridgeFrom(kIdle));
     on.runForCycles(kOneFrame + 20'000);
 
@@ -120,7 +134,7 @@ TEST(SnesBackendFrame, VideoOffDeliversNoFrameAndDoesNotChangeState) {
 TEST(SnesBackendFrame, VideoCanBeEnabledAfterHosting) {
     SnesBackend backend;
     int frames = 0;
-    backend.setFrameSink([&frames](std::span<const std::uint8_t>, int, int, RasterPixelFormat) { ++frames; });
+    backend.setFrameSink([&frames](std::span<const std::uint8_t>, int, int, RasterPixelFormat, vm::FrameField) { ++frames; });
     backend.loadRom(cartridgeFrom(kIdle));
 
     backend.runForCycles(kOneFrame + 20'000);
@@ -129,6 +143,26 @@ TEST(SnesBackendFrame, VideoCanBeEnabledAfterHosting) {
     backend.setVideoEnabled(true);
     backend.runForCycles(kOneFrame + 20'000);
     EXPECT_GT(frames, 0);  // enabling it on the live machine re-attaches the observer
+}
+
+// With the interlace bit set, every frame is one field, at alternating parity.
+TEST(SnesBackendFrame, AnInterlacedRunHandsOverFieldsOfAlternatingParity) {
+    SnesBackend backend;
+    std::vector<vm::FrameField> fields;
+    backend.setVideoEnabled(true);
+    backend.setFrameSink([&fields](std::span<const std::uint8_t>, int, int, RasterPixelFormat,
+                                   vm::FrameField field) { fields.push_back(field); });
+    backend.loadRom(cartridgeFrom(kInterlaces));
+    backend.runForCycles(4 * kOneFrame + 20'000);
+
+    ASSERT_GE(fields.size(), 3u);
+    // The first frame may complete under either value of the register; every one after it is a field.
+    for (std::size_t i = 1; i < fields.size(); ++i) {
+        EXPECT_NE(fields[i], vm::FrameField::Whole) << "frame " << i;
+    }
+    for (std::size_t i = 2; i < fields.size(); ++i) {
+        EXPECT_NE(fields[i], fields[i - 1]) << "frames " << i - 1 << " and " << i;
+    }
 }
 
 }  // namespace
