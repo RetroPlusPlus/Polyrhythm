@@ -15,8 +15,11 @@
 // machine, or both at once with the left machine in the left speaker and the right machine in the
 // right, and round again. Each machine's DSP frames, converted to the device's rate, go into a queue
 // of its own on the thread that steps it; the device drains the queues it is listening to and drops
-// the rest, and a scope under the two screens draws what it took. Press 3 to switch the device between
-// 48'000 Hz and 44'100 Hz: the pitch stays where it is, because the conversion follows the rate.
+// the rest. A scope draws what the device took from each machine — the left machine in amber, the right
+// in cyan — and only a machine being heard moves its trace. Press 5 to lay the scopes out one under each
+// screen, or as one scope across both with the two traces over each other, where two machines making the
+// same sound show as one line. Press 3 to switch the device between 48'000 Hz and 44'100 Hz: the pitch
+// stays where it is, because the conversion follows the rate.
 //
 // Reading the picture is those three lines, exactly as the Game Boy player's:
 //
@@ -90,14 +93,14 @@ using namespace retropp;
 
 constexpr int kGuestW = 256, kGuestH = 224;             // one SNES screen
 constexpr int kScopeH = 48;                             // the band under them, showing the sound
-constexpr int kViewW = kGuestW * 2, kViewH = kGuestH + kScopeH;   // two screens side by side, the scope below
+constexpr int kViewW = kGuestW * 2, kViewH = kGuestH + kScopeH;   // two screens side by side, a scope under each
 constexpr int kScale = 4;                               // 512×272 × 4 = a 2048×1088 window
-constexpr std::size_t kScopeFrames = kViewW;            // one frame per column
+constexpr std::size_t kScopeFrames = kViewW;            // one frame per column of the whole band
 
 // A player-level action, numbered clear of the twelve pad buttons (snes::Button is 0-11): the key that
-// plugs and unplugs the second controller, the key that switches the device's rate, and the key that
-// cycles which machine is heard.
-enum class Player : ActionId { TogglePort2 = 20, ToggleRate = 21, CycleHeard = 22 };
+// plugs and unplugs the second controller, the key that switches the device's rate, the key that
+// cycles which machine is heard, and the key that switches how the scopes are laid out.
+enum class Player : ActionId { TogglePort2 = 20, ToggleRate = 21, CycleHeard = 22, ToggleScope = 23 };
 
 // ── Sound ───────────────────────────────────────────────────────────────────────────────────────
 // A machine's sound reaches the device through a queue of its own: the thread that steps the machine
@@ -159,18 +162,45 @@ const char* heardName(Heard heard) {
     return "";
 }
 
-// The last kScopeFrames frames the device took, written by the pull on the audio thread and read by the
-// render loop, under one lock taken once per pull and once per drawn frame.
+// The last kScopeFrames frames the device took from one machine, written by the pull on the audio
+// thread and read by the render loop, under one lock taken once per pull and once per drawn frame. The
+// pull writes only while that machine is heard, so a machine nobody hears leaves its scope still.
 struct Scope {
     mutable std::mutex                    lock;
     std::array<AudioFrame, kScopeFrames> ring{};
     std::size_t                           head = 0;   // where the next frame goes
+
+    void record(std::span<const AudioFrame> frames) {
+        const std::lock_guard guard{lock};
+        for (const AudioFrame& frame : frames) {
+            ring[head] = frame;
+            head       = (head + 1) % kScopeFrames;
+        }
+    }
 };
 
-// Paint the scope band: each frame is one column, the left channel in amber and the right in cyan,
-// over a dark band. Heard alone, a machine's two channels coincide; heard together, each machine is
-// its own trace.
-void drawScope(const Scope& scope, std::vector<std::uint8_t>& pixels) {
+// How the band shows the two machines' sound: a scope under each screen, or one scope across the whole
+// band with both machines drawn over each other — where two traces that coincide show as one. The 5 key
+// switches between them.
+enum class ScopeView : std::uint8_t { Split, Overlaid };
+
+// Each machine's color, in either view: the left machine amber, the right machine cyan.
+struct TraceColor {
+    std::uint8_t r, g, b;
+};
+constexpr TraceColor kLeftColor{.r = 255, .g = 200, .b = 64};
+constexpr TraceColor kRightColor{.r = 64, .g = 200, .b = 255};
+
+// Paint the whole band its dark background.
+void clearBand(std::vector<std::uint8_t>& pixels) {
+    for (std::size_t i = 0; i < pixels.size(); i += 4) {
+        pixels[i] = 16;  pixels[i + 1] = 16;  pixels[i + 2] = 24;  pixels[i + 3] = 255;
+    }
+}
+
+// Draw one machine's sound as a trace in `color`, `width` columns wide from column `x0`: one frame a
+// column, the newest `width` frames the device took from it, its two channels averaged.
+void drawTrace(const Scope& scope, std::vector<std::uint8_t>& pixels, int x0, int width, TraceColor color) {
     std::array<AudioFrame, kScopeFrames> frames{};
     std::size_t                          head = 0;
     {
@@ -178,24 +208,32 @@ void drawScope(const Scope& scope, std::vector<std::uint8_t>& pixels) {
         frames = scope.ring;
         head   = scope.head;
     }
-    for (std::size_t i = 0; i < pixels.size(); i += 4) {
-        pixels[i] = 16;  pixels[i + 1] = 16;  pixels[i + 2] = 24;  pixels[i + 3] = 255;
-    }
-    const int mid = kScopeH / 2;
-    const auto trace = [&](auto sample, std::uint8_t r, std::uint8_t g, std::uint8_t b) {
-        int previous = mid;
-        for (int x = 0; x < kViewW; ++x) {
-            const std::size_t at = (head + static_cast<std::size_t>(x)) % kScopeFrames;
-            const int y = std::clamp(mid - sample(frames[at]) * (mid - 1) / 32768, 0, kScopeH - 1);
-            for (int yy = std::min(previous, y); yy <= std::max(previous, y); ++yy) {
-                const std::size_t p = (static_cast<std::size_t>(yy) * kViewW + static_cast<std::size_t>(x)) * 4;
-                pixels[p] = r;  pixels[p + 1] = g;  pixels[p + 2] = b;  pixels[p + 3] = 255;
-            }
-            previous = y;
+    const std::size_t oldest   = head + kScopeFrames - static_cast<std::size_t>(width);
+    const int         mid      = kScopeH / 2;
+    int               previous = mid;
+    for (int x = 0; x < width; ++x) {
+        const AudioFrame& frame  = frames[(oldest + static_cast<std::size_t>(x)) % kScopeFrames];
+        const int         sample = (static_cast<int>(frame.left) + static_cast<int>(frame.right)) / 2;
+        const int         y      = std::clamp(mid - sample * (mid - 1) / 32768, 0, kScopeH - 1);
+        for (int yy = std::min(previous, y); yy <= std::max(previous, y); ++yy) {
+            const std::size_t p = (static_cast<std::size_t>(yy) * kViewW + static_cast<std::size_t>(x0 + x)) * 4;
+            pixels[p] = color.r;  pixels[p + 1] = color.g;  pixels[p + 2] = color.b;  pixels[p + 3] = 255;
         }
-    };
-    trace([](const AudioFrame& f) { return static_cast<int>(f.right); }, 64, 200, 255);
-    trace([](const AudioFrame& f) { return static_cast<int>(f.left); }, 255, 200, 64);
+        previous = y;
+    }
+}
+
+// Paint the band in `view`: each machine under its own screen, or both across the band with the left
+// machine drawn last, so where the two coincide the cyan is hidden under the amber.
+void drawScopes(const Scope& left, const Scope& right, ScopeView view, std::vector<std::uint8_t>& pixels) {
+    clearBand(pixels);
+    if (view == ScopeView::Split) {
+        drawTrace(left, pixels, 0, kGuestW, kLeftColor);
+        drawTrace(right, pixels, kGuestW, kGuestW, kRightColor);
+    } else {
+        drawTrace(right, pixels, 0, kViewW, kRightColor);
+        drawTrace(left, pixels, 0, kViewW, kLeftColor);
+    }
 }
 
 // ── Choosing a ROM ──────────────────────────────────────────────────────────────────────────────
@@ -516,11 +554,12 @@ int main(int argc, char** argv) {
     // The sound: each machine's frames go into its own queue from the thread that steps it — the game's
     // for the left machine, its own for the right. The device pulls on SDL's audio thread from the
     // queue or queues it is listening to, once each of those holds a twentieth of a second so the first
-    // pull does not run it dry, and drains the rest so nothing stale waits to be switched in. The frames
-    // it takes are what the scope shows.
+    // pull does not run it dry, and drains the rest so nothing stale waits to be switched in. What it
+    // takes from each machine is what that machine's scope shows.
     FrameQueue tickedQueue;
     FrameQueue freeQueue;
-    Scope      scope;
+    Scope      tickedScope;
+    Scope      freeScope;
     unsigned   deviceRate = kAudioSampleRate;
     std::atomic<int> heard{static_cast<int>(Heard::None)};   // the 4 key writes it; the pull reads it
     std::vector<AudioFrame> scratchLeft(FrameQueue::kCapacity);    // where the pull drains what it does
@@ -557,29 +596,31 @@ int main(int argc, char** argv) {
             case Heard::Left:
                 got = tickedQueue.pop(out);
                 freeQueue.pop(std::span{scratchRight});
+                tickedScope.record(out.first(got));
                 break;
             case Heard::Right:
                 got = freeQueue.pop(out);
                 tickedQueue.pop(std::span{scratchLeft});
+                freeScope.record(out.first(got));
                 break;
             case Heard::Both: {
                 // One frame from each machine makes one frame for the device: the left machine's left
                 // channel and the right machine's right. Only as many as both queues hold; the rest of
-                // the fuller queue waits for the next pull.
+                // the fuller queue waits for the next pull. Each scope records the one channel the
+                // device took from its machine.
                 const std::size_t n = std::min({out.size(), tickedQueue.size(), freeQueue.size()});
                 tickedQueue.pop(std::span{scratchLeft}.first(n));
                 freeQueue.pop(std::span{scratchRight}.first(n));
                 for (std::size_t i = 0; i < n; ++i) {
-                    out[i] = AudioFrame{.left = scratchLeft[i].left, .right = scratchRight[i].right};
+                    out[i]          = AudioFrame{.left = scratchLeft[i].left, .right = scratchRight[i].right};
+                    scratchLeft[i]  = AudioFrame{.left = out[i].left, .right = out[i].left};
+                    scratchRight[i] = AudioFrame{.left = out[i].right, .right = out[i].right};
                 }
+                tickedScope.record(std::span{scratchLeft}.first(n));
+                freeScope.record(std::span{scratchRight}.first(n));
                 got = n;
                 break;
             }
-        }
-        const std::lock_guard guard{scope.lock};
-        for (std::size_t i = 0; i < got; ++i) {
-            scope.ring[scope.head] = out[i];
-            scope.head             = (scope.head + 1) % kScopeFrames;
         }
         return got;
     };
@@ -589,7 +630,7 @@ int main(int argc, char** argv) {
 
     // The SNES pad, bound to keys and a gamepad; editing these rows is all rebinding is. The number keys
     // are the player's own: the 2 key plugs and unplugs the second controller, the 3 key switches the
-    // device's rate, the 4 key cycles which machine is heard.
+    // device's rate, the 4 key cycles which machine is heard, the 5 key switches how the scopes are laid out.
     ActionMap controls{
         {snes::Button::A,      {SDL_SCANCODE_X, PadButton::FaceLabelA}},
         {snes::Button::B,      {SDL_SCANCODE_Z, PadButton::FaceLabelB}},
@@ -602,6 +643,7 @@ int main(int argc, char** argv) {
         {Player::TogglePort2,  {SDL_SCANCODE_2}},
         {Player::ToggleRate,   {SDL_SCANCODE_3}},
         {Player::CycleHeard,   {SDL_SCANCODE_4}},
+        {Player::ToggleScope,  {SDL_SCANCODE_5}},
     };
     controls.add(presets::directional(snes::Button::Up, snes::Button::Down, snes::Button::Left,
                                       snes::Button::Right));
@@ -614,6 +656,7 @@ int main(int argc, char** argv) {
     // free one is started from inside that first tick, the one moment they share.
     bool freeRunningStarted = false;
     bool port2Plugged       = false;
+    ScopeView scopeView     = ScopeView::Split;   // the 5 key writes it; the render loop reads it, on this thread
     loop.simTick([&](const InputState& input) {
         if (!freeRunningStarted) {
             freeRunning.run(Vm::Advance::Continuously);
@@ -629,6 +672,11 @@ int main(int argc, char** argv) {
             const Heard next = static_cast<Heard>((heard.load(std::memory_order_relaxed) + 1) % 4);
             heard.store(static_cast<int>(next), std::memory_order_release);
             std::printf("heard: %s\n", heardName(next));
+        }
+        if (input.justPressed(Player::ToggleScope)) {
+            scopeView = (scopeView == ScopeView::Split) ? ScopeView::Overlaid : ScopeView::Split;
+            std::printf("scopes: %s\n", scopeView == ScopeView::Split ? "one under each screen"
+                                                                      : "one across both, traces overlaid");
         }
         if (input.justPressed(Player::ToggleRate)) {
             // Both machines park, their sound is pointed at the new rate, the device reopens at it, and
@@ -698,9 +746,13 @@ int main(int argc, char** argv) {
         right.content = freePicture;
         frame.layers.push_back(right);
 
-        // The scope, under the two screens: this program's own raster, redrawn every frame from what the
-        // device last took, submitted as a layer's content like a machine's picture is.
-        drawScope(scope, scopePixels);
+        // The scope band, under the two screens. It is NOT a machine's picture: this program paints it
+        // itself, on the CPU, into its own RGBA buffer (drawScopes), and submits that buffer through
+        // GuestFrameContent — the content type a hosted machine's video() hands back — because a layer
+        // shows any raster that arrives in that form, whoever drew it. Nothing here is emulated. The
+        // buffer changes every frame, so its generation is bumped every frame and the engine uploads it
+        // anew each time; a raster that held still would keep its generation and upload once.
+        drawScopes(tickedScope, freeScope, scopeView, scopePixels);
         ++scopeGeneration;
         DrawLayer band{.key = "scope"};
         band.z       = 2;
@@ -747,7 +799,8 @@ int main(int argc, char** argv) {
         "Start, Right Shift = Select; A and B recolor the sprite, Start writes the save; 2 plugs or "
         "unplugs a second controller. 4 cycles what is heard: nothing, the left machine, the right "
         "machine, both (left machine in the left speaker, right machine in the right), and round again "
-        "— it starts silent. 3 switches the device between 48 kHz and 44.1 kHz — the pitch stays put. "
+        "— it starts silent. 5 lays the scopes out one under each screen or overlaid across both. "
+        "3 switches the device between 48 kHz and 44.1 kHz — the pitch stays put. "
         "Both machines take the same buttons.\n"
         "Close the window to quit.\n");
     WindowedHost host{loop, platform};

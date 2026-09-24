@@ -39,18 +39,20 @@ enum class GuestPixelFormat : std::uint8_t {
     return 4;  // unreachable; quiets -Wreturn-type
 }
 
-// A layer's content: the last complete picture a hosted machine drew. `pixels` is owned by the machine
-// and valid for the duration of the renderFrame() call it is submitted in — the same lifetime every
-// other content alternative's spans carry.
+// A layer's content: a raster of pixels — the last complete picture a hosted machine drew, or one a
+// program painted itself. `pixels` is owned by whoever drew it and valid for the duration of the
+// renderFrame() call it is submitted in — the same lifetime every other content alternative's spans
+// carry.
 struct GuestFrameContent {
     std::span<const std::uint8_t> pixels;  // row-major, width * height * bytesPerPixel(format) bytes
     int              width  = 0;
     int              height = 0;
     GuestPixelFormat format = GuestPixelFormat::Rgba8888;
-    // How many frames this machine has finished — 0 before it finishes its first. The platform counts
-    // the completions the machine reported; the pixels are never examined to decide anything. Two
-    // submissions carrying the same generation carry the same picture, so what is already on the GPU
-    // stays there and nothing is sent again.
+    // How many frames this raster's source has finished — 0 before the first. For a machine's picture
+    // the platform counts the completions the machine reported; a program drawing its own raster counts
+    // its own. The pixels are never examined to decide anything. Two submissions carrying the same
+    // non-zero generation carry the same picture, so what is already on the GPU stays there and nothing
+    // is sent again; generation 0 is sent every time.
     std::uint64_t    generation = 0;
 };
 

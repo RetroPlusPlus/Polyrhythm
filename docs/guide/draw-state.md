@@ -258,6 +258,48 @@ generation, and a submission the renderer skips still carries the right answer o
 which frame this is rather than when it arrived, which is what lets a machine on the game's tick and a
 machine on a clock of its own be read the same way.
 
+#### A raster your program draws itself
+
+A `GuestFrameContent` carries pixels, not a machine: a layer shows whatever raster arrives in this form,
+whoever drew it. A program that paints its own pixels on the CPU — a waveform, a plot, a
+software-rendered effect, a decoded video frame — hands them to a layer exactly as a machine's picture
+is handed over:
+
+```cpp
+std::vector<std::uint8_t> pixels(512 * 48 * 4);   // RGBA, row-major, yours to paint
+std::uint64_t             drawn = 0;              // your own count of finished rasters
+
+paint(pixels);                                    // redraw it on the CPU
+++drawn;                                          // a new picture carries a new generation
+
+DrawLayer scope{.key = "scope"};
+scope.size    = PixelSize{512, 272};
+scope.scroll  = LayerScroll{0, -224};             // 224 px down the viewport
+scope.content = GuestFrameContent{.pixels     = pixels,
+                                  .width      = 512,
+                                  .height     = 48,
+                                  .format     = GuestPixelFormat::Rgba8888,
+                                  .generation = drawn};
+```
+
+Everything above holds for it, with `generation` now yours to count:
+
+- **The renderer uploads the raster when its generation is one the layer's texture does not hold.** Bump
+  it when the pixels change and keep it when they do not: a raster resubmitted under the same non-zero
+  generation is uploaded once and stays resident. Generation 0 is "nothing finished", so a raster
+  submitted under 0 is uploaded on every frame.
+- **The texture belongs to the layer's `key`**, sized to the raster's `width` × `height` and rebuilt when
+  either changes. A layer with an empty key, or a key another guest-frame layer in the same frame already
+  used, gets a texture for that frame only.
+- **It draws texel for texel:** each pixel covers one viewport pixel, placed by the layer's `scroll`,
+  faded by its `alpha` and warped by its `transform`. Outside its own width and height it draws nothing,
+  so a small raster on a viewport-sized layer leaves the layers beneath it showing everywhere else. A
+  raster whose `pixels` holds fewer than `width × height × 4` bytes is not drawn.
+- **`pixels` is read during `renderFrame`**, so it lives at least that long. A raster that changes every
+  frame costs one upload of its size every frame.
+
+The SNES player (`examples/snes/player/`) draws its sound scopes this way.
+
 The full picture surface — turning it on, what a machine owes, and how it composes with native layers —
 is in [co-execution.md](co-execution.md).
 
