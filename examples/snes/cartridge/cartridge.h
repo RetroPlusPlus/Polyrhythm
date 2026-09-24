@@ -2,15 +2,20 @@
 
 // The demo cartridge every SNES example hosts — authored here as 65816 and SPC700 source, assembled in
 // process, so a reader follows the program rather than a committed binary. It draws one sprite and
-// moves it with the pad: the d-pad steps the sprite, A and B recolor it, and Start writes the battery
-// save. It plays a four-note round on the sound chip: at reset the main program uploads a driver to
-// the audio unit through the boot stub's own protocol, and the driver steps a looping square wave
-// through A4, C#5, E5 and A5, half a second each, on the audio unit's timer.
+// moves it with the pad: the d-pad steps the sprite, A and B recolor it, Start writes the battery
+// save, Y switches the screen mode between 1 and 5 — so the frame is drawn in half-pixels and arrives
+// 512 wide — and X switches the chip to interlace, with object interlace, so it hands over one field a
+// frame in which the sprite reads every other row of its tiles. It plays a four-note round on the sound
+// chip: at reset the main program uploads a driver to the audio unit through the boot stub's own
+// protocol, and the driver steps a looping square wave through A4, C#5, E5 and A5, half a second each,
+// on the audio unit's timer.
 //
-// The picture is one 32x32 sprite of a single color over the backdrop, with no background layers, so
-// the only thing on screen is the sprite the pad drives. The native NMI reads the auto-joypad registers
-// each frame and moves the sprite; the reset code runs in forced blank, where video memory is free to
-// fill.
+// The picture is one 32x32 sprite of one-pixel horizontal stripes over the backdrop, with no background
+// layers, so the only thing on screen is the sprite the pad drives. Progressive, the stripes are the
+// sprite; interlaced and shown a field at a time, the sprite is solid in one field and absent in the
+// other; woven, the stripes are back at twice the lines. The native NMI reads the auto-joypad registers
+// each frame, drives the sprite and applies the two switches on the press; the reset code runs in
+// forced blank, where video memory is free to fill.
 
 #include <algorithm>
 #include <cstddef>
@@ -82,9 +87,10 @@ hi:     DB $03,$04,$05,$07
         DB $77,$77,$77,$77,$99,$99,$99,$99   ; eight samples at +7, eight at -7: a square, sixteen samples a cycle
 )asm";
 
-// The program. Reset (in forced blank) uploads the sprite tile and its color, hides every sprite, turns
-// the object screen on, uploads the sound driver to the audio unit and starts it, and enables the
-// vertical-blank NMI + the auto-joypad read; the NMI reads the pad and drives sprite 0.
+// The program. Reset (in forced blank) sets the screen mode, uploads the sprite tiles and their color,
+// hides every sprite, turns the object screen on, uploads the sound driver to the audio unit and starts
+// it, and enables the vertical-blank NMI + the auto-joypad read; the NMI reads the pad, drives sprite 0
+// and applies the two switches.
 inline constexpr std::string_view kDemoCartridgeSource = R"asm(
         ORG $00:8000
         EMULATION
@@ -96,10 +102,15 @@ inline constexpr std::string_view kDemoCartridgeSource = R"asm(
         STA $10                 ; sprite 0 X, near the middle of the screen
         LDA #104
         STA $11                 ; sprite 0 Y
+        LDA #$01
+        STA $17                 ; BGMODE as the program holds it: mode 1; Y switches it to 5
+        STA !$2105
 
-        ; Fill VRAM tiles 0-63 with a solid block of color 1, so a 32x32 sprite (a 4x4 grid of tiles) is
-        ; solid whichever tiles it reads. A16 lets one store write a whole VRAM word (low to $2118, high to
-        ; $2119) and step the address; each tile is eight rows of plane 0 set (color 1) then eight blank.
+        ; Fill VRAM tiles 0-127 with one-pixel horizontal stripes of color 1 — even rows set, odd rows
+        ; clear — so a 32x32 sprite (a 4x4 grid of tiles) is striped whichever tiles it reads, and with
+        ; object interlace, where a 32-row sprite reads 64 tile rows, the rows below it are filled too.
+        ; A16 lets one store write a whole VRAM word (low to $2118, high to $2119) and step the address;
+        ; each tile is eight rows of plane 0 alternating set and clear, then eight blank.
         LDA #$80
         STA !$2115              ; VMAIN: the address steps one word after the high byte
         STZ !$2116              ; VMADDL
@@ -108,9 +119,10 @@ inline constexpr std::string_view kDemoCartridgeSource = R"asm(
         LDX #$00                ; tile counter
 tfill:  LDY #$00
 trow:   LDA #$00FF
-        STA !$2118              ; a row: plane 0 all set, plane 1 clear
+        STA !$2118              ; an even row: plane 0 set, plane 1 clear — color 1
+        STZ !$2118              ; the odd row under it: clear
         INY
-        CPY #$08
+        CPY #$04
         BNE trow
         LDY #$00
 tblank: STZ !$2118              ; planes 2 and 3 clear
@@ -118,7 +130,7 @@ tblank: STZ !$2118              ; planes 2 and 3 clear
         CPY #$08
         BNE tblank
         INX
-        CPX #$40                ; 64 tiles
+        CPX #$80                ; 128 tiles
         BNE tfill
         SEP #$20                ; back to 8-bit accumulator
 
@@ -266,6 +278,29 @@ noB:    LDA $12
         LDA #$5A
         STA $70:0000            ; Start writes the battery save window
 noStart:
+        LDA !$4218
+        STA $13                 ; JOY1 low byte, this frame: X in bit 6
+        EOR $14                 ; the bits that changed since last frame...
+        AND $13                 ; ...and are held now: a press
+        AND #$40
+        BEQ noX
+        LDA $16
+        EOR #$03                ; interlace and object interlace, together
+        STA $16
+        STA !$2133              ; SETINI
+noX:    LDA $13
+        STA $14                 ; remembered for next frame
+        LDA $12
+        EOR $15                 ; the high byte's changes...
+        AND $12                 ; ...held now
+        AND #$40                ; Y in bit 6
+        BEQ noY
+        LDA $17
+        EOR #$04                ; mode 1 <-> mode 5
+        STA $17
+        STA !$2105              ; BGMODE
+noY:    LDA $12
+        STA $15
         STZ !$2102              ; OAMADDL: sprite 0
         STZ !$2103
         LDA $10
