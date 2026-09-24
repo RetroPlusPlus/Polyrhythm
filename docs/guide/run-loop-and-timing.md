@@ -300,19 +300,23 @@ The OS time / refresh / sleep primitives are the `Platform` pacing seam (`nowMon
 ## Timing profile
 
 `TimingProfile` sets the cadence. It carries a tick **period** (always) and an optional CPU-timing block
-(for the [VM](vm-and-routines.md)).
+(a console's cycle arithmetic, for a game that spends cycles by hand — see
+[vm-and-routines.md](vm-and-routines.md)).
 
 ```cpp
 enum class TickPeriodNs : std::int64_t {
     GameBoy      = 16'742'706,   // 59.7275 Hz — one Game Boy frame (70'224 cycles @ 4'194'304 Hz)
     GameBoyColor = 16'742'706,   // same period
+    Snes         = 16'639'263,   // 60.0988 Hz — one SNES frame (357'366 cycles @ 236'250'000/11 Hz)
+    SnesPal      = 19'997'208,   // 50.0070 Hz — one PAL SNES frame (425'568 cycles @ 21'281'370 Hz)
     Hz60         = 16'666'667,   // a round 60 Hz
 };
 
-struct CpuTiming {                // optional; for the SM83 VM
+struct CpuTiming {                // optional; a console's cycle arithmetic
     std::uint32_t cpuClockHz;
     std::uint32_t cyclesPerFrame;
     std::uint32_t doubleSpeedCyclesPerFrame;
+    std::uint32_t cpuClockHzDivisor = 1;   // the clock is cpuClockHz / cpuClockHzDivisor Hz
     constexpr bool operator==(const CpuTiming&) const noexcept = default;
 };
 
@@ -327,12 +331,17 @@ struct TimingProfile {
 
     static const TimingProfile GameBoy;
     static const TimingProfile GameBoyColor;
+    static const TimingProfile Snes;
+    static const TimingProfile SnesPal;
 };
 ```
 
 - The enum value is a **period in nanoseconds**, not a rate (59.7275 Hz isn't an exact integer; its
   period is). Pass a preset or a raw period: `static_cast<TickPeriodNs>(16'700'000)`.
 - The Game Boy tick is one hardware frame ⇒ **59.7275 Hz, not 60**.
+- The SNES presets are one frame of each region: `Snes` is **60.0988 Hz** and `SnesPal` is
+  **50.0070 Hz**. The 60 Hz console's master clock is 236'250'000 / 11 Hz, so its CPU block carries
+  `cpuClockHzDivisor = 11`; every other preset leaves the divisor at 1.
 - GBC double speed is a CPU cycle budget (`doubleSpeedCyclesPerFrame`); the display rate is unchanged.
 - `cpuCyclesPerTick()` is the amount to advance the VM's divider per tick (see
   [vm-and-routines.md](vm-and-routines.md)). `ticksForDuration(std::chrono::seconds{2})` converts a

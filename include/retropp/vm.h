@@ -71,26 +71,30 @@ namespace retropp {
 
 namespace vm {
 struct VmTestAccess;  // src/vm/vm_testing.h — the internal deterministic seam for device-free tests
+class VmBackend;  // src/vm/vm_backend.h — the seam a core implements
+struct VmCoreAccess;  // src/vm/vm_core_access.h — builds a Vm from a resolved core
 }  // namespace vm
 
 // The target system whose VM backend runs the routine. Each enumerator selects a per-system backend;
 // the call surface is identical across systems because each routine's convention is sealed in its
-// binding. GameBoy / GameBoyColor map to the SM83 / SameBoy backend — the only backend built in v1.
-// Any other enumerator throws at Vm construction ("no backend built in v1"); it is a drop-in when a
-// consumer exercises it (the ViewportResolution::Snes precedent). Extend this list as systems land.
+// binding. GameBoy / GameBoyColor map to the SM83 / SameBoy backend and Snes to the 65816 / Snaggletooth
+// backend; an enumerator with no backend built throws at Vm construction ("no backend built"). Extend this
+// list as systems land.
 enum class VMPlatform { GameBoy, GameBoyColor, Snes, Nes, Genesis, MasterSystem };
 
 // The ISA a VM of `platform` runs — the assembler it uses and the byte format it accepts. Several
 // platforms can share one ISA (the Game Boy and Game Boy Color both run SM83), which is why a chiptune's
 // compatibility is keyed on the ISA, not the exact platform. The audio system uses this to verify, at
-// play(), that a catalog entry's (developer-selected) ISA matches the VM it is being cued on. Unbuilt
-// platforms have no backend (Vm construction throws), so their mapping is a placeholder for now.
+// play(), that a catalog entry's (developer-selected) ISA matches the VM it is being cued on. A platform
+// whose backend is not built has no ISA to run, so its mapping is a placeholder (Vm construction throws
+// for it).
 [[nodiscard]] constexpr Isa isaFor(VMPlatform platform) noexcept {
     switch (platform) {
         case VMPlatform::GameBoy:
         case VMPlatform::GameBoyColor:
             return Isa::Sm83;
         case VMPlatform::Snes:
+            return Isa::Wdc65816;
         case VMPlatform::Nes:
         case VMPlatform::Genesis:
         case VMPlatform::MasterSystem:
@@ -98,6 +102,32 @@ enum class VMPlatform { GameBoy, GameBoyColor, Snes, Nes, Genesis, MasterSystem 
     }
     return Isa::Sm83;
 }
+
+namespace detail {
+
+// How a machine's core is built. A Vm constructor resolves the core for its platform where the game
+// writes the constructor, so a game's binary carries the cores it names.
+using CoreFactory = std::unique_ptr<vm::VmBackend> (*)(VMPlatform);
+
+std::unique_ptr<vm::VmBackend> gameBoyCore(VMPlatform platform);  // src/vm/gameboy/sameboy_backend.cpp
+std::unique_ptr<vm::VmBackend> snesCore(VMPlatform platform);     // src/vm/snes/snes_backend.cpp
+
+[[nodiscard]] inline CoreFactory coreFor(VMPlatform platform) noexcept {
+    switch (platform) {
+        case VMPlatform::GameBoy:
+        case VMPlatform::GameBoyColor:
+            return &gameBoyCore;
+        case VMPlatform::Snes:
+            return &snesCore;
+        case VMPlatform::Nes:
+        case VMPlatform::Genesis:
+        case VMPlatform::MasterSystem:
+            break;
+    }
+    return nullptr;  // no core is built for this platform; constructing the Vm throws std::runtime_error
+}
+
+}  // namespace detail
 
 // How a routine is paced. HostSpeed runs the routine as fast as the host allows — the form for a
 // routine you CALL for a return value (RNG). HardwareSpeed throttles to the CPU clock for a real-time
@@ -349,7 +379,8 @@ struct VmConfig {
 
 class Vm {
 public:
-    explicit Vm(VMPlatform platform, TimingProfile timing = TimingProfile::GameBoyColor);
+    explicit Vm(VMPlatform platform, TimingProfile timing = TimingProfile::GameBoyColor)
+        : Vm(detail::coreFor(platform), platform, timing, VmConfig{}) {}
 
     // The same, with what the machine is and produces declared up front:
     //
@@ -360,8 +391,10 @@ public:
     //
     // Throws std::invalid_argument for a key that is more than one path component (a separator, "."
     // or ".."), and std::logic_error for a keyed machine on a platform whose core keeps nothing.
-    Vm(VMPlatform platform, VmConfig config);
-    Vm(VMPlatform platform, TimingProfile timing, VmConfig config);
+    Vm(VMPlatform platform, VmConfig config)
+        : Vm(detail::coreFor(platform), platform, TimingProfile::GameBoyColor, std::move(config)) {}
+    Vm(VMPlatform platform, TimingProfile timing, VmConfig config)
+        : Vm(detail::coreFor(platform), platform, timing, std::move(config)) {}
 
     ~Vm();
 
@@ -410,6 +443,7 @@ public:
     // never lives in one.
     class GB;
     class GBC;
+    class SNES;
 
     Vm(const Vm&) = delete;
     Vm& operator=(const Vm&) = delete;
@@ -444,15 +478,15 @@ public:
     // fraction is kept and spent later, so the running total is exact over any number of ticks and the
     // instantaneous error never exceeds one cycle.
     //
-    // Pass the period the run loop is actually ticking at. The no-argument form uses this VM's own
-    // profile cadence, which is the common case: a machine running at its native rate.
+    // Pass the period the run loop is actually ticking at. The no-argument form spends one frame of
+    // the machine's own clock, which is the common case: a machine running at its native rate.
     //
     // On a cartridge running Advance::OnTick this is the step that advances it: queued writes and
     // escape and watch switches land, the machine runs the tick's worth of cycles, and its declared
     // regions publish. The speed factor scales what the tick is worth. Throws std::logic_error on a
     // cartridge running Advance::Continuously — that machine keeps its own clock.
     //
-    // Does nothing if this VM's timing profile carries no CPU model.
+    // A machine whose core keeps no clock of its own advances nothing.
     void advanceTick(std::chrono::nanoseconds enginePeriod);
     void advanceTick();
 
@@ -464,10 +498,11 @@ public:
     // one cycle budget per sim tick. (The cue surface a game drives by meaning is the AudioSystem; this
     // is the raw chain it sits on.)
 
-    // Enable the backend's APU and route each produced stereo PCM frame to `onSample` (called per
-    // sample on the thread that steps the driver — for the audio chain, the AudioSystem's production
-    // thread). The APU's sample rate is set to
-    // `sampleRate` so it resamples to the sink rate internally. Call once before driving a routine.
+    // Enable the machine's sound chip and route each produced stereo PCM frame to `onSample`, called
+    // per frame on the thread that steps the machine: the AudioSystem's production thread for a driver
+    // it hosts, the machine's own or the ticking thread for a hosted cartridge. Frames arrive at
+    // `sampleRate` whatever rate the chip itself runs at. Call it on a parked machine, before the
+    // driver is driven or the cartridge is run; a second call replaces the rate and the function.
     void enableAudio(unsigned sampleRate,
                      std::function<void(std::int16_t left, std::int16_t right)> onSample);
 
@@ -524,8 +559,8 @@ public:
 
     // Boot the hosted image and run it. After stop(), running again resumes from where the machine
     // parked; reset() first for a fresh boot. Throws std::logic_error unless this VM hosts a
-    // cartridge (hostRom first), if the machine is already running, or if the timing profile carries
-    // no CPU model — with no clock rate, the platform's speed is undefined.
+    // cartridge (hostRom first), if the machine is already running, or on a machine whose core keeps
+    // no clock of its own.
     void run(Advance how = Advance::Continuously);
 
     // Execution speed as a fraction of the platform's own: {1, 1} is the hardware's speed (the
@@ -534,7 +569,7 @@ public:
     // none. Adjustable at any time, running or not;
     // the pace is exact — owed cycles carry their sub-cycle remainder, never rounding, at any
     // factor. Throws std::invalid_argument for a zero denominator or a term past 1024, and
-    // std::logic_error if the timing profile carries no CPU model.
+    // std::logic_error on a machine whose core keeps no clock of its own.
     void speed(std::uint32_t num, std::uint32_t den);
     [[nodiscard]] std::pair<std::uint32_t, std::uint32_t> speed() const;
 
@@ -809,9 +844,12 @@ public:
     [[nodiscard]] std::vector<std::uint8_t> assemble(std::string_view source);
 
 private:
+    Vm(detail::CoreFactory core, VMPlatform platform, TimingProfile timing, VmConfig config);
+
     template <typename Sig>
     friend class Routine;
     friend struct vm::VmTestAccess;  // the deterministic seam device-free tests step the run through
+    friend struct vm::VmCoreAccess;
     friend class EscapeRef;    // the two escape views below reach the declared table through
     friend class EscapeTable;  // the private by-key core, so it is not public surface
     friend class WatchRef;     // and the two watch views, through their own
@@ -870,16 +908,25 @@ private:
 // platform + timing pre-bound. No new state — construction is the only thing they fix.
 class Vm::GB : public Vm {
 public:
-    GB() : Vm(VMPlatform::GameBoy, TimingProfile::GameBoy) {}
+    GB() : Vm(&detail::gameBoyCore, VMPlatform::GameBoy, TimingProfile::GameBoy, VmConfig{}) {}
     explicit GB(VmConfig config)
-        : Vm(VMPlatform::GameBoy, TimingProfile::GameBoy, std::move(config)) {}
+        : Vm(&detail::gameBoyCore, VMPlatform::GameBoy, TimingProfile::GameBoy, std::move(config)) {}
 };
 
 class Vm::GBC : public Vm {
 public:
-    GBC() : Vm(VMPlatform::GameBoyColor, TimingProfile::GameBoyColor) {}
+    GBC() : Vm(&detail::gameBoyCore, VMPlatform::GameBoyColor, TimingProfile::GameBoyColor, VmConfig{}) {}
     explicit GBC(VmConfig config)
-        : Vm(VMPlatform::GameBoyColor, TimingProfile::GameBoyColor, std::move(config)) {}
+        : Vm(&detail::gameBoyCore, VMPlatform::GameBoyColor, TimingProfile::GameBoyColor,
+             std::move(config)) {}
+};
+
+// A SNES VM with its platform + timing pre-bound, on the same terms as GB / GBC.
+class Vm::SNES : public Vm {
+public:
+    SNES() : Vm(&detail::snesCore, VMPlatform::Snes, TimingProfile::Snes, VmConfig{}) {}
+    explicit SNES(VmConfig config)
+        : Vm(&detail::snesCore, VMPlatform::Snes, TimingProfile::Snes, std::move(config)) {}
 };
 
 // ── Template definitions ──────────────────────────────────────────────────────────────────────

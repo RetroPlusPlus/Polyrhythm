@@ -243,6 +243,20 @@ else()
     target_compile_options(retropp-sameboy PRIVATE -w)
 endif()
 
+# ── Snaggletooth (vendored submodule — the SNES VM backend's core + assemblers) ──
+# Snaggletooth's SNES machine and its two assemblers. MIT, C++20 stdlib only, no
+# external dependencies. Added EXCLUDE_FROM_ALL so only the targets something links
+# are built — a binary that names no SNES core builds none of it — and SYSTEM so its
+# headers are not held to the engine's warning bar (the SameBoy and SDL precedent).
+# The tool libraries are on so the 65816 and SPC700 assemblers exist as targets for
+# test fixtures and examples to author cartridges from source; the test suite and the
+# player stay off, the parent build running its own. The build type and the link-time
+# dead-strip the engine sets reach it through the ordinary subdirectory inheritance.
+set(SNAGGLETOOTH_BUILD_TOOLS  ON  CACHE BOOL "" FORCE)
+set(SNAGGLETOOTH_BUILD_TESTS  OFF CACHE BOOL "" FORCE)
+set(SNAGGLETOOTH_BUILD_PLAYER OFF CACHE BOOL "" FORCE)
+add_subdirectory(third_party/snaggletooth EXCLUDE_FROM_ALL SYSTEM)
+
 # ── Build-time shader generation (per-platform native toolchain) ──────────────
 # Every build compiles shaders/src/*.hlsl to the ONE format this platform's SDL_GPU
 # backend runs, using the platform's native tools — nothing is cross-built and no
@@ -776,8 +790,14 @@ endfunction()
 # example's own policy-driven assets ride along (placed there by the auto-finalizer's per-target copy,
 # retropp_finalize_assets). The convention for NEW examples; existing flat demos keep the shared pile
 # (retiring the shared pile is a separate cleanup).
+# DIRECTORY names a grouping subdirectory when several examples for one system share a folder (e.g.
+# snes/player); it defaults to the example's own name, so a flat example passes nothing.
 function(retropp_add_example _name)
-    file(GLOB _retropp_ex_srcs CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/examples/${_name}/*.cpp")
+    cmake_parse_arguments(PARSE_ARGV 1 _retropp_ex "" "DIRECTORY" "")
+    if(NOT _retropp_ex_DIRECTORY)
+        set(_retropp_ex_DIRECTORY "${_name}")
+    endif()
+    file(GLOB _retropp_ex_srcs CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/examples/${_retropp_ex_DIRECTORY}/*.cpp")
     add_executable(retropp-${_name}-demo ${_retropp_ex_srcs})
     target_compile_features(retropp-${_name}-demo PRIVATE cxx_std_20)
     target_link_libraries(retropp-${_name}-demo PRIVATE retropp::engine)
@@ -1327,6 +1347,7 @@ add_library(retroppengine STATIC
     src/audio/gb_audio.cpp
     src/vm/gameboy/sameboy_machine.cpp
     src/vm/gameboy/sameboy_backend.cpp
+    src/vm/snes/snes_backend.cpp
     src/vm/gameboy/gb_routines.cpp
     src/vm/vm.cpp
     src/vm/vm_runner.cpp
@@ -1380,7 +1401,7 @@ target_link_libraries(retroppengine PRIVATE retropp-net)
 # PRIVATE: SameBoy is the VM backend's emulation core; the internal src/vm/ wrapper is
 # the only engine code that touches it. No public header exposes a GB_* symbol, so it stays an
 # implementation detail consumers link transitively but never see.
-target_link_libraries(retroppengine PRIVATE retropp-sameboy)
+target_link_libraries(retroppengine PRIVATE retropp-sameboy snaggletooth::snaggletooth)
 # Bake the engine's own VM routine .asm files into constexpr char[] SOURCE headers, so the
 # constexpr SM83 assembler (sm83_assembler.h) turns them into embedded bytecode AT COMPILE TIME
 # (gb_routines.cpp registers from the baked bytes) with no runtime .asm read. The .asm file stays the
@@ -1545,6 +1566,13 @@ if(RETROPP_BUILD_TESTS)
         tests/guest_frame_content_test.cpp
         tests/guest_input_test.cpp
         tests/vm_save_data_test.cpp
+        tests/snaggletooth_link_test.cpp
+        tests/snes_backend_run_test.cpp
+        tests/snes_backend_frame_test.cpp
+        tests/snes_backend_input_test.cpp
+        tests/snes_backend_save_test.cpp
+        tests/snes_vm_test.cpp
+        tests/snes_backend_audio_test.cpp
         tests/net_socket_test.cpp
         tests/net_tls_test.cpp
         tests/vm_frame_sink_test.cpp
@@ -1554,6 +1582,8 @@ if(RETROPP_BUILD_TESTS)
         tests/region_access_test.cpp
         tests/gb_regions_test.cpp
         tests/cycle_budget_test.cpp
+        tests/snes_timing_test.cpp
+        tests/machine_clock_test.cpp
         tests/vm_runner_test.cpp
         tests/free_run_park_test.cpp
         tests/driver_hosting_vm_test.cpp
@@ -1623,10 +1653,16 @@ if(RETROPP_BUILD_TESTS)
     # Link the NAMESPACED aliases exactly as a mode-3 consumer would. This test
     # executable IS the in-tree consumer fixture for the link surface: it proves
     # both retropp::engine and retropp::testkit resolve as aliases and link cleanly.
+    # The two Snaggletooth assemblers, for snaggletooth_link_test: it authors a
+    # cartridge from 65816 source, runs it on a snaggletooth::Snes, and assembles a
+    # line of SPC700. Both reach the core and the shared assembler through their own
+    # PUBLIC links, so naming them here is the whole of what the suite needs.
     target_link_libraries(retroppengine-tests PRIVATE
         retropp::engine
         retropp::testkit
         retropp-registry-linkage-fixture
+        snaggletooth_cpu65816
+        snaggletooth_spc700
         GTest::gtest_main)
     # custom_stage_test drives the probe shader's generated packer DIRECTLY (device-free) — it has no
     # registerPostProcessStage(...) call for the scan to discover — so its shader is declared explicitly
@@ -1700,6 +1736,106 @@ if(RETROPP_BUILD_TESTS)
                      -DSYMBOL=${_retropp_net_symbols}
                      -DPROBE=${_retropp_net_probe}
                      -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/net_linkage.cmake)
+
+    # ── The cores' linkage measurement (device-free, every platform) ─────────────────
+    # A Vm constructor resolves its platform's core where the game writes it, so a binary carries the
+    # cores its own code names and no other. Three controls, built and read, never run: a pre-bound Game
+    # Boy Color machine, the same machine from its platform value, and a machine for a platform with no
+    # core. The needle is a literal only the Game Boy core holds; the probe is the transport guard's.
+    add_executable(vm_linkage_prebound_gameboy tests/vm_linkage_prebound_gameboy.cpp)
+    target_compile_features(vm_linkage_prebound_gameboy PRIVATE cxx_std_20)
+    target_link_libraries(vm_linkage_prebound_gameboy PRIVATE retropp::engine)
+    retropp_set_warnings(vm_linkage_prebound_gameboy)
+
+    add_executable(vm_linkage_raw_gameboy tests/vm_linkage_raw_gameboy.cpp)
+    target_compile_features(vm_linkage_raw_gameboy PRIVATE cxx_std_20)
+    target_link_libraries(vm_linkage_raw_gameboy PRIVATE retropp::engine)
+    retropp_set_warnings(vm_linkage_raw_gameboy)
+
+    add_executable(vm_linkage_unbuilt_platform tests/vm_linkage_unbuilt_platform.cpp)
+    target_compile_features(vm_linkage_unbuilt_platform PRIVATE cxx_std_20)
+    target_link_libraries(vm_linkage_unbuilt_platform PRIVATE retropp::engine)
+    retropp_set_warnings(vm_linkage_unbuilt_platform)
+
+    set(_retropp_vm_gameboy_needle "game boy routine arena exhausted")
+
+    add_test(NAME vm_linkage_prebound_carries_its_core
+             COMMAND ${CMAKE_COMMAND}
+                     -DREFERENCING=$<TARGET_FILE:vm_linkage_prebound_gameboy>
+                     -DCONTROL=$<TARGET_FILE:net_linkage_control>
+                     "-DNEEDLE=${_retropp_vm_gameboy_needle}"
+                     -DPROBE=${_retropp_net_probe}
+                     -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/vm_linkage.cmake)
+
+    add_test(NAME vm_linkage_raw_form_carries_its_core
+             COMMAND ${CMAKE_COMMAND}
+                     -DREFERENCING=$<TARGET_FILE:vm_linkage_raw_gameboy>
+                     -DCONTROL=$<TARGET_FILE:net_linkage_control>
+                     "-DNEEDLE=${_retropp_vm_gameboy_needle}"
+                     -DPROBE=${_retropp_net_probe}
+                     -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/vm_linkage.cmake)
+
+    add_test(NAME vm_linkage_unbuilt_platform_carries_no_core
+             COMMAND ${CMAKE_COMMAND}
+                     -DREFERENCING=$<TARGET_FILE:vm_linkage_raw_gameboy>
+                     -DCONTROL=$<TARGET_FILE:vm_linkage_unbuilt_platform>
+                     "-DNEEDLE=${_retropp_vm_gameboy_needle}"
+                     -DPROBE=${_retropp_net_probe}
+                     -DCONFIG=$<CONFIG>
+                     -DFOLDED_CONTROL=ON
+                     -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/vm_linkage.cmake)
+    set_tests_properties(vm_linkage_unbuilt_platform_carries_no_core
+                         PROPERTIES SKIP_REGULAR_EXPRESSION "vm linkage SKIPPED")
+
+    # The SNES core's linkage (D2). The needle is a literal only the SNES core holds — the substring of
+    # SnesBackend::placeRoutine's throw — present in a binary exactly when snes_backend.o (and thus
+    # Snaggletooth) is linked. Each row references a pre-bound machine, so it names one core and is exact
+    # at every optimization level; no folded-control config is needed.
+    add_executable(vm_linkage_prebound_snes tests/vm_linkage_prebound_snes.cpp)
+    target_compile_features(vm_linkage_prebound_snes PRIVATE cxx_std_20)
+    target_link_libraries(vm_linkage_prebound_snes PRIVATE retropp::engine)
+    retropp_set_warnings(vm_linkage_prebound_snes)
+
+    add_executable(vm_linkage_raw_snes tests/vm_linkage_raw_snes.cpp)
+    target_compile_features(vm_linkage_raw_snes PRIVATE cxx_std_20)
+    target_link_libraries(vm_linkage_raw_snes PRIVATE retropp::engine)
+    retropp_set_warnings(vm_linkage_raw_snes)
+
+    set(_retropp_vm_snes_needle "the snes core hosts a cartridge and keeps no routine arena")
+
+    add_test(NAME vm_linkage_prebound_snes_carries_its_core
+             COMMAND ${CMAKE_COMMAND}
+                     -DREFERENCING=$<TARGET_FILE:vm_linkage_prebound_snes>
+                     -DCONTROL=$<TARGET_FILE:net_linkage_control>
+                     "-DNEEDLE=${_retropp_vm_snes_needle}"
+                     -DPROBE=${_retropp_net_probe}
+                     -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/vm_linkage.cmake)
+
+    add_test(NAME vm_linkage_raw_snes_carries_its_core
+             COMMAND ${CMAKE_COMMAND}
+                     -DREFERENCING=$<TARGET_FILE:vm_linkage_raw_snes>
+                     -DCONTROL=$<TARGET_FILE:net_linkage_control>
+                     "-DNEEDLE=${_retropp_vm_snes_needle}"
+                     -DPROBE=${_retropp_net_probe}
+                     -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/vm_linkage.cmake)
+
+    # A Game Boy binary carries no Snaggletooth: the SNES needle is in a SNES binary and not in a GB one.
+    add_test(NAME vm_linkage_gameboy_carries_no_snaggletooth
+             COMMAND ${CMAKE_COMMAND}
+                     -DREFERENCING=$<TARGET_FILE:vm_linkage_prebound_snes>
+                     -DCONTROL=$<TARGET_FILE:vm_linkage_prebound_gameboy>
+                     "-DNEEDLE=${_retropp_vm_snes_needle}"
+                     -DPROBE=${_retropp_net_probe}
+                     -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/vm_linkage.cmake)
+
+    # A SNES binary carries no SameBoy: the Game Boy needle is in a GB binary and not in a SNES one.
+    add_test(NAME vm_linkage_snes_carries_no_sameboy
+             COMMAND ${CMAKE_COMMAND}
+                     -DREFERENCING=$<TARGET_FILE:vm_linkage_prebound_gameboy>
+                     -DCONTROL=$<TARGET_FILE:vm_linkage_prebound_snes>
+                     "-DNEEDLE=${_retropp_vm_gameboy_needle}"
+                     -DPROBE=${_retropp_net_probe}
+                     -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/vm_linkage.cmake)
 endif()
 
 # ── Runnable example hosts (mode 1 only by default) ──────────────────────────────
@@ -2007,6 +2143,16 @@ if(RETROPP_BUILD_EXAMPLES)
     # ROM: the image is the developer's own, read at runtime. Dev-run only — it needs a display and a
     # file, so CI compiles it and never runs it.
     retropp_add_example(gb_player)
+    # ── SNES player — the same two-machine picture on the SNES core, with the cartridge's sound and a
+    # built-in demo cartridge, so it runs without a file. CI runs its --verify (the cadence test below).
+    retropp_add_example(snes_player DIRECTORY snes/player)
+    # The SNES player assembles the demo cartridge in process — its 65816 program and its SPC700 sound
+    # driver — so it links both assemblers, reaches the tools/ headers, and includes the shared cartridge
+    # from the repo root.
+    target_link_libraries(retropp-snes_player-demo PRIVATE snaggletooth_cpu65816 snaggletooth_spc700)  # both pull snaggletooth::snaggletooth PUBLIC
+    target_include_directories(retropp-snes_player-demo PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/snaggletooth/tools)
 
     # ── Curve demo — plots a Catmull-Rom curve through waypoints, a constant-speed atDistance walker, and
     # a Hermite curve, using a tiny in-memory marker atlas (no committed asset). Dev-run only; the live
@@ -2306,6 +2452,9 @@ if(RETROPP_BUILD_EXAMPLES)
     retropp_add_example(rom_run)
     add_test(NAME RomRunExample.HoldsHardwareCadenceLive
              COMMAND retropp-rom_run-demo --verify)
+
+    add_test(NAME SnesPlayerExample.HoldsHardwareCadenceLive
+             COMMAND retropp-snes_player-demo --verify)
 
     # ── Guest-escape demo — a running cartridge hands control to native code and carries on.
     # Authors a cartridge whose loop calls its own routine every frame, hosts it and run()s it, then

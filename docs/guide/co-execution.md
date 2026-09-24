@@ -7,6 +7,7 @@
 #include "retropp/guest_frame.h"   // GuestFrameContent — a machine's video as layer content
 #include "retropp/memory_region.h" // MemoryRegion — where a place is
 #include "retropp/gb.h"            // gb::A … gb::PC, gb::VRam … gb::Hram, gb::banked
+#include "retropp/snes.h"          // snes::Button … snes::held, snes::Ports — the SNES pad, both ports
 ```
 
 Your game hands the platform a cartridge image and gets a whole machine: one that boots, runs its own
@@ -25,12 +26,11 @@ This is the deep end of **Conductor**, the platform's VM layer — the routine s
 **One property holds across all of it: the image is never modified.** Everything here happens against
 bytes exactly as they shipped, in memory this process owns, with the behaviour living in your code.
 
-> **Platform support today: the Game Boy and Game Boy Color only.** Every verb on this page is
-> available on `Vm::GB` and `Vm::GBC`, and constructing a `Vm` for any other `VMPlatform` throws.
-> **More consoles are planned**, and the surface is built for them: nothing on this page is
-> Game-Boy-shaped except the `gb::` vocabulary it names registers and memory areas with. A second
-> console brings its own backend and its own `<console>::` header, and the verbs, the declarations and
-> the calling conventions read identically. See [Status](#status).
+> **The co-execution verbs on this page run on `Vm::GB` and `Vm::GBC`.** A `Vm::SNES` hosts and runs a
+> whole cartridge — `hostRom` / `run` / `speed` / `stop` / `video` / `buttons` / `enableAudio` — but the naming, escape,
+> watch and routine-binding verbs below throw `std::logic_error` on it. Constructing a `Vm` for a
+> `VMPlatform` with no backend built throws. The verbs, declarations and calling conventions are the same
+> on every console; a console names its registers and memory areas through its own `<console>::` header.
 
 ## Contents
 
@@ -42,6 +42,7 @@ bytes exactly as they shipped, in memory this process owns, with the behaviour l
 - [Running it](#running-it)
   - [Advancing it on your own tick instead](#advancing-it-on-your-own-tick-instead)
 - [Video: showing its picture](#video-showing-its-picture)
+- [Sound: hearing it](#sound-hearing-it)
 - [Input: playing it](#input-playing-it)
 - [While it runs: one thread owns the machine](#while-it-runs-one-thread-owns-the-machine)
 - [Escaping into your own code](#escaping-into-your-own-code)
@@ -316,6 +317,34 @@ next `advanceTick`, which is exactly the lifetime a submission needs.
 
 The content type itself is in [draw-state.md](draw-state.md#guestframecontent--a-hosted-machines-picture).
 
+## Sound: hearing it
+
+A hosted cartridge's sound comes out through `enableAudio` — the same call on every console, the same
+one the [`AudioSystem`](audio.md) drives a sound driver through. Every stereo frame the machine's sound
+chip produces reaches your function, at the rate you name:
+
+```cpp
+vm.hostRom(rom);
+vm.enableAudio(48'000, [&](std::int16_t left, std::int16_t right) {
+    queue.push(AudioFrame{.left = left, .right = right});   // one stereo frame, at 48'000 Hz
+});
+vm.run();
+```
+
+`enableAudio(rate, onSample)` takes the rate the frames are wanted at and the function that takes
+them, one frame at a time. Each core converts from its own chip's rate, so the frames arrive at
+`rate`, at the cartridge's pitch, whatever `rate` is. Ask on a parked machine: before `run`, or after
+`stop`. Asking again replaces the rate and the function.
+
+**The function runs on the thread that steps the machine** — the machine's own under
+`Advance::Continuously`, the one calling `advanceTick` under `Advance::OnTick` — from inside the step,
+as the frames are produced. It is the producer side; the device side is an
+[`AudioSink`](audio.md#output-the-audiosink) pulling on its own thread, with a queue between the two.
+The SNES player (`examples/snes/player/`) does exactly that for each of its machines.
+
+A machine's sound is its own: two machines hosting one cartridge produce two streams, and which one
+reaches the speaker is the game's to choose.
+
 ## Input: playing it
 
 The guest's buttons are an Actions enum the platform ships, because a console's button set is fixed by
@@ -354,6 +383,17 @@ so the cartridge's own code tells a tap from a hold the way it does on hardware.
 
 It arrives at the next step boundary, like every other verb: a machine on your tick sees it at the
 next `advanceTick`, one running on its own clock at its next step. A core with no input path throws.
+
+The SNES pad is the same shape in `snes.h`: `snes::Button` — its twelve buttons — bound in an
+`ActionMap` and read back with `snes::held(input)`, handed over the same way:
+
+```cpp
+machine.buttons(snes::held(input));
+```
+
+The console has two controller ports, so `snes::Ports{.one = snes::held(input), .two = …}` drives both
+at once; an empty `std::optional` for a port is an empty socket, which a cartridge reads apart from a
+controller holding nothing.
 
 ## While it runs: one thread owns the machine
 
@@ -739,7 +779,7 @@ be discovered.
 
 ## Try it
 
-Five examples, each one act, one that puts the whole surface on a single screen, and one that runs your own cartridge.
+Seven examples: four of one act each, one that puts the whole surface on a single screen, and two that run a cartridge of your own.
 
 | | |
 |---|---|
@@ -749,8 +789,9 @@ Five examples, each one act, one that puts the whole surface on a single screen,
 | `examples/guest_nesting` | a replacement that answers the cartridge's damage rule by calling the cartridge's **own** generator, nested inside the escape; then, parked, calls its own decompressor on a table the game never reached |
 | `examples/coexecution` | windowed, and every verb on this page acts on one picture: the cartridge marches eight walkers of its own each frame, drawn from the per-step publish. Under its own pace rule they hold a column; with `.replaces` armed they scatter |
 | `examples/gb_player` | windowed: one ROM of your own on two machines side by side, one advanced by the engine's tick and one free-running on a clock of its own, both submitting their video as layer content. Asks for a ROM through the native file picker and ships none |
+| `examples/snes/player` | windowed: a SNES cartridge on two machines side by side — one advanced by the engine's tick, one free-running on a clock of its own — the same two pads driving both, each machine's sound in a queue of its own with a key choosing which is heard and a scope of what the device took. Asks for a ROM through the native file picker, and runs its own demo cartridge (`examples/snes/cartridge/`, authored as source and assembled as the program starts) when none is chosen |
 
-Every cartridge in the first five is authored in-code or by a committed generator script; the player takes a ROM of your own at runtime and ships none.
+Every cartridge in the first five is authored in-code or by a committed generator script; the two players take a ROM of your own at runtime and ship none.
 
 ## Where to change things
 
@@ -758,9 +799,11 @@ Every cartridge in the first five is authored in-code or by a committed generato
 |---|---|
 | The public surface | `include/retropp/vm.h`, `include/retropp/guest_escape.h`, `include/retropp/guest_watch.h`, `include/retropp/guest_frame.h`, `include/retropp/memory_region.h` |
 | The Game Boy vocabulary — registers, memory areas, `banked` | `include/retropp/gb.h` |
+| The SNES vocabulary — the pad, both ports | `include/retropp/snes.h` |
 | The host layer: declarations, validation, the escape and watch tables, the run loop | `src/vm/vm.cpp`, `src/vm/vm_runner.cpp` |
 | What a core must provide | `src/vm/vm_backend.h` |
 | The Game Boy backend | `src/vm/gameboy/sameboy_backend.cpp`, `src/vm/gameboy/sameboy_machine.cpp` |
+| The SNES backend | `src/vm/snes/snes_backend.cpp` |
 
 Registering an extracted routine from bytes or a `.asm` file, the `Throttle` pacing seam, and hosting
 a resident sound driver are the neighbouring surface, in
@@ -768,7 +811,7 @@ a resident sound driver are the neighbouring surface, in
 
 ## Status
 
-**Available on the Game Boy and Game Boy Color backend**, which is the only backend built today:
+**Available on the Game Boy and Game Boy Color backend:**
 `hostRom`; the `MemoryRegion` / `registerRegions` / `read` / `write` surface in both its declared and
 built-on-the-spot forms; the `gb::` memory constants and `gb::banked` addressing; `run` / `speed` /
 `stop` with seeded post-boot state and the per-step publish; `registerEscapes` with both kinds —
@@ -778,17 +821,20 @@ outcomes, `AccessSource` and the watch table on the same terms; `bindRoutine`, i
 context, nested to any depth; and `video`, declared through `VmConfig` or switched at runtime, on
 either clock.
 
-**Constructing a `Vm` for any other `VMPlatform` throws** — `Snes`, `Nes`, `Genesis` and
+On a `Vm::SNES`, `hostRom` / `run` / `speed` / `stop` / `video` / `buttons` / `enableAudio` run; the naming, escape,
+watch and routine-binding verbs above throw `std::logic_error`.
+
+**Constructing a `Vm` for a `VMPlatform` with no backend built throws** — `Nes`, `Genesis` and
 `MasterSystem` are enumerated so a consumer can name one, and each is a drop-in when its backend
 lands.
 
-**Planned, and what a new console changes.** A second console brings a backend and a `<console>::`
-header naming its registers and memory areas; the verbs on this page, the declaration grammar and the
-binding vocabulary stay as they are, because none of them is console-shaped. Two capabilities depend
-on what a core can offer rather than on the surface: escapes need a per-instruction hook and watches
-need a per-access one, and a core that has neither refuses at declaration rather than accepting a
-declaration that could never fire. Video is a third of that kind — a core reports a completed frame,
-its dimensions and its pixel layout, and one that draws nothing refuses rather than accepting a
-request that could never be answered. A core with different dimensions or a different layout needs
-nothing new from the surface, because neither is the platform's to choose. A console also states its own access granularity — how many times
-a wide access fires a watch, and at which addresses.
+**What a console brings.** A console is a backend and a `<console>::` header naming its vocabulary;
+the verbs on this page, the declaration grammar and the binding vocabulary are the same on every
+console, because none of them is console-shaped. Three capabilities depend on what a core offers
+rather than on the surface: escapes need a per-instruction hook, watches a per-access one, and video
+a completed frame with its dimensions and pixel layout — a core without one refuses at the arming
+call rather than accepting a declaration it could never answer, which is what the SNES core does for
+escapes, watches and named places. A core with other dimensions or another layout needs nothing new
+from the surface, because neither is the platform's to choose: a SNES frame arrives 256 or 512 wide
+and 224 or 239 tall, as the cartridge's program has the chip draw it. A console also states its own
+access granularity — how many times a wide access fires a watch, and at which addresses.

@@ -171,9 +171,8 @@ TEST(VmHost, MultiInstanceThrowsEng4Seam) {
         std::logic_error);
 }
 
-// ── Case 9: a non-GB platform has no backend in v1 ────────────────────────────────────────────
-TEST(VmHost, NonGameBoyPlatformThrowsAtConstruction) {
-    EXPECT_THROW(Vm{VMPlatform::Snes}, std::runtime_error);
+// ── Case 9: a platform with no backend built throws at construction ────────────────────────────
+TEST(VmHost, PlatformWithNoBackendThrowsAtConstruction) {
     EXPECT_THROW(Vm{VMPlatform::Genesis}, std::runtime_error);
 }
 

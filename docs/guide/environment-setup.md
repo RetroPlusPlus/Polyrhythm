@@ -27,12 +27,12 @@ Already have a toolchain and just want the requirements list? See
 |---|---|
 | **CMake 3.28+** | the build system |
 | **A C++20 compiler** — GCC 13+, Clang 16+, or MSVC 19.38+ (Visual Studio 2022 17.8+) | the platform is C++20 |
-| **Git** | SDL3 and SameBoy are submodules |
+| **Git** | SDL3, SameBoy and Snaggletooth are submodules |
 | **A shader toolchain** | shaders compile to the platform's native format at build time |
 | **Ninja** (optional) | faster builds than the default generator |
 
 The shader toolchain differs per platform and is the part people miss, so each section below installs
-it explicitly. Everything else the build needs — SDL3, SameBoy, lodepng, the audio decoders,
+it explicitly. Everything else the build needs — SDL3, SameBoy, Snaggletooth, lodepng, the audio decoders,
 GoogleTest — arrives with the submodules or is fetched by CMake. **There is nothing to install at
 runtime**; a built game is self-contained.
 
@@ -207,7 +207,7 @@ glslangValidator --version
 
 ## Get the source
 
-**The submodules are not optional** — SDL3 and SameBoy live in them, and a clone without them fails to
+**The submodules are not optional** — SDL3, SameBoy and Snaggletooth live in them, and a clone without them fails to
 configure with a missing-directory error.
 
 ```sh

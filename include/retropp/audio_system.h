@@ -104,7 +104,8 @@ public:
                          AudioSink& sink,
                          VMPlatform platform = VMPlatform::GameBoyColor,
                          TimingProfile timing = TimingProfile::GameBoyColor,
-                         unsigned sampleRate = kAudioSampleRate);
+                         unsigned sampleRate = kAudioSampleRate)
+        : AudioSystem(detail::coreFor(platform), kind, sink, platform, timing, sampleRate) {}
 
     // OWN a sink. As above, but the system TAKES OWNERSHIP of `sink` and ties it to its own lifetime —
     // no caller-side keep-alive. This is the custom-sink path ("hand me a sink, you keep nothing": a
@@ -114,7 +115,8 @@ public:
                          std::unique_ptr<AudioSink> sink,
                          VMPlatform platform = VMPlatform::GameBoyColor,
                          TimingProfile timing = TimingProfile::GameBoyColor,
-                         unsigned sampleRate = kAudioSampleRate);
+                         unsigned sampleRate = kAudioSampleRate)
+        : AudioSystem(detail::coreFor(platform), kind, std::move(sink), platform, timing, sampleRate) {}
 
     // MAKE YOUR OWN sink — the zero-boilerplate default. Owns an internally-constructed production
     // SdlAudioSink, so `AudioSystem music{AudioKind::Chiptune};` just works: no sink to declare, no
@@ -125,7 +127,8 @@ public:
     explicit AudioSystem(AudioKind kind,
                          VMPlatform platform = VMPlatform::GameBoyColor,
                          TimingProfile timing = TimingProfile::GameBoyColor,
-                         unsigned sampleRate = kAudioSampleRate);
+                         unsigned sampleRate = kAudioSampleRate)
+        : AudioSystem(detail::coreFor(platform), kind, platform, timing, sampleRate) {}
     ~AudioSystem();
 
     AudioSystem(const AudioSystem&)            = delete;
@@ -199,8 +202,18 @@ private:
     // device-free test drives production synchronously on its own thread. Borrows `sink`.
     struct ManualTag {};
     AudioSystem(ManualTag, AudioKind kind, AudioSink& sink, VMPlatform platform, TimingProfile timing,
-                unsigned sampleRate);
+                unsigned sampleRate)
+        : AudioSystem(ManualTag{}, detail::coreFor(platform), kind, sink, platform, timing, sampleRate) {}
     friend struct detail::AudioSystemTestAccess;
+
+    AudioSystem(detail::CoreFactory core, AudioKind kind, AudioSink& sink, VMPlatform platform,
+                TimingProfile timing, unsigned sampleRate);
+    AudioSystem(detail::CoreFactory core, AudioKind kind, std::unique_ptr<AudioSink> sink,
+                VMPlatform platform, TimingProfile timing, unsigned sampleRate);
+    AudioSystem(detail::CoreFactory core, AudioKind kind, VMPlatform platform, TimingProfile timing,
+                unsigned sampleRate);
+    AudioSystem(ManualTag, detail::CoreFactory core, AudioKind kind, AudioSink& sink, VMPlatform platform,
+                TimingProfile timing, unsigned sampleRate);
 
     // ── Hosted-driver plumbing (the non-template core host() and the handle drive) ──────────────────
     // host()'s non-template half: validate the kind + the one-instance rule, create the resident-driver
@@ -235,22 +248,26 @@ private:
 class AudioSystem::GB : public AudioSystem {
 public:
     explicit GB(AudioKind kind, unsigned sampleRate = kAudioSampleRate)
-        : AudioSystem(kind, VMPlatform::GameBoy, TimingProfile::GameBoy, sampleRate) {}
+        : AudioSystem(&detail::gameBoyCore, kind, VMPlatform::GameBoy, TimingProfile::GameBoy, sampleRate) {}
     GB(AudioKind kind, AudioSink& sink, unsigned sampleRate = kAudioSampleRate)
-        : AudioSystem(kind, sink, VMPlatform::GameBoy, TimingProfile::GameBoy, sampleRate) {}
+        : AudioSystem(&detail::gameBoyCore, kind, sink, VMPlatform::GameBoy, TimingProfile::GameBoy,
+                      sampleRate) {}
     GB(AudioKind kind, std::unique_ptr<AudioSink> sink, unsigned sampleRate = kAudioSampleRate)
-        : AudioSystem(kind, std::move(sink), VMPlatform::GameBoy, TimingProfile::GameBoy, sampleRate) {}
+        : AudioSystem(&detail::gameBoyCore, kind, std::move(sink), VMPlatform::GameBoy,
+                      TimingProfile::GameBoy, sampleRate) {}
 };
 
 class AudioSystem::GBC : public AudioSystem {
 public:
     explicit GBC(AudioKind kind, unsigned sampleRate = kAudioSampleRate)
-        : AudioSystem(kind, VMPlatform::GameBoyColor, TimingProfile::GameBoyColor, sampleRate) {}
-    GBC(AudioKind kind, AudioSink& sink, unsigned sampleRate = kAudioSampleRate)
-        : AudioSystem(kind, sink, VMPlatform::GameBoyColor, TimingProfile::GameBoyColor, sampleRate) {}
-    GBC(AudioKind kind, std::unique_ptr<AudioSink> sink, unsigned sampleRate = kAudioSampleRate)
-        : AudioSystem(kind, std::move(sink), VMPlatform::GameBoyColor, TimingProfile::GameBoyColor,
+        : AudioSystem(&detail::gameBoyCore, kind, VMPlatform::GameBoyColor, TimingProfile::GameBoyColor,
                       sampleRate) {}
+    GBC(AudioKind kind, AudioSink& sink, unsigned sampleRate = kAudioSampleRate)
+        : AudioSystem(&detail::gameBoyCore, kind, sink, VMPlatform::GameBoyColor,
+                      TimingProfile::GameBoyColor, sampleRate) {}
+    GBC(AudioKind kind, std::unique_ptr<AudioSink> sink, unsigned sampleRate = kAudioSampleRate)
+        : AudioSystem(&detail::gameBoyCore, kind, std::move(sink), VMPlatform::GameBoyColor,
+                      TimingProfile::GameBoyColor, sampleRate) {}
 };
 
 // ── HostedDriver<SlotsStruct> — the durable typed handle ───────────────────────────────────────────

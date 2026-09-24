@@ -75,16 +75,16 @@ jobs:
           export SDL_VIDEODRIVER=offscreen   # headless: SDL video init succeeds so the GPU device (lavapipe) is reachable
           if [ "${{ github.event.inputs.capture_goldens }}" = "true" ]; then export RETROPP_CAPTURE_GOLDEN=1; fi
           mkdir -p "$GITHUB_WORKSPACE/ci-output"
-          ctest --test-dir /tmp/retropp-engine-ci-build -E RomRunExample --output-on-failure \
+          ctest --test-dir /tmp/retropp-engine-ci-build -E HoldsHardwareCadenceLive --output-on-failure \
             2>&1 | tee "$GITHUB_WORKSPACE/ci-output/linux-test-results.txt"
 
       # The rom-run example runs OUTSIDE the sweep so its measurements land in this log on every
       # run, pass or fail: the demo asserts each measured rate against its factor's target (--verify)
       # and a governor no longer holding wall-clock cadence turns this step red.
-      - name: Rom-run cadence — the example runs, measurements captured
+      - name: Cadence — the examples hold the hardware's rate, measurements captured
         run: |
           set -o pipefail
-          ctest --test-dir /tmp/retropp-engine-ci-build -R RomRunExample --extra-verbose \
+          ctest --test-dir /tmp/retropp-engine-ci-build -R HoldsHardwareCadenceLive --extra-verbose \
             2>&1 | tee -a "$GITHUB_WORKSPACE/ci-output/linux-test-results.txt"
 
       - name: ccache stats
@@ -145,15 +145,15 @@ jobs:
           set -o pipefail   # without this, tee's exit code masks ctest failures
           if [ "${{ github.event.inputs.capture_goldens }}" = "true" ]; then export RETROPP_CAPTURE_GOLDEN=1; fi
           mkdir -p "$GITHUB_WORKSPACE/ci-output"
-          ctest --test-dir /tmp/retropp-engine-ci-build -E RomRunExample --output-on-failure \
+          ctest --test-dir /tmp/retropp-engine-ci-build -E HoldsHardwareCadenceLive --output-on-failure \
             2>&1 | tee "$GITHUB_WORKSPACE/ci-output/macos-test-results.txt"
 
       # See the linux job's twin step: the example's measurements always land in this log, and the
       # demo's own --verify gate reds the step if a rate drifts off its factor's target.
-      - name: Rom-run cadence — the example runs, measurements captured
+      - name: Cadence — the examples hold the hardware's rate, measurements captured
         run: |
           set -o pipefail
-          ctest --test-dir /tmp/retropp-engine-ci-build -R RomRunExample --extra-verbose \
+          ctest --test-dir /tmp/retropp-engine-ci-build -R HoldsHardwareCadenceLive --extra-verbose \
             2>&1 | tee -a "$GITHUB_WORKSPACE/ci-output/macos-test-results.txt"
 
       - name: ccache stats
@@ -248,7 +248,7 @@ jobs:
             Remove-Item -Force -ErrorAction SilentlyContinue
           if ("${{ github.event.inputs.capture_goldens }}" -eq "true") { $env:RETROPP_CAPTURE_GOLDEN = "1" }
           $results = "C:\ci-output\windows-test-results-${{ github.run_id }}-${{ github.run_attempt }}.txt"
-          cmd /c "ctest --test-dir C:\retropp-engine-ci-build -C Release -E RomRunExample --output-on-failure 2>&1" |
+          cmd /c "ctest --test-dir C:\retropp-engine-ci-build -C Release -E HoldsHardwareCadenceLive --output-on-failure 2>&1" |
             Tee-Object -FilePath $results
           # PowerShell equivalent of `set -o pipefail` — Tee-Object does not update
           # $LASTEXITCODE; the cmd /c exit code is captured after the pipeline.
@@ -257,11 +257,11 @@ jobs:
 
       # See the linux job's twin step: the example's measurements always land in this log, and the
       # demo's own --verify gate reds the step if a rate drifts off its factor's target.
-      - name: Rom-run cadence — the example runs, measurements captured
+      - name: Cadence — the examples hold the hardware's rate, measurements captured
         shell: powershell
         run: |
           $results = "C:\ci-output\windows-test-results-${{ github.run_id }}-${{ github.run_attempt }}.txt"
-          cmd /c "ctest --test-dir C:\retropp-engine-ci-build -C Release -R RomRunExample --extra-verbose 2>&1" |
+          cmd /c "ctest --test-dir C:\retropp-engine-ci-build -C Release -R HoldsHardwareCadenceLive --extra-verbose 2>&1" |
             Tee-Object -FilePath $results -Append
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
@@ -323,15 +323,15 @@ jobs:
           export SDL_VIDEODRIVER=offscreen   # headless: SDL video init succeeds so the GPU device (lavapipe) is reachable
           if [ "${{ github.event.inputs.capture_goldens }}" = "true" ]; then export RETROPP_CAPTURE_GOLDEN=1; fi
           mkdir -p "$GITHUB_WORKSPACE/ci-output"
-          ctest --test-dir /tmp/retropp-engine-ci-build -E RomRunExample --output-on-failure \
+          ctest --test-dir /tmp/retropp-engine-ci-build -E HoldsHardwareCadenceLive --output-on-failure \
             2>&1 | tee "$GITHUB_WORKSPACE/ci-output/linux-arm64-test-results.txt"
 
       # See the linux-x64 job's twin step: the example's measurements always land in this log, and
       # the demo's own --verify gate reds the step if a rate drifts off its factor's target.
-      - name: Rom-run cadence — the example runs, measurements captured
+      - name: Cadence — the examples hold the hardware's rate, measurements captured
         run: |
           set -o pipefail
-          ctest --test-dir /tmp/retropp-engine-ci-build -R RomRunExample --extra-verbose \
+          ctest --test-dir /tmp/retropp-engine-ci-build -R HoldsHardwareCadenceLive --extra-verbose \
             2>&1 | tee -a "$GITHUB_WORKSPACE/ci-output/linux-arm64-test-results.txt"
 
       - name: ccache stats
@@ -423,18 +423,18 @@ jobs:
             Remove-Item -Force -ErrorAction SilentlyContinue
           if ("${{ github.event.inputs.capture_goldens }}" -eq "true") { $env:RETROPP_CAPTURE_GOLDEN = "1" }
           $results = "C:\ci-output\windows-arm64-test-results-${{ github.run_id }}-${{ github.run_attempt }}.txt"
-          cmd /c "ctest --test-dir C:\retropp-engine-ci-build -C Release -E RomRunExample --output-on-failure 2>&1" |
+          cmd /c "ctest --test-dir C:\retropp-engine-ci-build -C Release -E HoldsHardwareCadenceLive --output-on-failure 2>&1" |
             Tee-Object -FilePath $results
           # PowerShell pipefail equivalent — see windows-x64 Test step above.
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       # See the linux job's twin step: the example's measurements always land in this log, and the
       # demo's own --verify gate reds the step if a rate drifts off its factor's target.
-      - name: Rom-run cadence — the example runs, measurements captured
+      - name: Cadence — the examples hold the hardware's rate, measurements captured
         shell: powershell
         run: |
           $results = "C:\ci-output\windows-arm64-test-results-${{ github.run_id }}-${{ github.run_attempt }}.txt"
-          cmd /c "ctest --test-dir C:\retropp-engine-ci-build -C Release -R RomRunExample --extra-verbose 2>&1" |
+          cmd /c "ctest --test-dir C:\retropp-engine-ci-build -C Release -R HoldsHardwareCadenceLive --extra-verbose 2>&1" |
             Tee-Object -FilePath $results -Append
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 

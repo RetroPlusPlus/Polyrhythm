@@ -29,6 +29,11 @@ public:
 
     void reset() override;
     void advanceClock(std::uint64_t cycles) override;
+    // 4'194'304 Hz and 70'224 cycles a frame, on every model — double speed is a larger budget the
+    // guest asks for, not a second clock.
+    [[nodiscard]] std::optional<MachineClock> clock() const override {
+        return MachineClock{.hertzNumerator = 4'194'304, .hertzDivisor = 1, .cyclesPerFrame = 70'224};
+    }
     std::uint32_t placeRoutine(std::span<const std::uint8_t> bytes) override;
     void loadRom(std::span<const std::uint8_t> rom) override;
     void bootHostedRom() override;

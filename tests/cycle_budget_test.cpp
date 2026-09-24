@@ -176,15 +176,21 @@ TEST(CycleBudget, AdvanceTickAtAForeignCadenceSpendsThatCadencesWorth) {
     EXPECT_NE(readDivider(atNative), readDivider(atShort));
 }
 
-TEST(CycleBudget, AdvanceTickOnAProfileWithNoCpuModelDoesNothing) {
-    Vm vm{VMPlatform::GameBoyColor, TimingProfile{.tickPeriodNs = TickPeriodNs::Hz60, .cpu = {}}};
-    Vm still{VMPlatform::GameBoyColor,
-             TimingProfile{.tickPeriodNs = TickPeriodNs::Hz60, .cpu = {}}};
+// A machine's tick is its own. A Game Boy handed a 60 Hz profile with no CPU block advances one
+// Game Boy frame a tick — exactly what a Vm::GBC does.
+TEST(CycleBudget, AdvanceTickSpendsTheMachinesOwnFrameUnderAnyProfile) {
+    const TimingProfile hz60{.tickPeriodNs = TickPeriodNs::Hz60, .cpu = {}};
+    Vm      ticked{VMPlatform::GameBoyColor, hz60};
+    Vm      still{VMPlatform::GameBoyColor, hz60};
+    Vm::GBC own;
     for (int i = 0; i < 8; ++i) {
-        vm.advanceTick();
+        ticked.advanceTick();
+        own.advanceTick();
     }
 
-    EXPECT_EQ(readDivider(vm), readDivider(still));
+    const std::uint8_t tickedDivider = readDivider(ticked);
+    EXPECT_EQ(tickedDivider, readDivider(own));
+    EXPECT_NE(tickedDivider, readDivider(still));
 }
 
 TEST(CycleBudget, TheNativeCadenceSpellingsAgreeWhicheverWayItIsAsked) {

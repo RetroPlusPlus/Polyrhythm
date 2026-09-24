@@ -57,9 +57,9 @@ Active development. The core is in place and exercised end to end by a real cons
   game's own resident sound driver as a long-lived addressable machine driven by the player's own
   verbs.
 - **VM host** — a system-agnostic VM that runs surgically-extracted original-hardware routines
-  (authored as `.asm`, assembled in-process) as ordinary typed C++ functions; the v1 backend is
-  an embedded SM83 core (Game Boy / Game Boy Color), and the backend is pluggable per target
-  system.
+  (authored as `.asm`, assembled in-process) as ordinary typed C++ functions on the Game Boy
+  family. Two cores back it — SameBoy for the Game Boy / Game Boy Color and Snaggletooth for the
+  SNES — each behind the same seam, and a game's binary carries only the cores it names.
 - **Co-execution** — a game hosts a whole cartridge and **runs it**: the image boots as the
   hardware would boot it and runs continuously on its own thread, at the platform's own speed or
   any fraction or multiple of it, adjustable live, with the places the game declares inside it
@@ -74,8 +74,9 @@ Active development. The core is in place and exercised end to end by a real cons
   cartridge already has can be bound where it sits and called like a typed C++ function, in the
   guest's own context and to any depth, so a native replacement can build its answer out of the
   cartridge's own routines — or a parked machine's own decoders can be run to reach content the
-  game never played its way to. The image itself is never modified. Game Boy and Game Boy Color
-  today, with more consoles planned.
+  game never played its way to. The image itself is never modified. A hosted SNES cartridge boots,
+  runs on either clock, draws, sounds, takes both controller ports and keeps its battery save
+  through the same verbs; the naming, escape, watch and call verbs are the Game Boy family's.
 - **A hosted machine's video** — ask a machine for video and the frames it finishes become a
   layer's content, composited by z among native tile and sprite layers like anything else on
   screen: a game's own art over a running cartridge's picture, a transform or a screen-space
@@ -110,7 +111,7 @@ Requirements:
 
 - CMake 3.28+
 - A C++20 compiler: GCC 13+, Clang 16+, or MSVC 19.38+ (Visual Studio 2022 17.8+)
-- Git (the SameBoy dependency is a submodule)
+- Git (the SameBoy and Snaggletooth cores are submodules)
 
 Clone with submodules, then configure and build:
 
@@ -142,6 +143,11 @@ links the `retropp::testkit` target.
 - **[SameBoy](https://github.com/LIJI32/SameBoy)** — vendored as a submodule at
   `third_party/sameboy/`, pinned to v1.0.3. The reference Game Boy / Game Boy Color core;
   its emulation core compiles in to back the runtime VM. MIT-licensed; pulled with
+  `--recurse-submodules`.
+- **[Snaggletooth](https://github.com/etroimcasso/Snaggletooth)** — vendored as a submodule at
+  `third_party/snaggletooth/`, pinned by commit. A clean-room SNES implementation; its machine
+  compiles in to back the SNES core, and its two assemblers are linked only by the tests and the
+  SNES examples, which assemble their cartridges in process. MIT-licensed; pulled with
   `--recurse-submodules`.
 - **[lodepng](https://github.com/lvandeve/lodepng)** — vendored in-tree at
   `third_party/lodepng/` (pinned, zlib/MIT), compiled as a small static lib and linked

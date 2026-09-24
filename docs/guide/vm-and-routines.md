@@ -65,15 +65,16 @@ enum class VMPlatform { GameBoy, GameBoyColor, Snes, Nes, Genesis, MasterSystem 
 routine's convention is sealed in its own binding; only the register/memory *vocabulary* a binding
 names is system-specific (and lives in a per-system header — `gb.h` for the Game Boy family).
 
-In v1 the **GameBoy / GameBoyColor** backend is the only one built; any other enumerator throws
-`std::runtime_error` ("no backend built in v1") at `Vm` construction. The other entries are the
-declared seam — a new system is a drop-in backend, not a change to this surface.
+The **GameBoy / GameBoyColor** backend and the **Snes** backend are built. A GameBoy machine runs
+routines (this page); a hosted SNES cartridge runs whole (`co-execution.md`) — `Vm::SNES` and its pad
+vocabulary in `snes.h`, with no `uploadRoutine` / `assemble` surface. The SNES core is the console
+alone: a cartridge whose header names a coprocessor does not boot. Any other enumerator throws
+`std::runtime_error` ("no backend built") at `Vm` construction; a new system is a drop-in backend,
+not a change to this surface.
 (`vm.platform()` reports back the system a `Vm` was constructed for.)
 
-The constructor takes a second, optional parameter — the stepping cadence:
-`Vm(VMPlatform platform, TimingProfile timing = TimingProfile::GameBoyColor)`. It defaults to the Game
-Boy Color clock; pass a different `TimingProfile` to step the routine at another console's rate. A `Vm`
-is non-copyable but movable.
+A machine runs at its core's own speed — a Game Boy at 4'194'304 Hz, one tick of it one 70'224-cycle
+frame — and `speed()` is what scales it. A `Vm` is non-copyable but movable.
 
 Each platform maps to an instruction-set architecture — `Isa` (`retropp/isa.h`), via
 `isaFor(VMPlatform)`. The ISA is the real compatibility unit: several consoles can share one (the Game
@@ -282,7 +283,8 @@ The raw driver chain underneath the `AudioSystem` is three `Vm` members: `enable
 turns on the APU and routes each produced PCM frame, `startDriver(routine)` positions a `HardwareSpeed`
 routine to run continuously, and `stepDriver(cpuCycles)` advances it one cycle budget (producing audio
 into the sink). You normally let the [`AudioSystem`](audio.md) own these; reach for them directly only
-to host a driver yourself.
+to host a driver yourself. A hosted cartridge's own sound comes through the same `enableAudio`, on
+every console — see [co-execution.md](co-execution.md#sound-hearing-it).
 
 ## Hosting a resident driver
 
@@ -440,9 +442,10 @@ byte-reproducible in plain C++, so it is a porting job rather than a VM routine.
   needs the backend to serve it: a `GbHardwareMemory` value, its direct-access mapping in
   `src/vm/gameboy/sameboy_machine.cpp`, and its range in `regionFor` / `regionIsAddressable`
   (`src/vm/gameboy/sameboy_backend.cpp`). Updating one and not the others reddens the suite.
-- **Add a whole new system (SNES, NES, …):** add a `src/vm/<system>/` folder with that system's
-  backend (and its own ISA assembler + routines), and a factory case — the public `vm.h` surface does
-  not change. Every system's machine idiom stays behind its own backend; `vm.h` stays system-agnostic.
+- **Add a whole new system (NES, Genesis, …):** add a `src/vm/<system>/` folder with its backend and
+  its `detail::<system>Core` hook, its `VMPlatform` enumerators, its `detail::coreFor` case and its
+  pre-bound `Vm::` types in `vm.h` — the public `vm.h` surface does not change. Every system's machine
+  idiom stays behind its own backend; `vm.h` stays system-agnostic.
 
 ## Status
 
@@ -454,5 +457,6 @@ free-running-divider model), the host-speed / single-instance path, the `Hardwar
 (driving the [audio chain](audio.md)), and the resident-driver surface (`hostDriver` / `tickDriver` /
 `readSlot`, with banked placement via `gb::banked` + `gb::Mbc3`), and cartridge hosting (`hostRom`
 with the `MemoryRegion` / `registerRegions` / `read` / `write` surface and the `gb::` memory
-constants). Declared seams, not yet realized: `instances > 1`, binding a
-location by label name, and non-Game-Boy backends.
+constants); and the SNES backend — `Vm::SNES`, hosting a whole cartridge with its pad vocabulary in
+`snes.h` (`co-execution.md`). Declared seams: `instances > 1` (registering with more than one throws
+`std::logic_error`) and binding a location by label name.

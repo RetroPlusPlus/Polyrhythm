@@ -218,16 +218,28 @@ TEST(RomRun, RunRefusesWhatCannotRun) {
     Vm::GBC bare;
     EXPECT_THROW(bare.run(), std::logic_error);  // nothing hosted
 
-    Vm noCpu{VMPlatform::GameBoyColor, TimingProfile{TickPeriodNs::Hz60, std::nullopt}};
-    noCpu.hostRom(testing::authorCartridge(testing::kSmallestCartridge));
-    EXPECT_THROW(noCpu.run(), std::logic_error);   // no CPU model, no platform speed
-    EXPECT_THROW(noCpu.speed(1, 2), std::logic_error);
-
     Vm::GBC hosted;
     hosted.hostRom(runnableCartridge(hosted, kFrameCounterSource, 0x80));
     VmTestAccess::runInline(hosted);
     EXPECT_THROW(hosted.run(), std::logic_error);  // already running
     hosted.stop();
+}
+
+// A machine's speed is its core's own: a Game Boy handed a profile with no CPU block takes a speed
+// factor and runs, and one step is one Game Boy frame.
+TEST(RomRun, AMachineRunsAtItsOwnSpeedUnderAProfileWithNoCpuBlock) {
+    Vm machine{VMPlatform::GameBoyColor, TimingProfile{TickPeriodNs::Hz60, std::nullopt}};
+    machine.hostRom(runnableCartridge(machine, kFrameCounterSource, 0x80));
+    const RegionMapId<Places> places = declarePlaces(machine);
+    EXPECT_NO_THROW(machine.speed(1, 1));
+    VmTestAccess::runInline(machine);
+    for (int i = 0; i < 10; ++i) {
+        VmTestAccess::stepOnce(machine);
+    }
+    const std::uint8_t frames = hram(machine, places, 0);
+    EXPECT_GE(frames, 8u);  // the bounds TheBootedImageRunsItsOwnMainLoop holds a Vm::GBC to
+    EXPECT_LE(frames, 11u);
+    machine.stop();
 }
 
 TEST(RomRun, TheBootedImageRunsItsOwnMainLoop) {
