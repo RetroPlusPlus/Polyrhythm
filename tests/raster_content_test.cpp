@@ -6,8 +6,8 @@
 //
 // The rest are device-backed (a GPU device, no display — the harness the golden-readback and compose-skip
 // tests use, so they run on a software rasterizer in CI): a raster reaches the screen at the pixels its
-// source drew, composites at its own z among native layers, and re-uploads only when its generation
-// moved.
+// source drew, composites at its own z among native layers, re-uploads only when its generation moved,
+// and fills the size its `fit` names — its own when the fit is unset, texel for texel.
 
 #include <array>
 #include <cstdint>
@@ -21,6 +21,7 @@
 #include <SDL3/SDL.h>
 
 #include "retropp/draw_state.h"
+#include "retropp/geometry.h"
 #include "retropp/raster_content.h"
 #include "retropp/renderer.h"
 #include "retropp/viewport.h"
@@ -58,6 +59,7 @@ TEST(RasterContentType, TheContentTypeNamesNoConsole) {
     static_assert(std::is_same_v<decltype(RasterContent::height), int>);
     static_assert(std::is_same_v<decltype(RasterContent::format), RasterPixelFormat>);
     static_assert(std::is_same_v<decltype(RasterContent::generation), std::uint64_t>);
+    static_assert(std::is_same_v<decltype(RasterContent::fit), PixelSize>);
     static_assert(std::is_same_v<std::underlying_type_t<RasterPixelFormat>, std::uint8_t>);
     static_assert(std::is_standard_layout_v<RasterContent>);
     SUCCEED();
@@ -88,6 +90,7 @@ TEST(RasterContentType, AnEmptyRasterIsAValidSubmission) {
     EXPECT_EQ(empty.height, 0);
     EXPECT_TRUE(empty.pixels.empty());
     EXPECT_EQ(empty.generation, 0u);
+    EXPECT_EQ(empty.fit, PixelSize{});  // shown at its own size
 }
 
 // ── Device-backed: what reaches the screen ──────────────────────────────────────────────────────
@@ -291,6 +294,220 @@ TEST_F(RasterRenderTest, TwoPicturesSitSideBySideWhenOneIsScrolled) {
     EXPECT_EQ(px[static_cast<std::size_t>(kWideW) - 1].b, 0xFF);           // right half, last column
     EXPECT_EQ(px[static_cast<std::size_t>(kW) - 1].b, 0x00);               // and they do not bleed
     EXPECT_EQ(px[static_cast<std::size_t>(kW)].r, 0x00);
+}
+
+// ── The fit ─────────────────────────────────────────────────────────────────────────────────────
+
+// A picture whose every color byte is a distinct pattern, so a texel landing one place off is caught —
+// and opaque, so every pixel reaches the capture as the color it holds rather than blended over what
+// is under it.
+std::vector<std::uint8_t> distinctPicture(int width, int height) {
+    std::vector<std::uint8_t> pixels(static_cast<std::size_t>(width) * height * 4);
+    for (std::size_t i = 0; i < pixels.size(); ++i) {
+        pixels[i] = (i % 4 == 3) ? 0xFF : static_cast<std::uint8_t>(i * 7 + 3);
+    }
+    return pixels;
+}
+
+Rgba8 texelOf(const std::vector<std::uint8_t>& pixels, int width, int x, int y) {
+    const std::size_t at = (static_cast<std::size_t>(y) * width + static_cast<std::size_t>(x)) * 4;
+    return Rgba8{pixels[at], pixels[at + 1], pixels[at + 2], pixels[at + 3]};
+}
+
+// The default: every viewport pixel is the raster's own texel — the whole raster, not a sample of it.
+// Nothing a consumer submits today names a fit, so this is the output every consumer keeps.
+TEST_F(RasterRenderTest, AnUnsetFitShowsTheRasterAtItsOwnSizeTexelForTexel) {
+    Renderer r{device_, /*window=*/nullptr, ViewportResolution{kW, kH}};
+    r.automaticInterpolation(false);
+    const std::vector<std::uint8_t> picture = distinctPicture(kW, kH);
+
+    DrawLayer screen{.key = "screen"};
+    screen.size    = PixelSize{kW, kH};
+    screen.content = RasterContent{.pixels = std::span<const std::uint8_t>(picture),
+                                   .width  = kW,
+                                   .height = kH,
+                                   .format = RasterPixelFormat::Rgba8888,
+                                   .generation = 1};
+    FrameDrawState frame;
+    frame.layers = {screen};
+
+    const std::vector<Rgba8> px = r.captureViewport(frame);
+    ASSERT_EQ(px.size(), static_cast<std::size_t>(kW) * kH);
+    for (int y = 0; y < kH; ++y) {
+        for (int x = 0; x < kW; ++x) {
+            const Rgba8 want = texelOf(picture, kW, x, y);
+            const Rgba8 got  = px[static_cast<std::size_t>(y) * kW + static_cast<std::size_t>(x)];
+            EXPECT_EQ(got.r, want.r) << "at " << x << "," << y;
+            EXPECT_EQ(got.g, want.g) << "at " << x << "," << y;
+            EXPECT_EQ(got.b, want.b) << "at " << x << "," << y;
+        }
+    }
+}
+
+// A raster smaller than its fit repeats texels: each covers fit/raster pixels on each axis.
+TEST_F(RasterRenderTest, AFitStretchesTheRasterToFillIt) {
+    Renderer r{device_, /*window=*/nullptr, ViewportResolution{kW, kH}};
+    r.automaticInterpolation(false);
+    constexpr int kSmallW = kW / 4, kSmallH = kH / 4;   // 4×2, shown 16×8: each texel a 4×4 block
+    const std::vector<std::uint8_t> picture = distinctPicture(kSmallW, kSmallH);
+
+    DrawLayer screen{.key = "screen"};
+    screen.size    = PixelSize{kW, kH};
+    screen.content = RasterContent{.pixels = std::span<const std::uint8_t>(picture),
+                                   .width  = kSmallW,
+                                   .height = kSmallH,
+                                   .format = RasterPixelFormat::Rgba8888,
+                                   .fit    = PixelSize{kW, kH},
+                                   .generation = 1};
+    FrameDrawState frame;
+    frame.layers = {screen};
+
+    const std::vector<Rgba8> px = r.captureViewport(frame);
+    ASSERT_EQ(px.size(), static_cast<std::size_t>(kW) * kH);
+    for (int y = 0; y < kH; ++y) {
+        for (int x = 0; x < kW; ++x) {
+            const Rgba8 want = texelOf(picture, kSmallW, x / 4, y / 4);
+            const Rgba8 got  = px[static_cast<std::size_t>(y) * kW + static_cast<std::size_t>(x)];
+            EXPECT_EQ(got.r, want.r) << "at " << x << "," << y;
+            EXPECT_EQ(got.b, want.b) << "at " << x << "," << y;
+        }
+    }
+}
+
+// A raster larger than its fit drops texels: fitted to half its width, every shown column is an even
+// source column, and the half of the slot the fit does not reach shows nothing.
+TEST_F(RasterRenderTest, AFitShrinksTheRasterByDroppingTexels) {
+    Renderer r{device_, /*window=*/nullptr, ViewportResolution{kW, kH}};
+    r.automaticInterpolation(false);
+
+    // Even columns red, odd columns blue — a sample of the wrong column changes color.
+    std::vector<std::uint8_t> picture(static_cast<std::size_t>(kW) * kH * 4);
+    for (int y = 0; y < kH; ++y) {
+        for (int x = 0; x < kW; ++x) {
+            const std::size_t at = (static_cast<std::size_t>(y) * kW + static_cast<std::size_t>(x)) * 4;
+            picture[at + 0] = (x % 2 == 0) ? 0xFF : 0x00;
+            picture[at + 1] = 0x00;
+            picture[at + 2] = (x % 2 == 0) ? 0x00 : 0xFF;
+            picture[at + 3] = 0xFF;
+        }
+    }
+
+    DrawLayer screen{.key = "screen"};
+    screen.size    = PixelSize{kW, kH};
+    screen.content = RasterContent{.pixels = std::span<const std::uint8_t>(picture),
+                                   .width  = kW,
+                                   .height = kH,
+                                   .format = RasterPixelFormat::Rgba8888,
+                                   .fit    = PixelSize{kW / 2, kH},
+                                   .generation = 1};
+    FrameDrawState frame;
+    frame.layers = {screen};
+
+    const std::vector<Rgba8> px = r.captureViewport(frame);
+    ASSERT_EQ(px.size(), static_cast<std::size_t>(kW) * kH);
+    for (int x = 0; x < kW / 2; ++x) {
+        EXPECT_EQ(px[static_cast<std::size_t>(x)].r, 0xFF) << "column " << x;   // column 2x, red
+        EXPECT_EQ(px[static_cast<std::size_t>(x)].b, 0x00) << "column " << x;
+    }
+    for (int x = kW / 2; x < kW; ++x) {
+        EXPECT_EQ(px[static_cast<std::size_t>(x)].r, 0x00) << "column " << x;   // outside the fit
+        EXPECT_EQ(px[static_cast<std::size_t>(x)].b, 0x00) << "column " << x;
+    }
+}
+
+// The fit is placed by scroll as any raster is: the same half-width picture, scrolled a half viewport
+// to the left, shows in the right half and leaves the left showing nothing.
+TEST_F(RasterRenderTest, AFitIsPlacedByScrollLikeAnyRaster) {
+    Renderer r{device_, /*window=*/nullptr, ViewportResolution{kW, kH}};
+    r.automaticInterpolation(false);
+    const std::vector<std::uint8_t> picture = splitPicture();   // left half red, right half blue
+
+    DrawLayer screen{.key = "screen"};
+    screen.size    = PixelSize{kW, kH};
+    screen.scroll  = LayerScroll{-kW / 2, 0};
+    screen.content = RasterContent{.pixels = std::span<const std::uint8_t>(picture),
+                                   .width  = kW,
+                                   .height = kH,
+                                   .format = RasterPixelFormat::Rgba8888,
+                                   .fit    = PixelSize{kW / 2, kH},
+                                   .generation = 1};
+    FrameDrawState frame;
+    frame.layers = {screen};
+
+    const std::vector<Rgba8> px = r.captureViewport(frame);
+    ASSERT_EQ(px.size(), static_cast<std::size_t>(kW) * kH);
+    EXPECT_EQ(px[0].r, 0x00);                                          // left half: nothing
+    EXPECT_EQ(px[0].b, 0x00);
+    EXPECT_EQ(px[static_cast<std::size_t>(kW) / 2].r, 0xFF);           // the fitted picture's first column
+    EXPECT_EQ(px[static_cast<std::size_t>(kW) / 2 + kW / 4 - 1].r, 0xFF);   // its red half's last column
+    EXPECT_EQ(px[static_cast<std::size_t>(kW) / 2 + kW / 4].b, 0xFF);       // its blue half's first
+    EXPECT_EQ(px[static_cast<std::size_t>(kW) - 1].b, 0xFF);           // its last column
+}
+
+// An axis left at 0 keeps the raster's own size on that axis: a fit naming only a width halves the width
+// and leaves every row where it was.
+TEST_F(RasterRenderTest, AnAxisLeftAtZeroKeepsTheRastersOwnSizeOnThatAxis) {
+    Renderer r{device_, /*window=*/nullptr, ViewportResolution{kW, kH}};
+    r.automaticInterpolation(false);
+    const std::vector<std::uint8_t> picture = distinctPicture(kW, kH);
+
+    DrawLayer screen{.key = "screen"};
+    screen.size    = PixelSize{kW, kH};
+    screen.content = RasterContent{.pixels = std::span<const std::uint8_t>(picture),
+                                   .width  = kW,
+                                   .height = kH,
+                                   .format = RasterPixelFormat::Rgba8888,
+                                   .fit    = PixelSize{kW / 2, 0},
+                                   .generation = 1};
+    FrameDrawState frame;
+    frame.layers = {screen};
+
+    const std::vector<Rgba8> px = r.captureViewport(frame);
+    ASSERT_EQ(px.size(), static_cast<std::size_t>(kW) * kH);
+    for (int y = 0; y < kH; ++y) {
+        for (int x = 0; x < kW / 2; ++x) {
+            const Rgba8 want = texelOf(picture, kW, x * 2, y);   // every other column, the same row
+            const Rgba8 got  = px[static_cast<std::size_t>(y) * kW + static_cast<std::size_t>(x)];
+            EXPECT_EQ(got.r, want.r) << "at " << x << "," << y;
+            EXPECT_EQ(got.g, want.g) << "at " << x << "," << y;
+        }
+    }
+}
+
+// A changed fit is a different picture on screen, so a frame identical in every other way recomposes
+// rather than reusing the retained output. renderFrame is the path that skips (captureViewport always
+// composes), and with no window it composes offscreen and skips the blit — the compose-skip tests' harness.
+TEST_F(RasterRenderTest, AChangedFitRecomposes) {
+    Renderer r{device_, /*window=*/nullptr, ViewportResolution{kW, kH}};
+    r.automaticInterpolation(false);
+    const std::vector<std::uint8_t> picture = splitPicture();
+
+    DrawLayer screen{.key = "screen"};
+    screen.size = PixelSize{kW, kH};
+    auto submit = [&](PixelSize fit) {
+        screen.content = RasterContent{.pixels = std::span<const std::uint8_t>(picture),
+                                       .width  = kW,
+                                       .height = kH,
+                                       .format = RasterPixelFormat::Rgba8888,
+                                       .fit    = fit,
+                                       .generation = 1};
+        FrameDrawState frame;
+        frame.layers = {screen};
+        r.renderFrame(frame);
+    };
+
+    submit(PixelSize{});             // composes (composePasses 1)
+    submit(PixelSize{});             // identical: skips (composeSkips 1)
+    ASSERT_EQ(r.renderStats().composePasses, 1u);
+    ASSERT_EQ(r.renderStats().composeSkips, 1u);
+
+    submit(PixelSize{kW / 2, kH});   // the fit moved: composed again
+    EXPECT_EQ(r.renderStats().composePasses, 2u);
+    EXPECT_EQ(r.renderStats().composeSkips, 1u);
+
+    submit(PixelSize{kW / 2, kH});   // identical again: skips again
+    EXPECT_EQ(r.renderStats().composePasses, 2u);
+    EXPECT_EQ(r.renderStats().composeSkips, 2u);
 }
 
 // The generation is the whole upload decision: a submission carrying one the resident texture does not

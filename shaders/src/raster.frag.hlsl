@@ -1,11 +1,12 @@
 // Raster layer fragment shader (a raster of pixels: a hosted machine's picture, or one the program drew).
 //
 // Per output pixel: reconstruct the layer-local pixel from the interpolated UV × the layer size, apply
-// the per-layer transform, add the layer scroll, and Load the pixel the source drew. Everything is an
-// integer Load — there is NO sampler on this path, so the raster reaches the screen at exactly the
-// texels its source produced however far it is scaled up.
+// the per-layer transform, add the layer scroll, and Load the texel of the raster under that pixel —
+// the pixel itself when the raster is shown at its own size, the texel the fit maps it to otherwise.
+// Everything is an integer Load — there is NO sampler on this path, so the raster reaches the screen at
+// exactly the texels its source produced however far it is scaled up.
 //
-// A raster is FINITE: outside its own dimensions there is nothing, so the fragment discards and the
+// A raster is FINITE: outside the size it fills there is nothing, so the fragment discards and the
 // layers below show through. That is the whole of the edge policy — a raster does not wrap.
 //
 // SDL_GPU HLSL conventions (see SDL_CreateGPUShader docs): with no sampled textures, the read-only
@@ -21,8 +22,9 @@ cbuffer RasterUniforms : register(b0, space3) {
     float2 uRasterSize;    // the raster's dimensions, pixels                                   — reg 1
     float  uAlpha;              // layer alpha, [0,1]
     float  uComposeScale;       // compose grid ÷ viewport (1 = faithful); output pixel → viewport
-    float  uSnap;               // 1 = snap the transform's destination pixel to the viewport grid — reg 2
-    float3 _pad2;
+    float2 uFitSize;            // the size the raster fills, viewport pixels                       — reg 2
+    float  uSnap;               // 1 = snap the transform's destination pixel to the viewport grid
+    float  _pad2;
     float4 uInvRow0;            // inverse transform homography, row 0 (m00,m01,m02, _)         — reg 3
     float4 uInvRow1;            //   row 1 (m10,m11,m12, _)                                     — reg 4
     float4 uInvRow2;            //   row 2 (m20,m21,m22, _) — perspective terms in .x/.y        — reg 5
@@ -56,11 +58,14 @@ float4 main(float2 uv : TEXCOORD0) : SV_Target0 {
         sample = float2(cx, cy);
     }
 
-    float2 world = sample + uScroll;   // scrolled raster pixel (may be negative)
-    if (world.x < 0.0f || world.x >= uRasterSize.x || world.y < 0.0f || world.y >= uRasterSize.y) {
-        discard;                        // off the raster: nothing was drawn there
+    float2 world = sample + uScroll;   // scrolled pixel of the picture the raster fills (may be negative)
+    if (world.x < 0.0f || world.x >= uFitSize.x || world.y < 0.0f || world.y >= uFitSize.y) {
+        discard;                        // off the picture: nothing was drawn there
     }
 
-    float4 color = uRaster.Load(int3((int)world.x, (int)world.y, 0));
+    // The texel under this pixel: the raster's own size over the size it fills, multiplied before it is
+    // divided, so a fit equal to the raster's size lands on exactly the texel the pixel names.
+    float2 texel = (world * uRasterSize) / uFitSize;
+    float4 color = uRaster.Load(int3((int)texel.x, (int)texel.y, 0));
     return float4(color.rgb, color.a * uAlpha);
 }

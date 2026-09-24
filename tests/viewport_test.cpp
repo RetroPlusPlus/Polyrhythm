@@ -28,6 +28,12 @@ TEST(Viewport, PresetsHoldExpectedDimensions) {
     EXPECT_EQ(ViewportResolution::Nes.height, 240);
     EXPECT_EQ(ViewportResolution::Snes.width, 256);
     EXPECT_EQ(ViewportResolution::Snes.height, 224);
+    EXPECT_EQ(ViewportResolution::SnesHiRes.width, 512);
+    EXPECT_EQ(ViewportResolution::SnesHiRes.height, 224);
+    EXPECT_EQ(ViewportResolution::SnesInterlaced.width, 256);
+    EXPECT_EQ(ViewportResolution::SnesInterlaced.height, 448);
+    EXPECT_EQ(ViewportResolution::SnesHiResInterlaced.width, 512);
+    EXPECT_EQ(ViewportResolution::SnesHiResInterlaced.height, 448);
     EXPECT_EQ(ViewportResolution::Genesis.width, 320);
     EXPECT_EQ(ViewportResolution::Genesis.height, 224);
     EXPECT_EQ(ViewportResolution::MasterSystem.width, 256);
