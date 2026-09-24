@@ -74,15 +74,13 @@ profile's double-speed budget repeats the frame budget.
 
 **A machine on your tick spends one of its own frames per tick**, so a run loop advancing a SNES machine
 sets its profile to the console's — the run loop's default is the Game Boy Color cadence, and left there
-a SNES machine runs at that rate instead of its own. The player does it in `EngineConfig`:
+a SNES machine runs at that rate instead of its own:
 
 ```cpp
 const EngineConfig config{
-    .identity     = {.organization = "Retro++", .application = "SnesPlayer"},
-    .window       = {.title = "Polyrhythm — SNES player (tick-advanced | free-running)"},
-    .viewport     = ViewportResolution{kViewW, kViewH},
-    .timing       = TimingProfile::Snes,  // The run loop needs the SNES timing profile to tick-advance correctly
-    .enhancements = {.windowScale = kScale}};
+    // …
+    .timing = TimingProfile::Snes,   // or SnesPal, for a machine hosting a 50 Hz cartridge
+};
 ```
 
 A machine free-running on a thread of its own holds the cartridge's cadence whatever the loop does.
@@ -96,7 +94,7 @@ enum class Button : ActionId { B, Y, Select, Start, Up, Down, Left, Right, A, X,
 The twelve buttons as an Actions enum, in the pad's own shift order — the order the console's auto-read
 registers hold them. Bind them like any action and read them back each tick with `snes::held(input)`,
 which counts a button as down if it is held at the tick or was pressed since the last one, so a tap
-shorter than a tick still reaches the guest. The player's map:
+shorter than a tick still reaches the guest. Bound to keys and a gamepad:
 
 ```cpp
 ActionMap controls{
@@ -108,41 +106,35 @@ ActionMap controls{
     {snes::Button::R,      {SDL_SCANCODE_W, PadButton::ShoulderR}},
     {snes::Button::Select, {SDL_SCANCODE_RSHIFT, PadButton::Select}},
     {snes::Button::Start,  {SDL_SCANCODE_RETURN, PadButton::Start}},
-    {Player::TogglePort2,  {SDL_SCANCODE_2}},
-    {Player::ToggleRate,   {SDL_SCANCODE_3}},
-    {Player::CycleHeard,   {SDL_SCANCODE_4}},
-    {Player::ToggleScope,  {SDL_SCANCODE_5}},
 };
 controls.add(presets::directional(snes::Button::Up, snes::Button::Down, snes::Button::Left,
                                   snes::Button::Right));
 platform.actions(controls);
 ```
 
+A game with actions of its own puts them in the same map, numbered clear of the twelve; there is one
+action space, 64 wide.
+
 `snes::held` returns a `snes::Buttons` — twelve `bool`s, `b` … `r` — and `vm.buttons` takes it as
 **port one, with port two an empty socket**. The console has two controller ports, and `snes::Ports`
 names both:
 
 ```cpp
-const snes::Ports ports{
-    .one = snes::held(input),
-    .two = port2Plugged ? std::optional<snes::Buttons>{snes::held(input)} : std::nullopt};
-ticked.buttons(ports);
-freeRunning.buttons(ports);
+vm.buttons(snes::Ports{.one = snes::held(input), .two = std::nullopt});   // one pad, port two empty
 ```
 
 **An empty `std::optional` is an empty socket**, and a cartridge tells one apart from a pad with nothing
 held the way it does on hardware: the auto-read at `$4218`–`$421F` reads `$0000` for both, but a program
 that strobes `$4016` and clocks the serial port past the sixteenth bit reads 1 from a pad and 0 from a
-socket with nothing in it. `snes::Ports{}` is a console with nothing plugged in. A program owns which
-sockets it filled; the player prints the port's state when the 2 key plugs or unplugs the second
-controller.
+socket with nothing in it. `snes::Ports{}` is a console with nothing plugged in. Which sockets are filled
+is the game's to say, and it can change while the machine runs, at the next step boundary like any
+`buttons` call.
 
 ## Its picture
 
 `video()` hands back the last frame the picture chip finished, as `RasterContent` in `Rgba8888`, at the
 dimensions the cartridge's program has the chip draw — 256 or 512 wide, 224 or 239 tall. The layer shows
-the picture at those dimensions and draws nothing outside them, so the player places two machines side
-by side by scrolling the right-hand layer's content one screen to the left. Everything else about video —
+the picture at those dimensions and draws nothing outside them. Everything else about video —
 declaring it at construction, either clock, when a frame becomes visible, `generation` — is
 [co-execution.md](co-execution.md#video-showing-its-picture).
 
@@ -156,8 +148,8 @@ function, so the cartridge's pitch is the same at 48'000 Hz and at 44'100 Hz. A 
 The frames reach your function four times a frame, from inside the step, on the thread that steps the
 machine — the game's under `Advance::OnTick`, the machine's own under `Advance::Continuously`. A machine
 with no function drops its frames as it runs. The hand-off to an
-[`AudioSink`](../audio.md#output-the-audiosink) — a queue per machine, the device pulling on its own
-thread — is the player's, and the shape is on [co-execution.md](co-execution.md#sound-hearing-it).
+[`AudioSink`](../audio.md#output-the-audiosink) — a queue, the device pulling on its own thread — is the
+game's, and its shape is on [co-execution.md](co-execution.md#sound-hearing-it).
 
 ## Its save: `.srm`
 

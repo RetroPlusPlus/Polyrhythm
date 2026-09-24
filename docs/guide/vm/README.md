@@ -99,15 +99,13 @@ A machine advanced on your tick — `run(Vm::Advance::OnTick)` then `advanceTick
 spends **one frame of its own clock per call**. The run loop's tick period is `EngineConfig::timing`,
 and its default is the Game Boy Color cadence, so a run loop left at the default ticks a SNES machine
 one SNES frame per Game Boy frame: the machine runs at the loop's frame rate rather than its own. Set the
-profile to the console's, as the SNES player does:
+profile to the console's:
 
 ```cpp
 const EngineConfig config{
-    .identity     = {.organization = "Retro++", .application = "SnesPlayer"},
-    .window       = {.title = "Polyrhythm — SNES player (tick-advanced | free-running)"},
-    .viewport     = ViewportResolution{kViewW, kViewH},
-    .timing       = TimingProfile::Snes,  // The run loop needs the SNES timing profile to tick-advance correctly
-    .enhancements = {.windowScale = kScale}};
+    // …
+    .timing = TimingProfile::Snes,
+};
 ```
 
 A loop that ticks at a period that is not the machine's — one console hosted while the loop runs at
