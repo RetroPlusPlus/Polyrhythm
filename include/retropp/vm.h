@@ -59,7 +59,7 @@
 #include "retropp/driver_binding.h"    // DriverBinding / Instruction — the resident-driver surface below
 #include "retropp/guest_buttons.h"     // GuestButtons — what buttons() takes
 #include "retropp/guest_escape.h"      // GuestEscape / EscapeMap / EscapeTable — the escape surface below
-#include "retropp/guest_frame.h"       // GuestFrameContent — what video() answers with
+#include "retropp/raster_content.h"    // RasterContent — what video() answers with
 #include "retropp/guest_watch.h"       // GuestWatch / WatchMap / WatchTable — the watch surface below
 #include "retropp/isa.h"               // Isa + the VMPlatform → Isa mapping below
 #include "retropp/literal_path.h"      // LiteralPath (registerRoutine takes a compile-time literal path)
@@ -607,7 +607,7 @@ public:
     //
     // Throws std::logic_error unless this machine has been asked for video; a request that has not
     // reached a step boundary yet counts, and answers with the empty picture until a frame lands.
-    [[nodiscard]] GuestFrameContent video() const;
+    [[nodiscard]] RasterContent video() const;
 
     // Hold these buttons. The state is a level and the whole set is answered at once, so a button
     // absent from the value is released — hand over what is held now, every tick, and the guest reads

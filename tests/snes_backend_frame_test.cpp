@@ -14,7 +14,7 @@
 #include "assembler/assembler.h"
 #include "cpu65816/cpu65816_asm.h"
 #include "examples/common.h"
-#include "retropp/guest_frame.h"
+#include "retropp/raster_content.h"
 #include "snaggletooth/snes/snes.h"
 #include "src/vm/snes/snes_backend.h"
 #include "src/vm/snes/snes_backend_testing.h"
@@ -49,10 +49,10 @@ constexpr std::string_view kIdle =
 
 // What a frame the sink received looked like.
 struct FrameReport {
-    int              width  = 0;
-    int              height = 0;
-    GuestPixelFormat format = GuestPixelFormat::Rgba8888;
-    int              count  = 0;
+    int               width  = 0;
+    int               height = 0;
+    RasterPixelFormat format = RasterPixelFormat::Rgba8888;
+    int               count  = 0;
 };
 
 TEST(SnesBackendFrame, AFrameArrivesWithTheMachinesOwnDimensions) {
@@ -60,7 +60,7 @@ TEST(SnesBackendFrame, AFrameArrivesWithTheMachinesOwnDimensions) {
     FrameReport report;
     backend.setVideoEnabled(true);
     backend.setFrameSink([&report](std::span<const std::uint8_t> pixels, int width, int height,
-                                   GuestPixelFormat format) {
+                                   RasterPixelFormat format) {
         report.width  = width;
         report.height = height;
         report.format = format;
@@ -73,7 +73,7 @@ TEST(SnesBackendFrame, AFrameArrivesWithTheMachinesOwnDimensions) {
     backend.runForCycles(kOneFrame + 20'000);
 
     ASSERT_GT(report.count, 0);
-    EXPECT_EQ(report.format, GuestPixelFormat::Rgba8888);
+    EXPECT_EQ(report.format, RasterPixelFormat::Rgba8888);
     EXPECT_EQ(report.width, 256);   // a fixture that never widens draws 256 across
     EXPECT_GT(report.height, 0);
 
@@ -82,7 +82,7 @@ TEST(SnesBackendFrame, AFrameArrivesWithTheMachinesOwnDimensions) {
     FrameReport again;
     second.setVideoEnabled(true);
     second.setFrameSink([&again](std::span<const std::uint8_t>, int width, int height,
-                                 GuestPixelFormat) {
+                                 RasterPixelFormat) {
         again.width  = width;
         again.height = height;
         ++again.count;
@@ -97,7 +97,7 @@ TEST(SnesBackendFrame, AFrameArrivesWithTheMachinesOwnDimensions) {
 TEST(SnesBackendFrame, VideoOffDeliversNoFrameAndDoesNotChangeState) {
     SnesBackend off;
     int frames = 0;
-    off.setFrameSink([&frames](std::span<const std::uint8_t>, int, int, GuestPixelFormat) { ++frames; });
+    off.setFrameSink([&frames](std::span<const std::uint8_t>, int, int, RasterPixelFormat) { ++frames; });
     off.loadRom(cartridgeFrom(kIdle));  // video off is the default
     off.runForCycles(kOneFrame + 20'000);
     EXPECT_EQ(frames, 0);
@@ -106,7 +106,7 @@ TEST(SnesBackendFrame, VideoOffDeliversNoFrameAndDoesNotChangeState) {
     // not the program's state.
     SnesBackend on;
     on.setVideoEnabled(true);
-    on.setFrameSink([](std::span<const std::uint8_t>, int, int, GuestPixelFormat) {});
+    on.setFrameSink([](std::span<const std::uint8_t>, int, int, RasterPixelFormat) {});
     on.loadRom(cartridgeFrom(kIdle));
     on.runForCycles(kOneFrame + 20'000);
 
@@ -120,7 +120,7 @@ TEST(SnesBackendFrame, VideoOffDeliversNoFrameAndDoesNotChangeState) {
 TEST(SnesBackendFrame, VideoCanBeEnabledAfterHosting) {
     SnesBackend backend;
     int frames = 0;
-    backend.setFrameSink([&frames](std::span<const std::uint8_t>, int, int, GuestPixelFormat) { ++frames; });
+    backend.setFrameSink([&frames](std::span<const std::uint8_t>, int, int, RasterPixelFormat) { ++frames; });
     backend.loadRom(cartridgeFrom(kIdle));
 
     backend.runForCycles(kOneFrame + 20'000);

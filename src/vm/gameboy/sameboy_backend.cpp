@@ -984,7 +984,7 @@ void SameBoyBackend::setFrameSink(FrameSink sink) {
     // core whose PPU wrote a different layout would name a different enumerator, and nothing above
     // would convert anything.
     machine_.setFrameSink([this](std::span<const std::uint8_t> pixels, int width, int height) {
-        frameSink_(pixels, width, height, GuestPixelFormat::Rgba8888);
+        frameSink_(pixels, width, height, RasterPixelFormat::Rgba8888);
     });
 }
 

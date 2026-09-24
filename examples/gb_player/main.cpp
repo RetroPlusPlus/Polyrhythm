@@ -379,8 +379,8 @@ int main(int argc, char** argv) {
         // Each machine's picture is one screen wide and the layer spans both, so the right-hand one is
         // placed by scrolling its content half a viewport to the left. Outside its own dimensions a
         // picture draws nothing, which is what keeps the two halves from overlapping.
-        const GuestFrameContent tickedPicture = ticked.video();
-        const GuestFrameContent freePicture   = freeRunning.video();
+        const RasterContent tickedPicture = ticked.video();
+        const RasterContent freePicture   = freeRunning.video();
 
         DrawLayer left{.key = "tick-advanced"};
         left.z       = 0;

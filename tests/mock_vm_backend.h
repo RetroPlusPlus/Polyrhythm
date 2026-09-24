@@ -276,7 +276,7 @@ public:
     // Finish one frame of `pixels` at these dimensions — where a real core's vblank fires.
     void finishFrame(std::span<const std::uint8_t> pixels, int width, int height) {
         if (videoOn_ && frameSink_) {
-            frameSink_(pixels, width, height, GuestPixelFormat::Rgba8888);
+            frameSink_(pixels, width, height, RasterPixelFormat::Rgba8888);
         }
     }
 

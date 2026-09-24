@@ -285,8 +285,8 @@ void sampleCallback(GB_gameboy_t* gb, GB_sample_t* sample) {
     }
 }
 
-// How the PPU writes a colour into the pixel buffer: one word per pixel whose BYTES are red, green,
-// blue, alpha in memory order — GuestPixelFormat::Rgba8888 — since every target is little-endian.
+// How the PPU writes a color into the pixel buffer: one word per pixel whose BYTES are red, green,
+// blue, alpha in memory order — RasterPixelFormat::Rgba8888 — since every target is little-endian.
 // Alpha is opaque, because a console's picture carries no transparency of its own.
 std::uint32_t rgbEncodeCallback(GB_gameboy_t*, std::uint8_t r, std::uint8_t g, std::uint8_t b) {
     return static_cast<std::uint32_t>(r) | (static_cast<std::uint32_t>(g) << 8) |

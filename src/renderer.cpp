@@ -30,7 +30,7 @@
 #include "shaders/generated/colorfill_gather_frag.h"
 #include "shaders/generated/displace_frag.h"
 #include "shaders/generated/gleam_frag.h"
-#include "shaders/generated/guest_frame_frag.h"
+#include "shaders/generated/raster_frag.h"
 #include "shaders/generated/postprocess_vert.h"
 #include "shaders/generated/region_batch_vert.h"
 #include "shaders/generated/region_select_curve_frag.h"
@@ -296,14 +296,14 @@ template <class T>
             h = foldValue(h, sc.sprites.size());
             break;
         }
-        case LayerContentKind::GuestFrame: {
-            // Everything about the picture EXCEPT its pixels: a machine's raster is full-colour and
-            // differs every time it draws, so folding it in would cost more than the recompose the
-            // fingerprint exists to skip. The generation stands in for them exactly — a new picture is
-            // a new number — so the fingerprint SEES a machine draw without reading a byte of it, and
-            // this content type needs no declared-dirty escape hatch the way a declared tilemap does.
+        case LayerContentKind::Raster: {
+            // Everything about the raster EXCEPT its pixels: a full-color raster differs every time
+            // its source draws, so folding it in would cost more than the recompose the fingerprint
+            // exists to skip. The generation stands in for them exactly — a new raster is a new
+            // number — so the fingerprint SEES a source draw without reading a byte of it, and this
+            // content type needs no declared-dirty escape hatch the way a declared tilemap does.
             h = foldValue(h, static_cast<std::uint8_t>(2));
-            const GuestFrameContent& gc = std::get<GuestFrameContent>(l.content);
+            const RasterContent& gc = std::get<RasterContent>(l.content);
             h = foldValue(h, gc.width);
             h = foldValue(h, gc.height);
             h = foldValue(h, gc.format);
@@ -319,8 +319,8 @@ template <class T>
 
 // Whether any tile layer declares contentChanged == true (the huge-map path saying "these cells changed").
 // hashFrameStructure deliberately does not read a declared map's cells, so the renderer forces a recompose on
-// a `true` rather than trusting the fingerprint. A guest-frame layer needs nothing here — its generation is
-// folded into the fingerprint, so a machine that drew is already visible to it.
+// a `true` rather than trusting the fingerprint. A raster layer needs nothing here — its generation is
+// folded into the fingerprint, so a source that drew is already visible to it.
 [[nodiscard]] bool frameDeclaredDirty(const FrameDrawState& frame) noexcept {
     for (const DrawLayer& l : frame.layers) {
         if (contentKind(l.content) != LayerContentKind::Tiles) continue;
@@ -336,14 +336,14 @@ using detail::kPaletteStoreWidth;  // the palette store's row width, in colours 
 // its own atlas + palette handle directly, so there is no per-layer palette-set or atlas-set table:
 // the palette handle IS the flat offset, and the atlas handle indexes the global atlas-region store
 // texture both frag stages bind.
-// Per-layer uniform block for a hosted machine's picture — must match guest_frame.frag.hlsl's
-// GuestFrameUniforms cbuffer exactly (std140-style 16-byte-register packing; no member straddles a
-// 16-byte boundary). The picture is addressed directly, so there is no atlas, palette or cell handle
-// here — its dimensions are the whole of what the fragment needs to find a pixel.
-struct GuestFrameUniforms {
+// Per-layer uniform block for a raster layer — must match raster.frag.hlsl's RasterUniforms cbuffer
+// exactly (std140-style 16-byte-register packing; no member straddles a 16-byte boundary). The raster
+// is addressed directly, so there is no atlas, palette or cell handle here — its dimensions are the
+// whole of what the fragment needs to find a pixel.
+struct RasterUniforms {
     float scrollX, scrollY;      // register 0
     float layerW, layerH;
-    float pictureW, pictureH;    // register 1: the machine's own picture dimensions, pixels
+    float rasterW, rasterH;      // register 1: the raster's own dimensions, pixels
     float alpha, composeScale;
     float snap;                  // register 2: 1 = snap the transform's destination pixel to the grid
     float pad0, pad1, pad2;
@@ -1104,14 +1104,14 @@ Renderer::Renderer(SDL_GPUDevice* device, SDL_Window* window, ViewportResolution
         if (!tile_) fail("SDL_CreateGPUGraphicsPipeline (tile) failed");
     }
 
-    // Guest-frame compositor pipeline: a hosted machine's picture into the same offscreen viewport
-    // target with the same alpha blend, so a machine's screen composites back-to-front with tiles and
-    // sprites by z. The fragment shader binds ONE read-only storage texture (the picture, t0 space2)
-    // plus one uniform buffer, and no sampler — one integer Load per pixel, so the picture reaches the
-    // screen at exactly the texels the machine drew.
+    // Raster compositor pipeline: a layer's raster into the same offscreen viewport target with the
+    // same alpha blend, so a hosted machine's screen or a program's own raster composites
+    // back-to-front with tiles and sprites by z. The fragment shader binds ONE read-only storage
+    // texture (the raster, t0 space2) plus one uniform buffer, and no sampler — one integer Load per
+    // pixel, so the raster reaches the screen at exactly the texels its source drew.
     {
         SDL_GPUShader* vertex   = createShader(device_, SDL_GPU_SHADERSTAGE_VERTEX, shaders::tile_vert, 0, 0, 0);
-        SDL_GPUShader* fragment = createShader(device_, SDL_GPU_SHADERSTAGE_FRAGMENT, shaders::guest_frame_frag, 0, 1, 1);
+        SDL_GPUShader* fragment = createShader(device_, SDL_GPU_SHADERSTAGE_FRAGMENT, shaders::raster_frag, 0, 1, 1);
 
         SDL_GPUColorTargetDescription colorTarget{};
         colorTarget.format                            = kViewportColorFormat;
@@ -1133,11 +1133,11 @@ Renderer::Renderer(SDL_GPUDevice* device, SDL_Window* window, ViewportResolution
         pipeline.multisample_state.sample_count        = SDL_GPU_SAMPLECOUNT_1;
         pipeline.target_info.color_target_descriptions = &colorTarget;
         pipeline.target_info.num_color_targets         = 1;
-        guestFrame_ = SDL_CreateGPUGraphicsPipeline(device_, &pipeline);
+        raster_ = SDL_CreateGPUGraphicsPipeline(device_, &pipeline);
 
         SDL_ReleaseGPUShader(device_, vertex);
         SDL_ReleaseGPUShader(device_, fragment);
-        if (!guestFrame_) fail("SDL_CreateGPUGraphicsPipeline (guest frame) failed");
+        if (!raster_) fail("SDL_CreateGPUGraphicsPipeline (raster) failed");
     }
 
     // Sprite compositor pipeline: instanced per-sprite quads (TRIANGLELIST, 6 verts × N
@@ -2364,7 +2364,7 @@ int Renderer::resolveComposeScale() const {
 
 Renderer::~Renderer() {
     releaseSpriteBuffers();
-    releaseGuestFrames();
+    releaseRasters();
     releaseTilemaps();
     releaseAtlases();
     for (CurveMaskEntry& m : curveMasks_)
@@ -2411,7 +2411,7 @@ Renderer::~Renderer() {
     if (sprite_)        SDL_ReleaseGPUGraphicsPipeline(device_, sprite_);
     if (spriteEmission_) SDL_ReleaseGPUGraphicsPipeline(device_, spriteEmission_);
     if (spriteBelow_)   SDL_ReleaseGPUGraphicsPipeline(device_, spriteBelow_);
-    if (guestFrame_)    SDL_ReleaseGPUGraphicsPipeline(device_, guestFrame_);
+    if (raster_)        SDL_ReleaseGPUGraphicsPipeline(device_, raster_);
     if (tile_)          SDL_ReleaseGPUGraphicsPipeline(device_, tile_);
     if (bilinear_)      SDL_ReleaseGPUSampler(device_, bilinear_);
     if (sampler_)       SDL_ReleaseGPUSampler(device_, sampler_);
@@ -2445,12 +2445,12 @@ void Renderer::releaseTilemaps() {
     tilemaps_.clear();
 }
 
-void Renderer::releaseGuestFrames() {
-    for (auto& entry : guestFrames_) {
+void Renderer::releaseRasters() {
+    for (auto& entry : rasters_) {
         if (entry.second.texture) SDL_ReleaseGPUTexture(device_, entry.second.texture);
         if (entry.second.transfer) SDL_ReleaseGPUTransferBuffer(device_, entry.second.transfer);
     }
-    guestFrames_.clear();
+    rasters_.clear();
 }
 
 void Renderer::releaseSpriteBuffers() {
@@ -3403,22 +3403,22 @@ SDL_GPUTexture* Renderer::composeViewport(SDL_GPUCommandBuffer* cmd, const Frame
     // deque; its GPU resource is queued into `scratch` at the end for post-submit release) so two colliding
     // keys never share a slot. `tileSlot`/`spriteSlot` bridge this copy pass to the composite: drawLayer
     // reads each layer position's resolved slot from here (the cache is keyed by identity, not by position).
-    std::unordered_set<std::string>   seenTileKeys, seenSpriteKeys, seenGuestFrameKeys;
+    std::unordered_set<std::string>   seenTileKeys, seenSpriteKeys, seenRasterKeys;
     std::deque<TilemapTex>            transientTiles;
     std::deque<SpriteBuf>             transientSprites;
-    std::deque<GuestFrameTex>         transientGuestFrames;
+    std::deque<RasterTex>             transientRasters;
     std::vector<const TilemapTex*>    tileSlot(frame.layers.size(), nullptr);
     std::vector<const SpriteBuf*>     spriteSlot(frame.layers.size(), nullptr);
-    std::vector<const GuestFrameTex*> guestFrameSlot(frame.layers.size(), nullptr);
+    std::vector<const RasterTex*>     rasterSlot(frame.layers.size(), nullptr);
     auto tileCacheSlot = [&](std::string_view key) -> TilemapTex& {
         if (key.empty() || !seenTileKeys.emplace(key).second) return transientTiles.emplace_back();
         return tilemaps_[std::string(key)];
     };
-    auto guestFrameCacheSlot = [&](std::string_view key) -> GuestFrameTex& {
-        if (key.empty() || !seenGuestFrameKeys.emplace(key).second) {
-            return transientGuestFrames.emplace_back();
+    auto rasterCacheSlot = [&](std::string_view key) -> RasterTex& {
+        if (key.empty() || !seenRasterKeys.emplace(key).second) {
+            return transientRasters.emplace_back();
         }
-        return guestFrames_[std::string(key)];
+        return rasters_[std::string(key)];
     };
     auto spriteCacheSlot = [&](std::string_view key) -> SpriteBuf& {
         if (key.empty() || !seenSpriteKeys.emplace(key).second) return transientSprites.emplace_back();
@@ -3624,28 +3624,28 @@ SDL_GPUTexture* Renderer::composeViewport(SDL_GPUCommandBuffer* cmd, const Frame
         // slot.transfer is pooled — NOT pushed to scratch.transfers (that list is per-frame release).
     }
 
-    // Each GUEST-FRAME layer's picture, on the same terms: a per-key persistent texture, recreated when
-    // the machine's dimensions or pixel layout change, uploaded when the machine finished a new frame.
-    // There is no hash on this path and never will be — a full-colour raster differs every time the
-    // machine draws, so hashing one to decide costs more than the upload it could save. The machine
-    // already said whether a frame arrived, and that answer is the whole decision.
+    // Each RASTER layer's pixels, on the same terms: a per-key persistent texture, recreated when the
+    // raster's dimensions or pixel layout change, uploaded when its generation moved. There is no hash
+    // on this path and never will be — a full-color raster differs every time its source draws, so
+    // hashing one to decide costs more than the upload it could save. The submission already says
+    // whether a new raster arrived, and that answer is the whole decision.
     for (const std::size_t idx : order) {
         const DrawLayer& layer = frame.layers[idx];
-        if (contentKind(layer.content) != LayerContentKind::GuestFrame) continue;
-        const GuestFrameContent& gc = std::get<GuestFrameContent>(layer.content);
+        if (contentKind(layer.content) != LayerContentKind::Raster) continue;
+        const RasterContent& gc = std::get<RasterContent>(layer.content);
         if (gc.width <= 0 || gc.height <= 0) continue;
         const std::size_t needed = static_cast<std::size_t>(gc.width) *
                                    static_cast<std::size_t>(gc.height) * bytesPerPixel(gc.format);
-        if (gc.pixels.size() < needed) continue;  // a picture short of its own dimensions is not whole
+        if (gc.pixels.size() < needed) continue;  // a raster short of its own dimensions is not whole
 
-        GuestFrameTex& slot = guestFrameCacheSlot(layer.key);
-        guestFrameSlot[idx] = &slot;   // resolved BEFORE any skip — the composite reads this slot either way
+        RasterTex& slot = rasterCacheSlot(layer.key);
+        rasterSlot[idx] = &slot;   // resolved BEFORE any skip — the composite reads this slot either way
         if (!slot.texture || slot.width != gc.width || slot.height != gc.height ||
             slot.format != gc.format) {
             if (slot.texture) SDL_ReleaseGPUTexture(device_, slot.texture);
             SDL_GPUTextureCreateInfo ti{};
             ti.type                 = SDL_GPU_TEXTURETYPE_2D;
-            ti.format               = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;  // GuestPixelFormat::Rgba8888
+            ti.format               = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;  // RasterPixelFormat::Rgba8888
             ti.usage                = SDL_GPU_TEXTUREUSAGE_GRAPHICS_STORAGE_READ;
             ti.width                = static_cast<Uint32>(gc.width);
             ti.height               = static_cast<Uint32>(gc.height);
@@ -3653,7 +3653,7 @@ SDL_GPUTexture* Renderer::composeViewport(SDL_GPUCommandBuffer* cmd, const Frame
             ti.num_levels           = 1;
             ti.sample_count         = SDL_GPU_SAMPLECOUNT_1;
             slot.texture = SDL_CreateGPUTexture(device_, &ti);
-            if (!slot.texture) fail("SDL_CreateGPUTexture (guest frame) failed");
+            if (!slot.texture) fail("SDL_CreateGPUTexture (raster) failed");
             slot.width  = gc.width;
             slot.height = gc.height;
             slot.format = gc.format;
@@ -3663,12 +3663,12 @@ SDL_GPUTexture* Renderer::composeViewport(SDL_GPUCommandBuffer* cmd, const Frame
             slot.uploadedGeneration = 0;  // a fresh texture holds nothing, whatever it held before
         }
 
-        // The only question worth asking: is the picture already on the GPU the one being submitted. A
-        // generation the slot has not seen means the machine drew; the same one means it did not, and
-        // what is resident is still the picture. Generation 0 is a machine that has finished nothing,
+        // The only question worth asking: is the raster already on the GPU the one being submitted. A
+        // generation the slot has not seen means the source drew; the same one means it did not, and
+        // what is resident is still the raster. Generation 0 is a source that has finished nothing,
         // which no slot can be holding — so a first submission always uploads.
         if (gc.generation != 0 && gc.generation == slot.uploadedGeneration) {
-            ++renderStats_.guestFrameSkips;
+            ++renderStats_.rasterSkips;
             continue;
         }
 
@@ -3677,12 +3677,12 @@ SDL_GPUTexture* Renderer::composeViewport(SDL_GPUCommandBuffer* cmd, const Frame
             tbInfo.usage  = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
             tbInfo.size   = static_cast<Uint32>(needed);
             slot.transfer = SDL_CreateGPUTransferBuffer(device_, &tbInfo);
-            if (!slot.transfer) fail("SDL_CreateGPUTransferBuffer (guest frame) failed");
+            if (!slot.transfer) fail("SDL_CreateGPUTransferBuffer (raster) failed");
         }
 
         // cycle=true: the pooled buffer may still be in-flight from a prior frame's copy.
         void* dst = SDL_MapGPUTransferBuffer(device_, slot.transfer, true);
-        if (!dst) fail("SDL_MapGPUTransferBuffer (guest frame) failed");
+        if (!dst) fail("SDL_MapGPUTransferBuffer (raster) failed");
         std::memcpy(dst, gc.pixels.data(), needed);
         SDL_UnmapGPUTransferBuffer(device_, slot.transfer);
 
@@ -3699,7 +3699,7 @@ SDL_GPUTexture* Renderer::composeViewport(SDL_GPUCommandBuffer* cmd, const Frame
         region.d       = 1;
         SDL_UploadToGPUTexture(copy, &src, &region, false);
         slot.uploadedGeneration = gc.generation;
-        ++renderStats_.guestFrameUploads;
+        ++renderStats_.rasterUploads;
         // slot.transfer is pooled — NOT pushed to scratch.transfers (that list is per-frame release).
     }
 
@@ -4616,11 +4616,11 @@ SDL_GPUTexture* Renderer::composeViewport(SDL_GPUCommandBuffer* cmd, const Frame
         if (it->second.transfer) SDL_ReleaseGPUTransferBuffer(device_, it->second.transfer);
         it = spriteBufs_.erase(it);
     }
-    for (auto it = guestFrames_.begin(); it != guestFrames_.end();) {
-        if (seenGuestFrameKeys.count(it->first) != 0) { ++it; continue; }
+    for (auto it = rasters_.begin(); it != rasters_.end();) {
+        if (seenRasterKeys.count(it->first) != 0) { ++it; continue; }
         if (it->second.texture) SDL_ReleaseGPUTexture(device_, it->second.texture);
         if (it->second.transfer) SDL_ReleaseGPUTransferBuffer(device_, it->second.transfer);
-        it = guestFrames_.erase(it);
+        it = rasters_.erase(it);
     }
 
     // ── Viewport composite (segmented for per-layer screen-space effects) ───────────────────────
@@ -4689,16 +4689,16 @@ SDL_GPUTexture* Renderer::composeViewport(SDL_GPUCommandBuffer* cmd, const Frame
             SDL_BindGPUFragmentStorageTextures(pass, 0, storageTextures, 4);
             SDL_PushGPUFragmentUniformData(cmd, 0, &u, sizeof(u));
             SDL_DrawGPUPrimitives(pass, 3, 1, 0, 0);  // one fullscreen triangle
-        } else if (contentKind(layer.content) == LayerContentKind::GuestFrame) {
-            const GuestFrameContent& gc = std::get<GuestFrameContent>(layer.content);
+        } else if (contentKind(layer.content) == LayerContentKind::Raster) {
+            const RasterContent& gc = std::get<RasterContent>(layer.content);
             if (gc.width <= 0 || gc.height <= 0) return;
-            const GuestFrameTex* slotP = guestFrameSlot[idx];
+            const RasterTex* slotP = rasterSlot[idx];
             if (!slotP || !slotP->texture || slotP->uploadedGeneration == 0) return;  // nothing resident
-            const GuestFrameTex& slot = *slotP;
+            const RasterTex& slot = *slotP;
 
-            GuestFrameUniforms u{};
+            RasterUniforms u{};
             // Scroll places at the eased float on the interpolation path, exactly as a tile layer's
-            // does — a machine's picture is placed in the scene like any other content.
+            // does — a raster is placed in the scene like any other content.
             float scrollX = static_cast<float>(layer.scroll.x);
             float scrollY = static_cast<float>(layer.scroll.y);
             if (interpolate) {
@@ -4711,8 +4711,8 @@ SDL_GPUTexture* Renderer::composeViewport(SDL_GPUCommandBuffer* cmd, const Frame
             u.scrollY      = scrollY;
             u.layerW       = static_cast<float>(composeW_);   // compose grid (output res on the interp path)
             u.layerH       = static_cast<float>(composeH_);
-            u.pictureW     = static_cast<float>(gc.width);
-            u.pictureH     = static_cast<float>(gc.height);
+            u.rasterW      = static_cast<float>(gc.width);
+            u.rasterH      = static_cast<float>(gc.height);
             u.alpha        = clampAlpha(layer.alpha);
             u.composeScale = static_cast<float>(composeScale_);
             u.snap         = snapF;
@@ -4724,10 +4724,10 @@ SDL_GPUTexture* Renderer::composeViewport(SDL_GPUCommandBuffer* cmd, const Frame
             u.invRow1[0] = inv.m10; u.invRow1[1] = inv.m11; u.invRow1[2] = inv.m12; u.invRow1[3] = 0.0f;
             u.invRow2[0] = inv.m20; u.invRow2[1] = inv.m21; u.invRow2[2] = inv.m22; u.invRow2[3] = 0.0f;
 
-            // One read-only storage texture — the picture itself — and no sampler: the fragment Loads
-            // the texel the machine drew.
+            // One read-only storage texture — the raster itself — and no sampler: the fragment Loads the
+            // texel its source drew.
             SDL_GPUTexture* storageTextures[1] = {slot.texture};
-            SDL_BindGPUGraphicsPipeline(pass, guestFrame_);
+            SDL_BindGPUGraphicsPipeline(pass, raster_);
             SDL_BindGPUFragmentStorageTextures(pass, 0, storageTextures, 1);
             SDL_PushGPUFragmentUniformData(cmd, 0, &u, sizeof(u));
             SDL_DrawGPUPrimitives(pass, 3, 1, 0, 0);  // one fullscreen triangle

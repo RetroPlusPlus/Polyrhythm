@@ -147,7 +147,7 @@ void SnesBackend::setButtons(std::uint64_t held) {
 void SnesBackend::frame(const snaggletooth::VideoFrame& frame) {
     if (frameSink_) {
         frameSink_(frame.pixels, static_cast<int>(frame.width), static_cast<int>(frame.height),
-                   GuestPixelFormat::Rgba8888);
+                   RasterPixelFormat::Rgba8888);
     }
 }
 

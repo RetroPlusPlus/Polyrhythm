@@ -275,15 +275,15 @@ struct Vm::Impl {
         std::mutex                mx;       // guards ready + its dimensions + `completed`, nothing else
         std::vector<std::uint8_t> filling;  // the machine's own; no lock, one thread
         std::vector<std::uint8_t> ready;    // the hand-off slot
-        int              readyWidth  = 0;
-        int              readyHeight = 0;
-        GuestPixelFormat readyFormat = GuestPixelFormat::Rgba8888;
-        bool             readyHeld   = false;  // `ready` holds a frame nothing has latched yet
+        int               readyWidth  = 0;
+        int               readyHeight = 0;
+        RasterPixelFormat readyFormat = RasterPixelFormat::Rgba8888;
+        bool              readyHeld   = false;  // `ready` holds a frame nothing has latched yet
 
         std::vector<std::uint8_t> shown;  // the game thread's own
-        int              width  = 0;
-        int              height = 0;
-        GuestPixelFormat format = GuestPixelFormat::Rgba8888;
+        int               width  = 0;
+        int               height = 0;
+        RasterPixelFormat format = RasterPixelFormat::Rgba8888;
         // How many frames the machine has finished. Written by the drawing thread under `mx` and read
         // into `shownGeneration` at a latch, so the game sees it advance only where it latches — by one
         // per frame, or by several when several landed between two latches.
@@ -338,7 +338,7 @@ struct Vm::Impl {
         // the machine's own under Advance::Continuously. It copies the finished frame into the buffer
         // it owns and hands it over; the hand-off is the only thing the two threads share.
         backend->setFrameSink([impl = this](std::span<const std::uint8_t> pixels, int width, int height,
-                                            GuestPixelFormat format) {
+                                            RasterPixelFormat format) {
             impl->video.filling.assign(pixels.begin(), pixels.end());
             const std::lock_guard guard{impl->video.mx};
             impl->video.filling.swap(impl->video.ready);
@@ -1413,7 +1413,7 @@ void Vm::video(bool drawing) {
     impl_->applyVideo(drawing);
 }
 
-GuestFrameContent Vm::video() const {
+RasterContent Vm::video() const {
     if (!impl_->videoOrAsked()) {
         throw std::logic_error("video: this machine draws nothing — video(true) first");
     }
@@ -1423,7 +1423,7 @@ GuestFrameContent Vm::video() const {
     if (impl_->running() && impl_->romRun.runner->mode() != vm::VmRunner::Mode::Inline) {
         impl_->latchVideo();
     }
-    return GuestFrameContent{
+    return RasterContent{
         .pixels     = impl_->video.shown,
         .width      = impl_->video.width,
         .height     = impl_->video.height,

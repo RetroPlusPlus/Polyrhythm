@@ -1,24 +1,24 @@
-// Guest-frame layer fragment shader (a hosted machine's completed picture).
+// Raster layer fragment shader (a raster of pixels: a hosted machine's picture, or one the program drew).
 //
 // Per output pixel: reconstruct the layer-local pixel from the interpolated UV × the layer size, apply
-// the per-layer transform, add the layer scroll, and Load the pixel the machine drew. Everything is an
-// integer Load — there is NO sampler on this path, so the picture reaches the screen at exactly the
-// texels the machine produced however far it is scaled up.
+// the per-layer transform, add the layer scroll, and Load the pixel the source drew. Everything is an
+// integer Load — there is NO sampler on this path, so the raster reaches the screen at exactly the
+// texels its source produced however far it is scaled up.
 //
-// A picture is FINITE: outside its own dimensions there is nothing, so the fragment discards and the
-// layers below show through. That is the whole of the edge policy — a machine's screen does not wrap.
+// A raster is FINITE: outside its own dimensions there is nothing, so the fragment discards and the
+// layers below show through. That is the whole of the edge policy — a raster does not wrap.
 //
 // SDL_GPU HLSL conventions (see SDL_CreateGPUShader docs): with no sampled textures, the read-only
 // storage texture takes t0 in space2; the uniform buffer is b0 in space3.
-//   - t0 space2 : the machine's picture (RGBA8; integer Load; row-major, the machine's own dimensions)
+//   - t0 space2 : the raster (RGBA8; integer Load; row-major, the source's own dimensions)
 //   - b0 space3 : per-layer uniforms
 
-Texture2D<float4> uPicture : register(t0, space2);
+Texture2D<float4> uRaster : register(t0, space2);
 
-cbuffer GuestFrameUniforms : register(b0, space3) {
+cbuffer RasterUniforms : register(b0, space3) {
     float2 uScroll;        // layer scroll, pixels                                              — reg 0
     float2 uLayerSize;     // layer destination size, viewport pixels
-    float2 uPictureSize;   // the machine's picture dimensions, pixels                          — reg 1
+    float2 uRasterSize;    // the raster's dimensions, pixels                                   — reg 1
     float  uAlpha;              // layer alpha, [0,1]
     float  uComposeScale;       // compose grid ÷ viewport (1 = faithful); output pixel → viewport
     float  uSnap;               // 1 = snap the transform's destination pixel to the viewport grid — reg 2
@@ -56,11 +56,11 @@ float4 main(float2 uv : TEXCOORD0) : SV_Target0 {
         sample = float2(cx, cy);
     }
 
-    float2 world = sample + uScroll;   // scrolled picture pixel (may be negative)
-    if (world.x < 0.0f || world.x >= uPictureSize.x || world.y < 0.0f || world.y >= uPictureSize.y) {
-        discard;                        // off the machine's screen: nothing was drawn there
+    float2 world = sample + uScroll;   // scrolled raster pixel (may be negative)
+    if (world.x < 0.0f || world.x >= uRasterSize.x || world.y < 0.0f || world.y >= uRasterSize.y) {
+        discard;                        // off the raster: nothing was drawn there
     }
 
-    float4 colour = uPicture.Load(int3((int)world.x, (int)world.y, 0));
-    return float4(colour.rgb, colour.a * uAlpha);
+    float4 color = uRaster.Load(int3((int)world.x, (int)world.y, 0));
+    return float4(color.rgb, color.a * uAlpha);
 }
