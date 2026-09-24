@@ -301,7 +301,7 @@ The OS time / refresh / sleep primitives are the `Platform` pacing seam (`nowMon
 
 `TimingProfile` sets the cadence. It carries a tick **period** (always) and an optional CPU-timing block
 (a console's cycle arithmetic, for a game that spends cycles by hand — see
-[vm-and-routines.md](vm-and-routines.md)).
+[vm-and-routines.md](vm/vm-and-routines.md)).
 
 ```cpp
 enum class TickPeriodNs : std::int64_t {
@@ -344,7 +344,7 @@ struct TimingProfile {
   `cpuClockHzDivisor = 11`; every other preset leaves the divisor at 1.
 - GBC double speed is a CPU cycle budget (`doubleSpeedCyclesPerFrame`); the display rate is unchanged.
 - `cpuCyclesPerTick()` is the amount to advance the VM's divider per tick (see
-  [vm-and-routines.md](vm-and-routines.md)). `ticksForDuration(std::chrono::seconds{2})` converts a
+  [vm-and-routines.md](vm/vm-and-routines.md)). `ticksForDuration(std::chrono::seconds{2})` converts a
   wall-clock interval to a tick count.
 - The presets are static members, usable in `constexpr` contexts (including the `RunLoop` default).
 

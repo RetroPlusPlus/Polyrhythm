@@ -21,14 +21,16 @@ and which of your functions its own code calls. What you build on top of that �
 game that extends a cartridge it ships beside, a tool that pulls content out of one — is yours.
 
 This is the deep end of **Conductor**, the platform's VM layer — the routine surface is
-[vm-and-routines.md](vm-and-routines.md).
+[vm-and-routines.md](vm-and-routines.md), the map of the layer is [README.md](README.md), and what each
+console is behind these verbs — its core, its clock, its vocabulary, its save, what its core answers — is
+its own page: [gameboy.md](gameboy.md), [snes.md](snes.md).
 
 **One property holds across all of it: the image is never modified.** Everything here happens against
 bytes exactly as they shipped, in memory this process owns, with the behaviour living in your code.
 
 > **The co-execution verbs on this page run on `Vm::GB` and `Vm::GBC`.** A `Vm::SNES` hosts and runs a
 > whole cartridge — `hostRom` / `run` / `speed` / `stop` / `video` / `buttons` / `enableAudio` — but the naming, escape,
-> watch and routine-binding verbs below throw `std::logic_error` on it. Constructing a `Vm` for a
+> watch and routine-binding verbs below refuse on it, at the declaration ([snes.md](snes.md#what-the-core-answers-and-what-it-refuses)). Constructing a `Vm` for a
 > `VMPlatform` with no backend built throws. The verbs, declarations and calling conventions are the same
 > on every console; a console names its registers and memory areas through its own `<console>::` header.
 
@@ -316,12 +318,12 @@ finished, which is how a submission says whether it carries a new one. Nothing a
 it runs or which frame it is on. `pixels` is valid until the next `advanceTick`, which is exactly the
 lifetime a submission needs.
 
-The content type itself is in [draw-state.md](draw-state.md#rastercontent--a-raster-of-pixels).
+The content type itself is in [draw-state.md](../draw-state.md#rastercontent--a-raster-of-pixels).
 
 ## Sound: hearing it
 
 A hosted cartridge's sound comes out through `enableAudio` — the same call on every console, the same
-one the [`AudioSystem`](audio.md) drives a sound driver through. Every stereo frame the machine's sound
+one the [`AudioSystem`](../audio.md) drives a sound driver through. Every stereo frame the machine's sound
 chip produces reaches your function, at the rate you name:
 
 ```cpp
@@ -340,7 +342,7 @@ them, one frame at a time. Each core converts from its own chip's rate, so the f
 **The function runs on the thread that steps the machine** — the machine's own under
 `Advance::Continuously`, the one calling `advanceTick` under `Advance::OnTick` — from inside the step,
 as the frames are produced. It is the producer side; the device side is an
-[`AudioSink`](audio.md#output-the-audiosink) pulling on its own thread, with a queue between the two.
+[`AudioSink`](../audio.md#output-the-audiosink) pulling on its own thread, with a queue between the two.
 The SNES player (`examples/snes/player/`) does exactly that for each of its machines.
 
 A machine's sound is its own: two machines hosting one cartridge produce two streams, and which one
@@ -823,7 +825,8 @@ context, nested to any depth; and `video`, declared through `VmConfig` or switch
 either clock.
 
 On a `Vm::SNES`, `hostRom` / `run` / `speed` / `stop` / `video` / `buttons` / `enableAudio` run; the naming, escape,
-watch and routine-binding verbs above throw `std::logic_error`.
+watch and routine-binding verbs above refuse at the declaration — the exception each throws is on
+[snes.md](snes.md#what-the-core-answers-and-what-it-refuses).
 
 **Constructing a `Vm` for a `VMPlatform` with no backend built throws** — `Nes`, `Genesis` and
 `MasterSystem` are enumerated so a consumer can name one, and each is a drop-in when its backend

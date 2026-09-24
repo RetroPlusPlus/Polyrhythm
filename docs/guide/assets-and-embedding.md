@@ -297,6 +297,6 @@ bytes and interpreted by the game.
 - [images-and-transparency.md](images-and-transparency.md) — `loadAtlas` / `loadPng` and atlas slicing.
 - [tiles-and-colour.md](tiles-and-colour.md) — `loadPaletteImage` / `uploadPalette` and the colour model.
 - [tilemaps.md](tilemaps.md) — the map-PNG → `TileCatalog` → tile-layer pipeline.
-- [vm-and-routines.md](vm-and-routines.md) — the `registerRoutine` / `uploadRoutine` API and the VM.
+- [vm-and-routines.md](vm/vm-and-routines.md) — the `registerRoutine` / `uploadRoutine` API and the VM.
 - [audio.md](audio.md) — registering and cueing audio (`registerAudio`, `AudioLibrary`, `AudioSystem`).
 - [persistence.md](persistence.md) — `UserFiles` and the per-user directory a data asset is extracted into.

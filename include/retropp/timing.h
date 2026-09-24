@@ -12,7 +12,7 @@ namespace retropp {
 // profile rather than a fixed rate: pass a named preset or a raw period. The run loop reads the
 // tick PERIOD; the optional CPU block is a console's cycle arithmetic, for a game that spends
 // cycles by hand (Vm::advanceClock, Vm::stepDriver). A hosted machine keeps its own clock. See
-// vm-and-routines.md for the VM side.
+// docs/guide/vm/vm-and-routines.md for the VM side.
 
 // Render tick period in NANOSECONDS — named presets whose underlying value IS the exact period
 // in ns (integral and drift-free; a frequency like 59.7275 Hz is fractional and cannot be an

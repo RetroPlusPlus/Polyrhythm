@@ -135,13 +135,13 @@ It's an identity stamp a consumer can log or display, and carries no behavior.
   zlib license; pulled transitively with `--recurse-submodules`.
 - **[SameBoy](https://github.com/LIJI32/SameBoy)** — vendored as a submodule at
   `third_party/sameboy/`, pinned to a tagged release. The reference Game Boy / Game Boy Color core:
-  the runtime VM backend runs on it (see [vm-and-routines.md](vm-and-routines.md)).
+  the runtime VM backend runs on it (see [vm-and-routines.md](vm/vm-and-routines.md)).
   MIT-licensed; pulled transitively with
   `--recurse-submodules`. No `GB_*` symbol reaches a public header — consumers link it transitively
   but never see it.
 - **[Snaggletooth](https://github.com/etroimcasso/Snaggletooth)** — vendored as a submodule at
   `third_party/snaggletooth/`, pinned by commit. A clean-room SNES implementation: the SNES core
-  runs on its machine (see [co-execution.md](co-execution.md)), and its two assemblers are linked
+  runs on its machine (see [co-execution.md](vm/co-execution.md)), and its two assemblers are linked
   only by the tests and the SNES examples, which assemble their cartridges in process.
   MIT-licensed; pulled transitively with `--recurse-submodules`. No `snaggletooth::` symbol reaches
   a public header — a game that names the SNES links it transitively and never sees it, and one
