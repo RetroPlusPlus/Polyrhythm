@@ -746,12 +746,12 @@ int main(int argc, char** argv) {
         right.content = freePicture;
         frame.layers.push_back(right);
 
-        // The scope band, under the two screens. It is NOT a machine's picture: this program paints it
-        // itself, on the CPU, into its own RGBA buffer (drawScopes), and submits that buffer through
-        // GuestFrameContent — the content type a hosted machine's video() hands back — because a layer
-        // shows any raster that arrives in that form, whoever drew it. Nothing here is emulated. The
-        // buffer changes every frame, so its generation is bumped every frame and the engine uploads it
-        // anew each time; a raster that held still would keep its generation and upload once.
+        // The scope band, under the two screens, is this program's own raster: it paints the band on the
+        // CPU into its own RGBA buffer (drawScopes) and submits that buffer through GuestFrameContent, the
+        // content type a hosted machine's video() hands back — a layer shows any raster that arrives in
+        // that form, whoever drew it. The buffer changes every frame, so its generation is bumped every
+        // frame and the engine uploads it anew each time; a raster that held still would keep its
+        // generation and upload once.
         drawScopes(tickedScope, freeScope, scopeView, scopePixels);
         ++scopeGeneration;
         DrawLayer band{.key = "scope"};

@@ -260,7 +260,7 @@ machine on a clock of its own be read the same way.
 
 #### A raster your program draws itself
 
-A `GuestFrameContent` carries pixels, not a machine: a layer shows whatever raster arrives in this form,
+A `GuestFrameContent` is a raster of pixels, and a layer shows whatever raster arrives in this form,
 whoever drew it. A program that paints its own pixels on the CPU — a waveform, a plot, a
 software-rendered effect, a decoded video frame — hands them to a layer exactly as a machine's picture
 is handed over:
@@ -282,7 +282,7 @@ scope.content = GuestFrameContent{.pixels     = pixels,
                                   .generation = drawn};
 ```
 
-Everything above holds for it, with `generation` now yours to count:
+Everything above holds for it, with `generation` yours to count:
 
 - **The renderer uploads the raster when its generation is one the layer's texture does not hold.** Bump
   it when the pixels change and keep it when they do not: a raster resubmitted under the same non-zero
