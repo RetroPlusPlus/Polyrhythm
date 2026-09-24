@@ -438,8 +438,11 @@ struct Vm::Impl {
         if (video.on.load(std::memory_order_relaxed)) {
             return true;
         }
+        // The request is cleared under `mx` only after the machine reports that it draws, so a reader
+        // that finds no request under the same lock reads `on` again there and finds it set — the two
+        // reads are ordered by the lock, and there is no moment between them for the switch to hide in.
         const std::lock_guard guard{video.mx};
-        return video.pendingChange && video.pendingChangeWant;
+        return (video.pendingChange && video.pendingChangeWant) || video.on.load(std::memory_order_relaxed);
     }
 
     // The step boundary's video step: apply a change the game asked for while the machine was
