@@ -1572,6 +1572,7 @@ if(RETROPP_BUILD_TESTS)
         tests/snes_backend_input_test.cpp
         tests/snes_backend_save_test.cpp
         tests/snes_vm_test.cpp
+        tests/snes_backend_audio_test.cpp
         tests/net_socket_test.cpp
         tests/net_tls_test.cpp
         tests/vm_frame_sink_test.cpp
@@ -2143,10 +2144,10 @@ if(RETROPP_BUILD_EXAMPLES)
     # file, so CI compiles it and never runs it.
     retropp_add_example(gb_player)
     retropp_add_example(snes_player DIRECTORY snes/player)
-    # The SNES player assembles the demo cartridge in process, so it links the 65816 assembler, reaches
-    # the tools/ headers, and includes the shared cartridge from the repo root. SNC.3.b links only the
-    # 65816 assembler; the SPC700 one joins at SNC.4 with the cartridge's sound.
-    target_link_libraries(retropp-snes_player-demo PRIVATE snaggletooth_cpu65816)  # pulls snaggletooth::snaggletooth PUBLIC
+    # The SNES player assembles the demo cartridge in process — its 65816 program and its SPC700 sound
+    # driver — so it links both assemblers, reaches the tools/ headers, and includes the shared cartridge
+    # from the repo root.
+    target_link_libraries(retropp-snes_player-demo PRIVATE snaggletooth_cpu65816 snaggletooth_spc700)  # both pull snaggletooth::snaggletooth PUBLIC
     target_include_directories(retropp-snes_player-demo PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}
         ${CMAKE_CURRENT_SOURCE_DIR}/third_party/snaggletooth/tools)

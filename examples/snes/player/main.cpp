@@ -11,6 +11,13 @@
 // step (the same number of frames to the frame over a minute); the games do not. Fuse the two halves
 // stereoscopically and a one-frame divergence breaks the fusion at once.
 //
+// Both machines make sound; press 4 to choose what is heard — nothing, the LEFT machine, the RIGHT
+// machine, or both at once with the left machine in the left speaker and the right machine in the
+// right, and round again. Each machine's DSP frames, converted to the device's rate, go into a queue
+// of its own on the thread that steps it; the device drains the queues it is listening to and drops
+// the rest, and a scope under the two screens draws what it took. Press 3 to switch the device between
+// 48'000 Hz and 44'100 Hz: the pitch stays where it is, because the conversion follows the rate.
+//
 // Reading the picture is those three lines, exactly as the Game Boy player's:
 //
 //     Vm machine{VMPlatform::Snes, VmConfig{.key = "…", .video = true}};
@@ -26,17 +33,21 @@
 //                                      (cancel to run the built-in demo cartridge)
 //   <seconds> [out.csv] [rom]          capture: run headless-timed and write one row per drawn frame
 //                                      (the demo cartridge when no ROM is named, so it runs unattended)
-//   --verify                           headless: assert each clock holds the hardware's cadence, exit
-//                                      nonzero on any miss (CI runs this on every platform)
+//   --verify                           headless: assert each clock holds the hardware's cadence and the
+//                                      cartridge's sound reaches a sink, exit nonzero on any miss (CI
+//                                      runs this on every platform)
 //
 // Bring your own cartridge: pass its path as the third argument; it is read from disk and nothing more.
 // A dev drives the window.
 
+#include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -56,10 +67,12 @@
 #include <SDL3/SDL_scancode.h>
 #include <SDL3/SDL_timer.h>
 
+#include "retropp/audio.h"
 #include "retropp/clock.h"
 #include "retropp/draw_state.h"
 #include "retropp/engine_config.h"
 #include "retropp/geometry.h"
+#include "retropp/guest_frame.h"
 #include "retropp/input.h"
 #include "retropp/input_actions.h"
 #include "retropp/renderer.h"
@@ -76,12 +89,114 @@ namespace {
 using namespace retropp;
 
 constexpr int kGuestW = 256, kGuestH = 224;             // one SNES screen
-constexpr int kViewW = kGuestW * 2, kViewH = kGuestH;   // two of them, side by side
-constexpr int kScale = 4;                               // 512×224 × 4 = a 2048×896 window
+constexpr int kScopeH = 48;                             // the band under them, showing the sound
+constexpr int kViewW = kGuestW * 2, kViewH = kGuestH + kScopeH;   // two screens side by side, the scope below
+constexpr int kScale = 4;                               // 512×272 × 4 = a 2048×1088 window
+constexpr std::size_t kScopeFrames = kViewW;            // one frame per column
 
 // A player-level action, numbered clear of the twelve pad buttons (snes::Button is 0-11): the key that
-// plugs and unplugs the second controller.
-enum class Player : ActionId { TogglePort2 = 20 };
+// plugs and unplugs the second controller, the key that switches the device's rate, and the key that
+// cycles which machine is heard.
+enum class Player : ActionId { TogglePort2 = 20, ToggleRate = 21, CycleHeard = 22 };
+
+// ── Sound ───────────────────────────────────────────────────────────────────────────────────────
+// A machine's sound reaches the device through a queue of its own: the thread that steps the machine
+// pushes each frame as it is produced and SDL's audio thread pulls what it needs. One writer, one
+// reader per queue, so two atomics are the whole synchronization. A full queue drops the frame: the
+// machine is paced by its own clock, not by the device, so a speed factor above one makes more than
+// the device takes and one below leaves it short.
+class FrameQueue {
+public:
+    static constexpr std::size_t kCapacity = 8192;   // about 170 ms at 48'000 Hz
+
+    bool push(AudioFrame frame) {
+        const std::size_t w = write_.load(std::memory_order_relaxed);
+        const std::size_t r = read_.load(std::memory_order_acquire);
+        if (w - r == kCapacity) {
+            return false;
+        }
+        frames_[w % kCapacity] = frame;
+        write_.store(w + 1, std::memory_order_release);
+        return true;
+    }
+
+    std::size_t pop(std::span<AudioFrame> out) {
+        const std::size_t r = read_.load(std::memory_order_relaxed);
+        const std::size_t w = write_.load(std::memory_order_acquire);
+        const std::size_t n = std::min(out.size(), w - r);
+        for (std::size_t i = 0; i < n; ++i) {
+            out[i] = frames_[(r + i) % kCapacity];
+        }
+        read_.store(r + n, std::memory_order_release);
+        return n;
+    }
+
+    [[nodiscard]] std::size_t size() const {
+        return write_.load(std::memory_order_acquire) - read_.load(std::memory_order_acquire);
+    }
+
+    // Only while neither side is running.
+    void clear() { read_.store(write_.load(std::memory_order_acquire), std::memory_order_release); }
+
+private:
+    std::array<AudioFrame, kCapacity> frames_{};
+    std::atomic<std::size_t>          write_{0};
+    std::atomic<std::size_t>          read_{0};
+};
+
+// Which machine is heard: nothing, the left (tick-advanced) machine, the right (free-running) one, or
+// both at once — the left machine in the left speaker, the right machine in the right. The 4 key
+// cycles it; the pull reads it.
+enum class Heard : int { None = 0, Left = 1, Right = 2, Both = 3 };
+
+const char* heardName(Heard heard) {
+    switch (heard) {
+        case Heard::None:  return "nothing";
+        case Heard::Left:  return "the left machine";
+        case Heard::Right: return "the right machine";
+        case Heard::Both:  return "both — left machine in the left speaker, right machine in the right";
+    }
+    return "";
+}
+
+// The last kScopeFrames frames the device took, written by the pull on the audio thread and read by the
+// render loop, under one lock taken once per pull and once per drawn frame.
+struct Scope {
+    mutable std::mutex                    lock;
+    std::array<AudioFrame, kScopeFrames> ring{};
+    std::size_t                           head = 0;   // where the next frame goes
+};
+
+// Paint the scope band: each frame is one column, the left channel in amber and the right in cyan,
+// over a dark band. Heard alone, a machine's two channels coincide; heard together, each machine is
+// its own trace.
+void drawScope(const Scope& scope, std::vector<std::uint8_t>& pixels) {
+    std::array<AudioFrame, kScopeFrames> frames{};
+    std::size_t                          head = 0;
+    {
+        const std::lock_guard guard{scope.lock};
+        frames = scope.ring;
+        head   = scope.head;
+    }
+    for (std::size_t i = 0; i < pixels.size(); i += 4) {
+        pixels[i] = 16;  pixels[i + 1] = 16;  pixels[i + 2] = 24;  pixels[i + 3] = 255;
+    }
+    const int mid = kScopeH / 2;
+    const auto trace = [&](auto sample, std::uint8_t r, std::uint8_t g, std::uint8_t b) {
+        int previous = mid;
+        for (int x = 0; x < kViewW; ++x) {
+            const std::size_t at = (head + static_cast<std::size_t>(x)) % kScopeFrames;
+            const int y = std::clamp(mid - sample(frames[at]) * (mid - 1) / 32768, 0, kScopeH - 1);
+            for (int yy = std::min(previous, y); yy <= std::max(previous, y); ++yy) {
+                const std::size_t p = (static_cast<std::size_t>(yy) * kViewW + static_cast<std::size_t>(x)) * 4;
+                pixels[p] = r;  pixels[p + 1] = g;  pixels[p + 2] = b;  pixels[p + 3] = 255;
+            }
+            previous = y;
+        }
+    };
+    trace([](const AudioFrame& f) { return static_cast<int>(f.right); }, 64, 200, 255);
+    trace([](const AudioFrame& f) { return static_cast<int>(f.left); }, 255, 200, 64);
+}
 
 // ── Choosing a ROM ──────────────────────────────────────────────────────────────────────────────
 // How the dialog ended: cancelling is an answer; failing is the dialog never opening.
@@ -268,7 +383,7 @@ void watchAllFactors(snaggletooth::Region region, const char* tag, double baseHz
 
 int runVerify() {
     int failures = 0;
-    std::printf("snes_player --verify: the SNES core holds each clock's cadence\n\n");
+    std::printf("snes_player --verify: the SNES core holds each clock's cadence and its sound reaches a sink\n\n");
 
     // The console's own rates: 236'250'000/11 Hz over 357'366 cycles a frame is 60.0988; PAL is
     // 21'281'370 Hz over 425'568 is 50.0070.
@@ -291,6 +406,30 @@ int runVerify() {
     if (lived + 1 < 600 || lived > 601) {
         std::printf("  VERIFY FAILED: 600 ticks finished %llu frames, not 600 (±1)\n",
                     static_cast<unsigned long long>(lived));
+        ++failures;
+    }
+
+    // The cartridge's sound reaches a sink, headless: the frames one tick-advanced machine hands over at
+    // 48'000 Hz over 120 ticks, and how loud they get. Each SNES frame is 532 or 533 of the chip's
+    // frames, so 120 of them are 63'840..63'960, which the conversion makes 95'760..95'940; the
+    // demo's first note is playing well inside the first frame and swings past ±10'000.
+    Vm::SNES      sounding;
+    std::uint64_t frames = 0;
+    int           peak   = 0;
+    sounding.hostRom(examples::snes::demoCartridge(snaggletooth::Region::Ntsc));
+    sounding.enableAudio(48'000, [&frames, &peak](std::int16_t left, std::int16_t right) {
+        ++frames;
+        peak = std::max({peak, std::abs(static_cast<int>(left)), std::abs(static_cast<int>(right))});
+    });
+    sounding.run(Vm::Advance::OnTick);
+    for (int tick = 0; tick < 120; ++tick) {
+        sounding.advanceTick();
+    }
+    sounding.stop();
+    std::printf("\n  sound: 120 ticks handed %llu frames at 48'000 Hz, peak %d\n",
+                static_cast<unsigned long long>(frames), peak);
+    if (frames < 95'760 || frames > 95'940 || peak < 5'000) {
+        std::printf("  VERIFY FAILED: expected 95'760..95'940 frames and a peak of at least 5'000\n");
         ++failures;
     }
 
@@ -359,6 +498,7 @@ int main(int argc, char** argv) {
     RunLoop     loop{clock};
     SdlPlatform platform;
     Renderer    renderer{platform.device(), platform.sdlWindow()};
+    SdlAudioSink sink;  // The device: an SDL stream this program drains its own queue into.
 
     // The same image on two machines: the only difference between the two screens is the clock each runs
     // on. Both declare video at construction (off until asked) and are named apart, so each keeps its own
@@ -373,8 +513,83 @@ int main(int argc, char** argv) {
         machine->video(true);
     }
 
-    // The SNES pad, bound to keys and a gamepad; editing these rows is all rebinding is. The 2 key is the
-    // player's own — it plugs and unplugs the second controller.
+    // The sound: each machine's frames go into its own queue from the thread that steps it — the game's
+    // for the left machine, its own for the right. The device pulls on SDL's audio thread from the
+    // queue or queues it is listening to, once each of those holds a twentieth of a second so the first
+    // pull does not run it dry, and drains the rest so nothing stale waits to be switched in. The frames
+    // it takes are what the scope shows.
+    FrameQueue tickedQueue;
+    FrameQueue freeQueue;
+    Scope      scope;
+    unsigned   deviceRate = kAudioSampleRate;
+    std::atomic<int> heard{static_cast<int>(Heard::None)};   // the 4 key writes it; the pull reads it
+    std::vector<AudioFrame> scratchLeft(FrameQueue::kCapacity);    // where the pull drains what it does
+    std::vector<AudioFrame> scratchRight(FrameQueue::kCapacity);   // not hand to the device
+    bool  primed    = false;         // the pull's own; reset when what is heard changes
+    Heard lastHeard = Heard::None;   // the pull's own; how it notices a change
+    auto tickedSample = [&tickedQueue](std::int16_t left, std::int16_t right) {
+        tickedQueue.push(AudioFrame{.left = left, .right = right});
+    };
+    auto freeSample = [&freeQueue](std::int16_t left, std::int16_t right) {
+        freeQueue.push(AudioFrame{.left = left, .right = right});
+    };
+    auto pull = [&](std::span<AudioFrame> out) -> std::size_t {
+        const Heard now = static_cast<Heard>(heard.load(std::memory_order_acquire));
+        if (now != lastHeard) {
+            lastHeard = now;
+            primed    = false;
+        }
+        const std::size_t fill       = deviceRate / 20;
+        const bool        wantsLeft  = now == Heard::Left || now == Heard::Both;
+        const bool        wantsRight = now == Heard::Right || now == Heard::Both;
+        if (!primed) {
+            if ((wantsLeft && tickedQueue.size() < fill) || (wantsRight && freeQueue.size() < fill)) {
+                return 0;
+            }
+            primed = true;
+        }
+        std::size_t got = 0;
+        switch (now) {
+            case Heard::None:
+                tickedQueue.pop(std::span{scratchLeft});
+                freeQueue.pop(std::span{scratchRight});
+                return 0;
+            case Heard::Left:
+                got = tickedQueue.pop(out);
+                freeQueue.pop(std::span{scratchRight});
+                break;
+            case Heard::Right:
+                got = freeQueue.pop(out);
+                tickedQueue.pop(std::span{scratchLeft});
+                break;
+            case Heard::Both: {
+                // One frame from each machine makes one frame for the device: the left machine's left
+                // channel and the right machine's right. Only as many as both queues hold; the rest of
+                // the fuller queue waits for the next pull.
+                const std::size_t n = std::min({out.size(), tickedQueue.size(), freeQueue.size()});
+                tickedQueue.pop(std::span{scratchLeft}.first(n));
+                freeQueue.pop(std::span{scratchRight}.first(n));
+                for (std::size_t i = 0; i < n; ++i) {
+                    out[i] = AudioFrame{.left = scratchLeft[i].left, .right = scratchRight[i].right};
+                }
+                got = n;
+                break;
+            }
+        }
+        const std::lock_guard guard{scope.lock};
+        for (std::size_t i = 0; i < got; ++i) {
+            scope.ring[scope.head] = out[i];
+            scope.head             = (scope.head + 1) % kScopeFrames;
+        }
+        return got;
+    };
+    ticked.enableAudio(deviceRate, tickedSample);
+    freeRunning.enableAudio(deviceRate, freeSample);
+    sink.start(deviceRate, kAudioChannels, pull);
+
+    // The SNES pad, bound to keys and a gamepad; editing these rows is all rebinding is. The number keys
+    // are the player's own: the 2 key plugs and unplugs the second controller, the 3 key switches the
+    // device's rate, the 4 key cycles which machine is heard.
     ActionMap controls{
         {snes::Button::A,      {SDL_SCANCODE_X, PadButton::FaceLabelA}},
         {snes::Button::B,      {SDL_SCANCODE_Z, PadButton::FaceLabelB}},
@@ -385,6 +600,8 @@ int main(int argc, char** argv) {
         {snes::Button::Select, {SDL_SCANCODE_RSHIFT, PadButton::Select}},
         {snes::Button::Start,  {SDL_SCANCODE_RETURN, PadButton::Start}},
         {Player::TogglePort2,  {SDL_SCANCODE_2}},
+        {Player::ToggleRate,   {SDL_SCANCODE_3}},
+        {Player::CycleHeard,   {SDL_SCANCODE_4}},
     };
     controls.add(presets::directional(snes::Button::Up, snes::Button::Down, snes::Button::Left,
                                       snes::Button::Right));
@@ -405,6 +622,30 @@ int main(int argc, char** argv) {
         if (input.justPressed(Player::TogglePort2)) {
             port2Plugged = !port2Plugged;
             std::printf("port 2: %s\n", port2Plugged ? "controller plugged in" : "unplugged");
+        }
+        if (input.justPressed(Player::CycleHeard)) {
+            // Nothing, the left machine, the right machine, both, and round again. The pull notices on
+            // its next call and primes again from the queue or queues it now listens to.
+            const Heard next = static_cast<Heard>((heard.load(std::memory_order_relaxed) + 1) % 4);
+            heard.store(static_cast<int>(next), std::memory_order_release);
+            std::printf("heard: %s\n", heardName(next));
+        }
+        if (input.justPressed(Player::ToggleRate)) {
+            // Both machines park, their sound is pointed at the new rate, the device reopens at it, and
+            // both run again. The queues start over so nothing made at the old rate plays at the new.
+            deviceRate = (deviceRate == 48'000u) ? 44'100u : 48'000u;
+            ticked.stop();
+            freeRunning.stop();
+            sink.stop();
+            tickedQueue.clear();
+            freeQueue.clear();
+            primed = false;
+            ticked.enableAudio(deviceRate, tickedSample);
+            freeRunning.enableAudio(deviceRate, freeSample);
+            sink.start(deviceRate, kAudioChannels, pull);
+            ticked.run(Vm::Advance::OnTick);
+            freeRunning.run(Vm::Advance::Continuously);
+            std::printf("device: %u Hz — the pitch stays put\n", deviceRate);
         }
         // Port one is the pad; port two is a controller the player plugs, or an empty socket. Both
         // machines are handed the same two-port word — the left sees it at this tick, the right at its
@@ -433,6 +674,8 @@ int main(int argc, char** argv) {
     std::uint64_t lastTicked = 0;
     std::uint64_t lastFree   = 0;
 
+    std::vector<std::uint8_t> scopePixels(static_cast<std::size_t>(kViewW) * kScopeH * 4);
+    std::uint64_t             scopeGeneration = 0;
     FrameDrawState frame;
     loop.renderLoop([&]() {
         frame.layers.clear();
@@ -454,6 +697,21 @@ int main(int argc, char** argv) {
         right.scroll  = LayerScroll{-kGuestW, 0};
         right.content = freePicture;
         frame.layers.push_back(right);
+
+        // The scope, under the two screens: this program's own raster, redrawn every frame from what the
+        // device last took, submitted as a layer's content like a machine's picture is.
+        drawScope(scope, scopePixels);
+        ++scopeGeneration;
+        DrawLayer band{.key = "scope"};
+        band.z       = 2;
+        band.size    = PixelSize{kViewW, kViewH};
+        band.scroll  = LayerScroll{0, -kGuestH};
+        band.content = GuestFrameContent{.pixels     = scopePixels,
+                                         .width      = kViewW,
+                                         .height     = kScopeH,
+                                         .format     = GuestPixelFormat::Rgba8888,
+                                         .generation = scopeGeneration};
+        frame.layers.push_back(band);
 
         renderer.renderFrame(frame);
 
@@ -486,13 +744,17 @@ int main(int argc, char** argv) {
         "Both clocks run at the same nominal rate, so the two stay in step; a frame of wobble now and "
         "then is each side crossing a frame boundary at a slightly different moment.\n"
         "Play it: arrows or a d-pad move the sprite, X = A, Z = B, S = X, A = Y, Q/W = L/R, Enter = "
-        "Start, Right Shift = Select; A and B recolour the sprite, Start writes the save; 2 plugs or "
-        "unplugs a second controller. Both machines take the same buttons.\n"
+        "Start, Right Shift = Select; A and B recolor the sprite, Start writes the save; 2 plugs or "
+        "unplugs a second controller. 4 cycles what is heard: nothing, the left machine, the right "
+        "machine, both (left machine in the left speaker, right machine in the right), and round again "
+        "— it starts silent. 3 switches the device between 48 kHz and 44.1 kHz — the pitch stays put. "
+        "Both machines take the same buttons.\n"
         "Close the window to quit.\n");
     WindowedHost host{loop, platform};
     host.run();
     ticked.stop();
     freeRunning.stop();
+    sink.stop();
     if (capturing) {
         writeCapture(capPath, capRows);
     }

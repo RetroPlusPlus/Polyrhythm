@@ -1,5 +1,6 @@
 #include "src/vm/snes/snes_backend.h"
 
+#include <algorithm>
 #include <memory>
 #include <stdexcept>
 #include <utility>
@@ -18,6 +19,10 @@ snaggletooth::Region regionOf(std::span<const std::uint8_t> rom) {
     return header && header->video == snaggletooth::VideoStandard::Pal ? snaggletooth::Region::Pal
                                                                        : snaggletooth::Region::Ntsc;
 }
+
+// The rate the sound chip produces at, whatever the region: one frame every 32 cycles of its own
+// 1'024'000 Hz clock.
+constexpr unsigned kDspRate = 32'000u;
 
 // One port decoded from the seam's opaque word: the twelve buttons in the pad's shift order when the
 // port's occupied bit is set, an empty socket when it is not. `shift` is 0 for port one, 16 for two —
@@ -50,6 +55,9 @@ void SnesBackend::emplaceMachine() {
     snes_->setSaveObserver(this);
     snes_->setFrameObserver(videoEnabled_ ? this : nullptr);
     saveChanged_ = false;  // a fresh machine has changed nothing since it was last taken
+    if (resampler_) {
+        resampler_->reset();  // a fresh machine's sound starts from silence, as its picture does
+    }
 }
 
 void SnesBackend::restoreSave(std::vector<std::uint8_t> save) {
@@ -96,7 +104,36 @@ void SnesBackend::bootHostedRom() {
 }
 
 std::uint64_t SnesBackend::runForCycles(std::uint64_t cpuCycles) {
-    return snes_->run(cpuCycles);  // Snaggletooth carries the overshoot inside the machine
+    // A quarter of a frame at a time, the DSP drained after each slice: the frames a step produces
+    // reach the sink in four batches rather than one, and the machine's queue never holds more than a
+    // quarter frame. Snaggletooth carries the overshoot inside the machine and run(a) then run(b) is
+    // run(a + b), so the slicing changes nothing the program can observe.
+    const std::uint64_t slice = clock()->cyclesPerFrame / 4;
+    for (std::uint64_t remaining = cpuCycles; remaining != 0;) {
+        const std::uint64_t step = std::min(remaining, slice);
+        snes_->run(step);
+        drainAudio();
+        remaining -= step;
+    }
+    return cpuCycles;
+}
+
+void SnesBackend::drainAudio() {
+    const std::vector<snaggletooth::StereoFrame> frames = snes_->takeFrames();
+    if (!audioSink_) {
+        return;  // nobody listens: the frames are dropped, as an unwatched picture is never drawn
+    }
+    for (const snaggletooth::StereoFrame& frame : frames) {
+        resampler_->push(frame.left, frame.right, audioSink_);
+    }
+}
+
+void SnesBackend::enableAudio(unsigned sampleRate, AudioSampleSink sink) {
+    if (sampleRate == 0) {
+        throw std::invalid_argument("enableAudio: the sink's rate is zero");
+    }
+    resampler_.emplace(kDspRate, sampleRate);
+    audioSink_ = std::move(sink);
 }
 
 void SnesBackend::setButtons(std::uint64_t held) {
@@ -186,9 +223,6 @@ std::uint64_t SnesBackend::readRegister(std::uint16_t) {
 }
 std::uint64_t SnesBackend::readMemory(std::uint32_t, int) {
     throw std::logic_error("readMemory: the SNES core names no places in guest memory");
-}
-void SnesBackend::enableAudio(unsigned, AudioSampleSink) {
-    throw std::logic_error("enableAudio: this SNES core drives no audio");
 }
 void SnesBackend::beginContinuous(std::uint32_t) {
     throw std::logic_error("beginContinuous: the SNES core hosts no driver");

@@ -498,10 +498,11 @@ public:
     // one cycle budget per sim tick. (The cue surface a game drives by meaning is the AudioSystem; this
     // is the raw chain it sits on.)
 
-    // Enable the backend's APU and route each produced stereo PCM frame to `onSample` (called per
-    // sample on the thread that steps the driver — for the audio chain, the AudioSystem's production
-    // thread). The APU's sample rate is set to
-    // `sampleRate` so it resamples to the sink rate internally. Call once before driving a routine.
+    // Enable the machine's sound chip and route each produced stereo PCM frame to `onSample`, called
+    // per frame on the thread that steps the machine: the AudioSystem's production thread for a driver
+    // it hosts, the machine's own or the ticking thread for a hosted cartridge. Frames arrive at
+    // `sampleRate` whatever rate the chip itself runs at. Call it on a parked machine, before the
+    // driver is driven or the cartridge is run; a second call replaces the rate and the function.
     void enableAudio(unsigned sampleRate,
                      std::function<void(std::int16_t left, std::int16_t right)> onSample);
 

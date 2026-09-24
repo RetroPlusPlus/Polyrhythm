@@ -204,14 +204,15 @@ public:
     [[nodiscard]] virtual std::uint64_t readMemory(std::uint32_t address, int width) = 0;
 
     // ── Audio chain (the hardware-speed driver path) ──────────────────────────────────────────────
-    // The producer-side sink the backend's APU forwards each produced PCM frame to. Fires on the
-    // thread that steps the driver (for the audio chain, the AudioSystem's production thread).
-    // A backend with no audio model leaves it unused.
+    // The producer-side sink the backend's sound chip forwards each produced PCM frame to. Fires on the
+    // thread that steps the machine: the AudioSystem's production thread for a driver it hosts, the
+    // machine's own thread or the ticking thread for a hosted cartridge. A backend with no audio model
+    // leaves it unused.
     using AudioSampleSink = std::function<void(std::int16_t left, std::int16_t right)>;
 
     // Enable the backend's APU audio at `sampleRate` Hz and route produced frames to `sink`. The
     // generic host calls this once when a consumer wires up the audio chain. A backend with no audio
-    // synthesis throws (the seam exists; the GB backend realizes it). Idempotent.
+    // synthesis throws (the Game Boy and SNES backends realize it). Idempotent.
     virtual void enableAudio(unsigned sampleRate, AudioSampleSink sink) = 0;
 
     // Position the machine at a continuously-running driver routine's entry (set PC + a scratch stack),

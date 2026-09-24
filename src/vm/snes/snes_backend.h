@@ -1,7 +1,8 @@
 // Internal SNES / 65816 VM backend — a VmBackend over Snaggletooth's Snes machine.
 //
 // This is the ONE place SNES machine idiom lives: the two-port controller word, the region read from a
-// cartridge's own header, and the frame/save observers the machine reports through. The generic Vm
+// cartridge's own header, the frame/save observers the machine reports through, and the sound chip's
+// 32'000 Hz frames on their way to a sink at the sink's rate. The generic Vm
 // (vm.cpp) drives it only through VmBackend, so it knows none of it. The machine's routine and register
 // vocabulary — naming places, calling routines, escapes, watches, driver hosting, its APU — is not among
 // this core's verbs: each such verb throws, in the seam's posture, so no capability is faked.
@@ -21,6 +22,7 @@
 
 #include "snaggletooth/snes/snes.h"
 #include "src/vm/vm_backend.h"
+#include "src/vm/snes/resampler.h"
 
 namespace retropp::vm {
 
@@ -60,8 +62,13 @@ public:
     [[nodiscard]] std::uint64_t readRegister(std::uint16_t registerId) override;
     [[nodiscard]] std::uint64_t readMemory(std::uint32_t address, int width) override;
 
+    // Sound: the cartridge's own, from the machine's DSP at 32'000 Hz, converted to `sampleRate` on its
+    // way to `sink` (resampler.h). Each frame reaches the sink from inside runForCycles, on the thread
+    // that steps the machine. A second call replaces both; a zero rate throws std::invalid_argument.
     void enableAudio(unsigned sampleRate, AudioSampleSink sink) override;
     void beginContinuous(std::uint32_t entry) override;
+    // Runs `cpuCycles` master cycles a quarter of a frame at a time, draining the DSP after each slice:
+    // its frames reach the sink four times a frame, and a machine with no sink drops them as it goes.
     std::uint64_t runForCycles(std::uint64_t cpuCycles) override;
 
     // Guest input: the SNES pad. The public two-port word (snes.h) packs into the seam's opaque uint64.
@@ -107,6 +114,9 @@ private:
     void emplaceMachine();
     // Put a save back into the live machine and clear the changed flag a restore would otherwise raise.
     void restoreSave(std::vector<std::uint8_t> save);
+    // Hand the frames the DSP produced since the last drain to the sink at its rate, or drop them when
+    // no sink listens — either way the machine's queue is empty when this returns.
+    void drainAudio();
 
     // FrameObserver / SaveObserver — the machine reports its picture and its save through these; the
     // backend is both, so it is its own observer and needs no back-pointer.
@@ -122,6 +132,8 @@ private:
     FrameSink                         frameSink_;     // where a finished frame is forwarded
     EscapeSink                        escapeSink_;    // stored; this core answers no escapes
     WatchSink                         watchSink_;     // stored; this core answers no watches
+    AudioSampleSink                   audioSink_;     // where each converted frame goes; empty until enableAudio
+    std::optional<RationalResampler>  resampler_;     // 32'000 Hz to the sink's rate; built by enableAudio
 };
 
 }  // namespace retropp::vm

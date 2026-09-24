@@ -26,7 +26,7 @@ This is the deep end of **Conductor**, the platform's VM layer — the routine s
 bytes exactly as they shipped, in memory this process owns, with the behaviour living in your code.
 
 > **The co-execution verbs on this page run on `Vm::GB` and `Vm::GBC`.** A `Vm::SNES` hosts and runs a
-> whole cartridge — `hostRom` / `run` / `speed` / `stop` / `video` / `buttons` — but the naming, escape,
+> whole cartridge — `hostRom` / `run` / `speed` / `stop` / `video` / `buttons` / `enableAudio` — but the naming, escape,
 > watch and routine-binding verbs below throw `std::logic_error` on it. Constructing a `Vm` for a
 > `VMPlatform` with no backend built throws. The verbs, declarations and calling conventions are the same
 > on every console; a console names its registers and memory areas through its own `<console>::` header.
@@ -41,6 +41,7 @@ bytes exactly as they shipped, in memory this process owns, with the behaviour l
 - [Running it](#running-it)
   - [Advancing it on your own tick instead](#advancing-it-on-your-own-tick-instead)
 - [Video: showing its picture](#video-showing-its-picture)
+- [Sound: hearing it](#sound-hearing-it)
 - [Input: playing it](#input-playing-it)
 - [While it runs: one thread owns the machine](#while-it-runs-one-thread-owns-the-machine)
 - [Escaping into your own code](#escaping-into-your-own-code)
@@ -314,6 +315,34 @@ new one. Nothing asks a machine how fast it runs or which frame it is on. `pixel
 next `advanceTick`, which is exactly the lifetime a submission needs.
 
 The content type itself is in [draw-state.md](draw-state.md#guestframecontent--a-hosted-machines-picture).
+
+## Sound: hearing it
+
+A hosted cartridge's sound comes out through `enableAudio` — the same call on every console, the same
+one the [`AudioSystem`](audio.md) drives a sound driver through. Every stereo frame the machine's sound
+chip produces reaches your function, at the rate you name:
+
+```cpp
+vm.hostRom(rom);
+vm.enableAudio(48'000, [&](std::int16_t left, std::int16_t right) {
+    queue.push(AudioFrame{.left = left, .right = right});   // one stereo frame, at 48'000 Hz
+});
+vm.run();
+```
+
+`enableAudio(rate, onSample)` takes the rate the frames are wanted at and the function that takes
+them, one frame at a time. Each core converts from its own chip's rate, so the frames arrive at
+`rate`, at the cartridge's pitch, whatever `rate` is. Ask on a parked machine: before `run`, or after
+`stop`. Asking again replaces the rate and the function.
+
+**The function runs on the thread that steps the machine** — the machine's own under
+`Advance::Continuously`, the one calling `advanceTick` under `Advance::OnTick` — from inside the step,
+as the frames are produced. It is the producer side; the device side is an
+[`AudioSink`](audio.md#output-the-audiosink) pulling on its own thread, with a queue between the two.
+The SNES player (`examples/snes/player/`) does exactly that for each of its machines.
+
+A machine's sound is its own: two machines hosting one cartridge produce two streams, and which one
+reaches the speaker is the game's to choose.
 
 ## Input: playing it
 
@@ -788,7 +817,7 @@ outcomes, `AccessSource` and the watch table on the same terms; `bindRoutine`, i
 context, nested to any depth; and `video`, declared through `VmConfig` or switched at runtime, on
 either clock.
 
-On a `Vm::SNES`, `hostRom` / `run` / `speed` / `stop` / `video` / `buttons` run; the naming, escape,
+On a `Vm::SNES`, `hostRom` / `run` / `speed` / `stop` / `video` / `buttons` / `enableAudio` run; the naming, escape,
 watch and routine-binding verbs above throw `std::logic_error`.
 
 **Constructing a `Vm` for a `VMPlatform` with no backend built throws** — `Nes`, `Genesis` and

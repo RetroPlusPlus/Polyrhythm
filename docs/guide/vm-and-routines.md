@@ -282,7 +282,8 @@ The raw driver chain underneath the `AudioSystem` is three `Vm` members: `enable
 turns on the APU and routes each produced PCM frame, `startDriver(routine)` positions a `HardwareSpeed`
 routine to run continuously, and `stepDriver(cpuCycles)` advances it one cycle budget (producing audio
 into the sink). You normally let the [`AudioSystem`](audio.md) own these; reach for them directly only
-to host a driver yourself.
+to host a driver yourself. A hosted cartridge's own sound comes through the same `enableAudio`, on
+every console — see [co-execution.md](co-execution.md#sound-hearing-it).
 
 ## Hosting a resident driver
 
