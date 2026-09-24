@@ -21,8 +21,8 @@
 
 namespace {
 
-using retropp::GuestFrameContent;
-using retropp::GuestPixelFormat;
+using retropp::RasterContent;
+using retropp::RasterPixelFormat;
 using retropp::Vm;
 using retropp::VmConfig;
 using retropp::VMPlatform;
@@ -132,14 +132,14 @@ TEST(VmFrameSink, AFrameCompletingBetweenTicksIsNotSeenUntilTheBoundary) {
     m.mock->finishFrame(frame, kWidth, kHeight);
 
     // Mid-tick: the machine has finished a frame, and the game cannot see it yet.
-    const GuestFrameContent before = m.machine.video();
+    const RasterContent before = m.machine.video();
     EXPECT_EQ(before.generation, 0u);
     EXPECT_TRUE(before.pixels.empty());
     EXPECT_EQ(before.width, 0);
 
     m.machine.advanceTick();
 
-    const GuestFrameContent after = m.machine.video();
+    const RasterContent after = m.machine.video();
     EXPECT_EQ(after.generation, 1u);
     EXPECT_EQ(after.width, kWidth);
     EXPECT_EQ(after.height, kHeight);
@@ -189,7 +189,7 @@ TEST(VmFrameSink, TheLastCompleteFrameIsHeldWhenNoNewOneArrives) {
 
     // The picture is still on screen — a display that refreshes faster than the machine draws shows
     // the frame again rather than going blank.
-    const GuestFrameContent held = m.machine.video();
+    const RasterContent held = m.machine.video();
     EXPECT_EQ(held.generation, 1u);
     ASSERT_EQ(held.pixels.size(), frame.size());
     EXPECT_TRUE(std::equal(frame.begin(), frame.end(), held.pixels.begin()));
@@ -208,7 +208,7 @@ TEST(VmFrameSink, SeveralFramesInOneTickLeaveTheLastOne) {
     m.mock->finishFrame(second, kWidth, kHeight);
     m.machine.advanceTick();
 
-    const GuestFrameContent shown = m.machine.video();
+    const RasterContent shown = m.machine.video();
     EXPECT_EQ(shown.generation, 2u);
     ASSERT_EQ(shown.pixels.size(), second.size());
     EXPECT_TRUE(std::equal(second.begin(), second.end(), shown.pixels.begin()));
@@ -235,10 +235,10 @@ TEST(VmFrameSink, ThePictureCarriesTheMachinesOwnDimensionsAndLayout) {
     m.mock->finishFrame(pictureOf(3), kWidth, kHeight);
     m.machine.advanceTick();
 
-    const GuestFrameContent shown = m.machine.video();
+    const RasterContent shown = m.machine.video();
     EXPECT_EQ(shown.width, kWidth);
     EXPECT_EQ(shown.height, kHeight);
-    EXPECT_EQ(shown.format, GuestPixelFormat::Rgba8888);
+    EXPECT_EQ(shown.format, RasterPixelFormat::Rgba8888);
     EXPECT_EQ(shown.pixels.size(),
               static_cast<std::size_t>(shown.width) * static_cast<std::size_t>(shown.height) *
                   retropp::bytesPerPixel(shown.format));
@@ -289,7 +289,7 @@ TEST(VmFrameSink, AMachineDrawingOnItsOwnThreadHandsWholeFramesToTheGameThread) 
     std::uint64_t  highest  = 0;
     std::uint64_t  reads    = 0;
     while (std::chrono::steady_clock::now() < deadline) {
-        const GuestFrameContent shown = machine.video();
+        const RasterContent shown = machine.video();
         ASSERT_EQ(shown.pixels.size(), static_cast<std::size_t>(shown.width) *
                                            static_cast<std::size_t>(shown.height) *
                                            retropp::bytesPerPixel(shown.format))

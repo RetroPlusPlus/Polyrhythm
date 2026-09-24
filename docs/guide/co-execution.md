@@ -4,7 +4,7 @@
 #include "retropp/vm.h"            // Vm, MemoryRegion declarations, bindRoutine, run/speed/stop
 #include "retropp/guest_escape.h"  // GuestEscape, escapes(), the escape table
 #include "retropp/guest_watch.h"   // GuestWatch, AccessVerdict, watches(), the watch table
-#include "retropp/guest_frame.h"   // GuestFrameContent — a machine's video as layer content
+#include "retropp/raster_content.h" // RasterContent — a machine's video as layer content
 #include "retropp/memory_region.h" // MemoryRegion — where a place is
 #include "retropp/gb.h"            // gb::A … gb::PC, gb::VRam … gb::Hram, gb::banked
 #include "retropp/snes.h"          // snes::Button … snes::held, snes::Ports — the SNES pad, both ports
@@ -311,11 +311,12 @@ tick where it completed none. A machine slower than the display repeats a frame 
 which is what a console on a faster screen does.
 
 **What the picture carries is the machine's, not the platform's:** its own `width` and `height`, its
-own `GuestPixelFormat`, and `contentChanged` — the platform's answer for whether this tick brought a
-new one. Nothing asks a machine how fast it runs or which frame it is on. `pixels` is valid until the
-next `advanceTick`, which is exactly the lifetime a submission needs.
+own `RasterPixelFormat`, and `generation` — the platform's count of the frames the machine has
+finished, which is how a submission says whether it carries a new one. Nothing asks a machine how fast
+it runs or which frame it is on. `pixels` is valid until the next `advanceTick`, which is exactly the
+lifetime a submission needs.
 
-The content type itself is in [draw-state.md](draw-state.md#guestframecontent--a-hosted-machines-picture).
+The content type itself is in [draw-state.md](draw-state.md#rastercontent--a-raster-of-pixels).
 
 ## Sound: hearing it
 
@@ -797,7 +798,7 @@ Every cartridge in the first five is authored in-code or by a committed generato
 
 | What | Where |
 |---|---|
-| The public surface | `include/retropp/vm.h`, `include/retropp/guest_escape.h`, `include/retropp/guest_watch.h`, `include/retropp/guest_frame.h`, `include/retropp/memory_region.h` |
+| The public surface | `include/retropp/vm.h`, `include/retropp/guest_escape.h`, `include/retropp/guest_watch.h`, `include/retropp/raster_content.h`, `include/retropp/memory_region.h` |
 | The Game Boy vocabulary — registers, memory areas, `banked` | `include/retropp/gb.h` |
 | The SNES vocabulary — the pad, both ports | `include/retropp/snes.h` |
 | The host layer: declarations, validation, the escape and watch tables, the run loop | `src/vm/vm.cpp`, `src/vm/vm_runner.cpp` |

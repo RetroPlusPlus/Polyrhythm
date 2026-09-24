@@ -1224,7 +1224,7 @@ endfunction()
 cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL retropp_finalize_assets)
 
 set(RETROPP_SHADER_STEMS blit.vert blit.frag tile.vert tile.frag sprite.vert sprite.frag sprite_below.frag
-                       sprite_emission.frag guest_frame.frag
+                       sprite_emission.frag raster.frag
                        postprocess.vert region_batch.vert displace.frag ripple.frag colorfill.frag
                        colorfill_gather.frag gleam.frag saturation.frag swirl.frag
                        emission_extract.frag emission_extract_rect.vert emission_extract_rect.frag
@@ -1563,7 +1563,7 @@ if(RETROPP_BUILD_TESTS)
         tests/escape_table_threads_test.cpp
         tests/guest_watch_test.cpp
         tests/sameboy_watch_test.cpp
-        tests/guest_frame_content_test.cpp
+        tests/raster_content_test.cpp
         tests/guest_input_test.cpp
         tests/vm_save_data_test.cpp
         tests/snaggletooth_link_test.cpp

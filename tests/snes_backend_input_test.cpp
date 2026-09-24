@@ -18,7 +18,7 @@
 #include "cpu65816/cpu65816_asm.h"
 #include "examples/common.h"
 #include "retropp/guest_buttons.h"
-#include "retropp/guest_frame.h"
+#include "retropp/raster_content.h"
 #include "retropp/input.h"
 #include "retropp/snes.h"
 #include "snaggletooth/snes/snes.h"
@@ -222,7 +222,7 @@ TEST(SnesGuestInput, APressReachesThePictureInAFixedNumberOfFrames) {
     SnesBackend backend;
     std::vector<bool> lit;  // whether each delivered frame's backdrop is anything but black
     backend.setVideoEnabled(true);
-    backend.setFrameSink([&lit](std::span<const std::uint8_t> pixels, int, int, GuestPixelFormat) {
+    backend.setFrameSink([&lit](std::span<const std::uint8_t> pixels, int, int, RasterPixelFormat) {
         lit.push_back(!pixels.empty() && (pixels[0] != 0 || pixels[1] != 0 || pixels[2] != 0));
     });
     backend.loadRom(drawsPadCartridge());

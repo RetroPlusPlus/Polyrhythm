@@ -7,7 +7,7 @@ sprites, plus whole-frame colour and screen-space effects. The colour *model* (i
 [rendering.md](rendering.md).
 
 ```cpp
-#include "retropp/draw_state.h"   // FrameDrawState, DrawLayer, TileContent, SpriteContent, GuestFrameContent, …
+#include "retropp/draw_state.h"   // FrameDrawState, DrawLayer, TileContent, SpriteContent, RasterContent, …
 ```
 
 ## Contents
@@ -16,10 +16,10 @@ sprites, plus whole-frame colour and screen-space effects. The colour *model* (i
 - [`FrameDrawState` + `DrawLayer`](#framedrawstate--drawlayer)
   - [Layer identity vs depth](#layer-identity-vs-depth)
   - [Layer-key uniqueness is a contract](#layer-key-uniqueness-is-a-contract)
-- [Layer content: tiles, sprites, or a hosted machine's picture](#layer-content-tiles-sprites-or-a-hosted-machines-picture)
+- [Layer content: tiles, sprites, or a raster](#layer-content-tiles-sprites-or-a-raster)
   - [`TileContent` — a scrolling tile map](#tilecontent--a-scrolling-tile-map)
   - [`SpriteContent` + `Sprite` — placed sprites](#spritecontent--sprite--placed-sprites)
-  - [`GuestFrameContent` — a hosted machine's picture](#guestframecontent--a-hosted-machines-picture)
+  - [`RasterContent` — a raster of pixels](#rastercontent--a-raster-of-pixels)
 - [Whole-frame colour](#whole-frame-colour)
 - [Screen-space effects](#screen-space-effects)
   - [Confining an effect to a shape (`Region`)](#confining-an-effect-to-a-shape-region)
@@ -114,18 +114,18 @@ static_assert(layerKeysAreUnique(kMyFixedLayers), "z/key collision in layer stac
 the boolean form for `static_assert`. For runtime-built layer stacks the renderer calls
 `layerDrawOrder` for you each frame.
 
-## Layer content: tiles, sprites, or a hosted machine's picture
+## Layer content: tiles, sprites, or a raster
 
 ```cpp
-enum class LayerContentKind : std::uint8_t { Tiles, Sprites, GuestFrame };
-using LayerContent = std::variant<TileContent, SpriteContent, GuestFrameContent>;
+enum class LayerContentKind : std::uint8_t { Tiles, Sprites, Raster };
+using LayerContent = std::variant<TileContent, SpriteContent, RasterContent>;
 constexpr LayerContentKind contentKind(const LayerContent&) noexcept;
 ```
 
-A layer carries exactly one content alternative — a tile map, a set of sprites, or the picture a
-hosted machine drew. Layers **interleave freely by `z`** in one compositing pass whatever they carry,
-so a sprite layer can sit between two tile layers, or a native layer over a machine's screen, entirely
-the consumer's choice.
+A layer carries exactly one content alternative — a tile map, a set of sprites, or a raster of pixels
+(a hosted machine's picture, or one the program drew itself). Layers **interleave freely by `z`** in
+one compositing pass whatever they carry, so a sprite layer can sit between two tile layers, or a
+native layer over a machine's screen, entirely the consumer's choice.
 
 ### `TileContent` — a scrolling tile map
 
@@ -215,23 +215,45 @@ The blend grammar and the Below-scope lens are in [blend-modes.md](blend-modes.m
 *kinds* a sprite's `effects` / `regions` carry are the same ones under
 [Screen-space effects](#screen-space-effects) below.
 
-### `GuestFrameContent` — a hosted machine's picture
+### `RasterContent` — a raster of pixels
 
 ```cpp
-struct GuestFrameContent {
+struct RasterContent {
     std::span<const std::uint8_t> pixels;  // row-major, width * height * bytesPerPixel(format)
-    int              width  = 0;
-    int              height = 0;
-    GuestPixelFormat format = GuestPixelFormat::Rgba8888;
-    std::uint64_t    generation = 0;       // how many frames this machine has finished
+    int               width  = 0;
+    int               height = 0;
+    RasterPixelFormat format = RasterPixelFormat::Rgba8888;
+    std::uint64_t     generation = 0;      // how many rasters the source has finished
 };
 
-enum class GuestPixelFormat : std::uint8_t { Rgba8888 };
-constexpr std::size_t bytesPerPixel(GuestPixelFormat) noexcept;
+enum class RasterPixelFormat : std::uint8_t { Rgba8888 };
+constexpr std::size_t bytesPerPixel(RasterPixelFormat) noexcept;
 ```
 
-A layer whose content is the last complete frame a hosted machine drew. Ask the machine for it and
-hand it straight to a layer:
+A layer whose content is a raster of pixels. Two sources hand a layer a raster in this form — the last
+complete frame a hosted machine drew, and a raster your program draws itself — and everything here
+holds for both:
+
+- **The renderer uploads the raster when its generation is one the layer's texture does not hold.**
+  `generation` counts how many rasters the source has finished — 0 before the first. A raster
+  resubmitted under the same non-zero generation is uploaded once and stays resident; generation 0 is
+  "nothing finished", so a raster submitted under 0 is uploaded on every frame. The pixels are never
+  hashed to decide — a full-color raster differs every time its source draws, so hashing one would cost
+  more than the upload it could save.
+- **The texture belongs to the layer's `key`**, sized to the raster's `width` × `height` in its `format`,
+  and rebuilt when any of the three changes. A layer with an empty key, or a key another raster layer in
+  the same frame already used, gets a texture for that frame only.
+- **It draws texel for texel:** each pixel covers one viewport pixel, placed by the layer's `scroll`,
+  faded by its `alpha` and warped by its `transform`. Outside its own `width` and `height` it draws
+  nothing, so a small raster on a viewport-sized layer leaves the layers beneath it showing everywhere
+  else. A raster whose `pixels` holds fewer than `width × height × bytesPerPixel(format)` bytes is not
+  drawn.
+- **`pixels` is read during `renderFrame`**, so it lives at least that long. A raster that changes every
+  frame costs one upload of its size every frame.
+
+#### A hosted machine's picture
+
+Ask the machine for its last complete frame and hand it straight to a layer:
 
 ```cpp
 machine.video(true);                    // the machine draws — off by default
@@ -243,27 +265,23 @@ screen.content = machine.video();       // valid for this renderFrame call
 ```
 
 The dimensions and the layout are the machine's own — a machine that draws 256×224 says so, and one
-whose pixels are laid out differently names a different `GuestPixelFormat`. Nothing here says how often
+whose pixels are laid out differently names a different `RasterPixelFormat`. Nothing here says how often
 a machine draws: the platform holds the frame it finished and shows that one, so a machine slower than
 the display keeps its picture on screen rather than flickering.
 
-`generation` counts the frames the machine has finished — 0 before the first one. It is the platform's
-count, not something the game declares, and the renderer sends the raster to the GPU exactly when a
-submission carries a generation the resident texture does not already hold. The pixels are never hashed
-to decide — a full-colour raster differs every time a machine draws, so hashing one would cost more than
-the upload it could save.
+Here `generation` is the platform's count of the frames the machine has finished, not something the
+game declares. It is a value, so reading it leaves it where it is: two `video()` calls in one frame
+report the same generation, and a submission the renderer skips still carries the right answer on the
+next one. It says which frame this is rather than when it arrived, which is what lets a machine on the
+game's tick and a machine on a clock of its own be read the same way.
 
-It is a value, so reading it leaves it where it is: two `video()` calls in one frame report the same
-generation, and a submission the renderer skips still carries the right answer on the next one. It says
-which frame this is rather than when it arrived, which is what lets a machine on the game's tick and a
-machine on a clock of its own be read the same way.
+The full picture surface — turning it on, what a machine owes, and how it composes with native layers —
+is in [co-execution.md](co-execution.md).
 
 #### A raster your program draws itself
 
-A `GuestFrameContent` is a raster of pixels, and a layer shows whatever raster arrives in this form,
-whoever drew it. A program that paints its own pixels on the CPU — a waveform, a plot, a
-software-rendered effect, a decoded video frame — hands them to a layer exactly as a machine's picture
-is handed over:
+A program that paints its own pixels on the CPU — a waveform, a plot, a software-rendered effect, a
+decoded video frame — hands them to a layer in the same form, with `generation` its own to count:
 
 ```cpp
 std::vector<std::uint8_t> pixels(512 * 48 * 4);   // RGBA, row-major, yours to paint
@@ -275,33 +293,17 @@ paint(pixels);                                    // redraw it on the CPU
 DrawLayer scope{.key = "scope"};
 scope.size    = PixelSize{512, 272};
 scope.scroll  = LayerScroll{0, -224};             // 224 px down the viewport
-scope.content = GuestFrameContent{.pixels     = pixels,
-                                  .width      = 512,
-                                  .height     = 48,
-                                  .format     = GuestPixelFormat::Rgba8888,
-                                  .generation = drawn};
+scope.content = RasterContent{.pixels     = pixels,
+                              .width      = 512,
+                              .height     = 48,
+                              .format     = RasterPixelFormat::Rgba8888,
+                              .generation = drawn};
 ```
 
-Everything above holds for it, with `generation` yours to count:
-
-- **The renderer uploads the raster when its generation is one the layer's texture does not hold.** Bump
-  it when the pixels change and keep it when they do not: a raster resubmitted under the same non-zero
-  generation is uploaded once and stays resident. Generation 0 is "nothing finished", so a raster
-  submitted under 0 is uploaded on every frame.
-- **The texture belongs to the layer's `key`**, sized to the raster's `width` × `height` and rebuilt when
-  either changes. A layer with an empty key, or a key another guest-frame layer in the same frame already
-  used, gets a texture for that frame only.
-- **It draws texel for texel:** each pixel covers one viewport pixel, placed by the layer's `scroll`,
-  faded by its `alpha` and warped by its `transform`. Outside its own width and height it draws nothing,
-  so a small raster on a viewport-sized layer leaves the layers beneath it showing everywhere else. A
-  raster whose `pixels` holds fewer than `width × height × 4` bytes is not drawn.
-- **`pixels` is read during `renderFrame`**, so it lives at least that long. A raster that changes every
-  frame costs one upload of its size every frame.
+Everything above holds for it, with `generation` yours to count: bump it when the pixels change and
+keep it when they do not.
 
 The SNES player (`examples/snes/player/`) draws its sound scopes this way.
-
-The full picture surface — turning it on, what a machine owes, and how it composes with native layers —
-is in [co-execution.md](co-execution.md).
 
 ## Whole-frame colour
 

@@ -1,13 +1,13 @@
-// A hosted machine's picture as a layer's content — the submission surface.
+// A raster as a layer's content — the submission surface.
 //
-// The first cases run with no machine and no device: what they pin is that a picture is a content
+// The first cases run with no machine and no device: what they pin is that a raster is a content
 // alternative like any other, that dispatch over the content variant names it correctly, and that the
 // type carries plain values and nothing a console brought with it.
 //
 // The rest are device-backed (a GPU device, no display — the harness the golden-readback and compose-skip
-// tests use, so they run on a software rasterizer in CI): a picture reaches the screen at the pixels the
-// machine drew, composites at its own z among native layers, and re-uploads only when the machine
-// finished a new frame.
+// tests use, so they run on a software rasterizer in CI): a raster reaches the screen at the pixels its
+// source drew, composites at its own z among native layers, and re-uploads only when its generation
+// moved.
 
 #include <array>
 #include <cstdint>
@@ -21,7 +21,7 @@
 #include <SDL3/SDL.h>
 
 #include "retropp/draw_state.h"
-#include "retropp/guest_frame.h"
+#include "retropp/raster_content.h"
 #include "retropp/renderer.h"
 #include "retropp/viewport.h"
 
@@ -31,17 +31,17 @@ using namespace retropp;
 
 // ── Dispatch over the content variant ───────────────────────────────────────────────────────────
 
-// A picture reports itself as one, and specifically NOT as the alternative that sat last in the
+// A raster reports itself as one, and specifically NOT as the alternative that sat last in the
 // variant before it did. Dispatch over the content variant runs on this answer everywhere in the
 // platform, so an alternative that reports the wrong kind is drawn as the wrong kind.
-TEST(GuestFrameContentType, ContentKindReportsGuestFrameNotSprites) {
-    const LayerContent content{GuestFrameContent{}};
-    EXPECT_EQ(contentKind(content), LayerContentKind::GuestFrame);
+TEST(RasterContentType, ContentKindReportsRasterNotSprites) {
+    const LayerContent content{RasterContent{}};
+    EXPECT_EQ(contentKind(content), LayerContentKind::Raster);
     EXPECT_NE(contentKind(content), LayerContentKind::Sprites);
 }
 
 // The other two alternatives keep the kind they already reported.
-TEST(GuestFrameContentType, ContentKindStillReportsTilesAndSprites) {
+TEST(RasterContentType, ContentKindStillReportsTilesAndSprites) {
     EXPECT_EQ(contentKind(LayerContent{TileContent{}}), LayerContentKind::Tiles);
     EXPECT_EQ(contentKind(LayerContent{SpriteContent{}}), LayerContentKind::Sprites);
 }
@@ -52,38 +52,38 @@ TEST(GuestFrameContentType, ContentKindStillReportsTilesAndSprites) {
 // to whether the machine drew something new. Nothing here is a handle to a core, a machine, or a
 // console's own vocabulary — which is what keeps a second core implementing this surface rather than
 // inheriting the first one's.
-TEST(GuestFrameContentType, TheContentTypeNamesNoConsole) {
-    static_assert(std::is_same_v<decltype(GuestFrameContent::pixels), std::span<const std::uint8_t>>);
-    static_assert(std::is_same_v<decltype(GuestFrameContent::width), int>);
-    static_assert(std::is_same_v<decltype(GuestFrameContent::height), int>);
-    static_assert(std::is_same_v<decltype(GuestFrameContent::format), GuestPixelFormat>);
-    static_assert(std::is_same_v<decltype(GuestFrameContent::generation), std::uint64_t>);
-    static_assert(std::is_same_v<std::underlying_type_t<GuestPixelFormat>, std::uint8_t>);
-    static_assert(std::is_standard_layout_v<GuestFrameContent>);
+TEST(RasterContentType, TheContentTypeNamesNoConsole) {
+    static_assert(std::is_same_v<decltype(RasterContent::pixels), std::span<const std::uint8_t>>);
+    static_assert(std::is_same_v<decltype(RasterContent::width), int>);
+    static_assert(std::is_same_v<decltype(RasterContent::height), int>);
+    static_assert(std::is_same_v<decltype(RasterContent::format), RasterPixelFormat>);
+    static_assert(std::is_same_v<decltype(RasterContent::generation), std::uint64_t>);
+    static_assert(std::is_same_v<std::underlying_type_t<RasterPixelFormat>, std::uint8_t>);
+    static_assert(std::is_standard_layout_v<RasterContent>);
     SUCCEED();
 }
 
-TEST(GuestFrameContentType, AGuestFrameLayerCarriesItsDimensionsAndFormat) {
+TEST(RasterContentType, ARasterLayerCarriesItsDimensionsAndFormat) {
     const std::vector<std::uint8_t> pixels(4 * 2 * 4, 0x40);
     DrawLayer layer{.key = "screen"};
-    layer.content = GuestFrameContent{.pixels = std::span<const std::uint8_t>(pixels),
-                                      .width  = 4,
-                                      .height = 2,
-                                      .format = GuestPixelFormat::Rgba8888,
-                                      .generation = 1};
+    layer.content = RasterContent{.pixels = std::span<const std::uint8_t>(pixels),
+                                  .width  = 4,
+                                  .height = 2,
+                                  .format = RasterPixelFormat::Rgba8888,
+                                  .generation = 1};
 
-    const GuestFrameContent& gc = std::get<GuestFrameContent>(layer.content);
+    const RasterContent& gc = std::get<RasterContent>(layer.content);
     EXPECT_EQ(gc.width, 4);
     EXPECT_EQ(gc.height, 2);
-    EXPECT_EQ(gc.format, GuestPixelFormat::Rgba8888);
+    EXPECT_EQ(gc.format, RasterPixelFormat::Rgba8888);
     EXPECT_EQ(gc.pixels.size(), static_cast<std::size_t>(gc.width) *
                                     static_cast<std::size_t>(gc.height) * bytesPerPixel(gc.format));
 }
 
-// A default-constructed picture is a valid, degenerate submission — nothing drawn, the same way an
+// A default-constructed raster is a valid, degenerate submission — nothing drawn, the same way an
 // empty sprite span is.
-TEST(GuestFrameContentType, AnEmptyPictureIsAValidSubmission) {
-    const GuestFrameContent empty{};
+TEST(RasterContentType, AnEmptyRasterIsAValidSubmission) {
+    const RasterContent empty{};
     EXPECT_EQ(empty.width, 0);
     EXPECT_EQ(empty.height, 0);
     EXPECT_TRUE(empty.pixels.empty());
@@ -118,7 +118,7 @@ std::vector<std::uint8_t> splitPicture() {
     return pixels;
 }
 
-class GuestFrameRenderTest : public ::testing::Test {
+class RasterRenderTest : public ::testing::Test {
 protected:
     static inline SDL_GPUDevice* device_ = nullptr;
     static inline std::string    initError_;
@@ -159,9 +159,9 @@ protected:
     }
 };
 
-// The picture reaches the screen as the machine drew it: the same colours, at the same places, with no
-// filtering between the machine's texels and the viewport's pixels.
-TEST_F(GuestFrameRenderTest, AGuestFrameLayerRendersThePixelsTheMachineDrew) {
+// The raster reaches the screen as its source drew it: the same colors, at the same places, with no
+// filtering between the source's texels and the viewport's pixels.
+TEST_F(RasterRenderTest, ARasterLayerRendersThePixelsItWasGiven) {
     Renderer r{device_, /*window=*/nullptr, ViewportResolution{kW, kH}};
     r.automaticInterpolation(false);
     const std::vector<std::uint8_t> picture = splitPicture();
@@ -169,11 +169,11 @@ TEST_F(GuestFrameRenderTest, AGuestFrameLayerRendersThePixelsTheMachineDrew) {
     DrawLayer screen{.key = "screen"};
     screen.z    = 0;
     screen.size = PixelSize{kW, kH};
-    screen.content = GuestFrameContent{.pixels = std::span<const std::uint8_t>(picture),
-                                       .width  = kW,
-                                       .height = kH,
-                                       .format = GuestPixelFormat::Rgba8888,
-                                       .generation = 1};
+    screen.content = RasterContent{.pixels = std::span<const std::uint8_t>(picture),
+                                   .width  = kW,
+                                   .height = kH,
+                                   .format = RasterPixelFormat::Rgba8888,
+                                   .generation = 1};
     FrameDrawState frame;
     frame.layers = {screen};
 
@@ -193,11 +193,11 @@ TEST_F(GuestFrameRenderTest, AGuestFrameLayerRendersThePixelsTheMachineDrew) {
 
 // A picture composites by z among native layers like any other content: a tile layer above it covers
 // it, and the same tile layer below it does not.
-TEST_F(GuestFrameRenderTest, AGuestFrameLayerComposesAtItsOwnZ) {
+TEST_F(RasterRenderTest, ARasterLayerComposesAtItsOwnZ) {
     Renderer r{device_, /*window=*/nullptr, ViewportResolution{kW, kH}};
     r.automaticInterpolation(false);
 
-    // A solid one-colour 8×8 sheet and its palette — the native layer that argues over the picture.
+    // A solid one-color 8×8 sheet and its palette — the native layer that argues over the picture.
     std::array<std::uint8_t, 8 * 8> idx{};
     idx.fill(1);
     const AtlasId               atlas = r.uploadAtlas(idx.data(), 8, 8).atlasId;
@@ -208,11 +208,11 @@ TEST_F(GuestFrameRenderTest, AGuestFrameLayerComposesAtItsOwnZ) {
     const std::vector<std::uint8_t> picture = splitPicture();
     DrawLayer screen{.key = "screen"};
     screen.size    = PixelSize{kW, kH};
-    screen.content = GuestFrameContent{.pixels = std::span<const std::uint8_t>(picture),
-                                       .width  = kW,
-                                       .height = kH,
-                                       .format = GuestPixelFormat::Rgba8888,
-                                       .generation = 1};
+    screen.content = RasterContent{.pixels = std::span<const std::uint8_t>(picture),
+                                   .width  = kW,
+                                   .height = kH,
+                                   .format = RasterPixelFormat::Rgba8888,
+                                   .generation = 1};
 
     DrawLayer native{.key = "native"};
     native.size    = PixelSize{kW, kH};
@@ -245,7 +245,7 @@ TEST_F(GuestFrameRenderTest, AGuestFrameLayerComposesAtItsOwnZ) {
 // the right-hand one is placed by scrolling its content a screen to the left. Outside its own dimensions
 // a picture draws nothing, so the two halves meet without overlapping — which is what lets a viewport
 // two screens wide show two machines rather than one stretched across it.
-TEST_F(GuestFrameRenderTest, TwoPicturesSitSideBySideWhenOneIsScrolled) {
+TEST_F(RasterRenderTest, TwoPicturesSitSideBySideWhenOneIsScrolled) {
     constexpr int kWideW = kW * 2;
     Renderer r{device_, /*window=*/nullptr, ViewportResolution{kWideW, kH}};
     r.automaticInterpolation(false);
@@ -270,11 +270,11 @@ TEST_F(GuestFrameRenderTest, TwoPicturesSitSideBySideWhenOneIsScrolled) {
         layer.z       = z;
         layer.size    = PixelSize{kWideW, kH};
         layer.scroll  = LayerScroll{scrollX, 0};
-        layer.content = GuestFrameContent{.pixels = std::span<const std::uint8_t>(pixels),
-                                          .width  = kW,
-                                          .height = kH,
-                                          .format = GuestPixelFormat::Rgba8888,
-                                          .generation = 1};
+        layer.content = RasterContent{.pixels = std::span<const std::uint8_t>(pixels),
+                                      .width  = kW,
+                                      .height = kH,
+                                      .format = RasterPixelFormat::Rgba8888,
+                                      .generation = 1};
         return layer;
     };
 
@@ -295,8 +295,8 @@ TEST_F(GuestFrameRenderTest, TwoPicturesSitSideBySideWhenOneIsScrolled) {
 
 // The generation is the whole upload decision: a submission carrying one the resident texture does not
 // hold sends the raster, and one carrying the generation already up there sends nothing. The pixels are
-// never hashed to decide — a full-colour raster differs every time the machine draws.
-TEST_F(GuestFrameRenderTest, TheRendererUploadsWhenTheGenerationMovesAndNotOtherwise) {
+// never hashed to decide — a full-color raster differs every time the machine draws.
+TEST_F(RasterRenderTest, TheRendererUploadsWhenTheGenerationMovesAndNotOtherwise) {
     Renderer r{device_, /*window=*/nullptr, ViewportResolution{kW, kH}};
     r.automaticInterpolation(false);
     const std::vector<std::uint8_t> picture = splitPicture();
@@ -305,11 +305,11 @@ TEST_F(GuestFrameRenderTest, TheRendererUploadsWhenTheGenerationMovesAndNotOther
     screen.z    = 0;
     screen.size = PixelSize{kW, kH};
     auto submit = [&](std::uint64_t generation) {
-        screen.content = GuestFrameContent{.pixels = std::span<const std::uint8_t>(picture),
-                                           .width  = kW,
-                                           .height = kH,
-                                           .format = GuestPixelFormat::Rgba8888,
-                                           .generation = generation};
+        screen.content = RasterContent{.pixels = std::span<const std::uint8_t>(picture),
+                                       .width  = kW,
+                                       .height = kH,
+                                       .format = RasterPixelFormat::Rgba8888,
+                                       .generation = generation};
         FrameDrawState frame;
         frame.layers = {screen};
         (void)r.captureViewport(frame);
@@ -317,25 +317,25 @@ TEST_F(GuestFrameRenderTest, TheRendererUploadsWhenTheGenerationMovesAndNotOther
 
     submit(1);
     const Renderer::RenderStats first = r.renderStats();
-    EXPECT_EQ(first.guestFrameUploads, 1u);
-    EXPECT_EQ(first.guestFrameSkips, 0u);
+    EXPECT_EQ(first.rasterUploads, 1u);
+    EXPECT_EQ(first.rasterSkips, 0u);
 
     submit(1);
     const Renderer::RenderStats held = r.renderStats();
-    EXPECT_EQ(held.guestFrameUploads, 1u);  // the same frame — nothing sent
-    EXPECT_EQ(held.guestFrameSkips, 1u);
+    EXPECT_EQ(held.rasterUploads, 1u);  // the same frame — nothing sent
+    EXPECT_EQ(held.rasterSkips, 1u);
 
     submit(2);
     const Renderer::RenderStats again = r.renderStats();
-    EXPECT_EQ(again.guestFrameUploads, 2u);  // the machine drew — it is sent
-    EXPECT_EQ(again.guestFrameSkips, 1u);
+    EXPECT_EQ(again.rasterUploads, 2u);  // the machine drew — it is sent
+    EXPECT_EQ(again.rasterSkips, 1u);
 
     // A generation that jumps — several frames finished between two submissions — is one upload, not
     // one per frame that went by.
     submit(9);
     const Renderer::RenderStats jumped = r.renderStats();
-    EXPECT_EQ(jumped.guestFrameUploads, 3u);
-    EXPECT_EQ(jumped.guestFrameSkips, 1u);
+    EXPECT_EQ(jumped.rasterUploads, 3u);
+    EXPECT_EQ(jumped.rasterSkips, 1u);
 }
 
 }  // namespace

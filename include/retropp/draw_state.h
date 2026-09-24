@@ -14,7 +14,7 @@
 
 #include "retropp/curve.h"      // CurveSegment — an optional curved region boundary
 #include "retropp/geometry.h"   // PixelSize
-#include "retropp/guest_frame.h" // GuestFrameContent — a hosted machine's picture as layer content
+#include "retropp/raster_content.h" // RasterContent — a raster of pixels as layer content
 #include "retropp/image.h"      // AtlasId (relocated here beside the atlas-ingestion surface)
 #include "retropp/object_key.h" // ObjectKey — the required developer-supplied reconciliation identity
 #include "retropp/output.h"     // EvaluationGrid (leaf header — the crisp-evaluation grid selector)
@@ -1344,8 +1344,8 @@ sampleSpriteCell(const Transform& inverse, float fragViewportX, float fragViewpo
 
 // A layer carries exactly one content alternative. The active alternative is the variant's
 // identity; LayerContentKind mirrors it for explicit, switch-friendly dispatch.
-enum class LayerContentKind : std::uint8_t { Tiles, Sprites, GuestFrame };
-using LayerContent = std::variant<TileContent, SpriteContent, GuestFrameContent>;
+enum class LayerContentKind : std::uint8_t { Tiles, Sprites, Raster };
+using LayerContent = std::variant<TileContent, SpriteContent, RasterContent>;
 [[nodiscard]] constexpr LayerContentKind contentKind(const LayerContent& c) noexcept {
     // One kind per alternative, in the variant's own order. An alternative added to LayerContent with no
     // kind beside it here is a compile error, rather than a layer reported — and so drawn — as whichever
@@ -1353,7 +1353,7 @@ using LayerContent = std::variant<TileContent, SpriteContent, GuestFrameContent>
     constexpr LayerContentKind kinds[]{
         LayerContentKind::Tiles,
         LayerContentKind::Sprites,
-        LayerContentKind::GuestFrame,
+        LayerContentKind::Raster,
     };
     static_assert(std::variant_size_v<LayerContent> == sizeof(kinds) / sizeof(kinds[0]),
                   "every LayerContent alternative declares its LayerContentKind");

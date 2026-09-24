@@ -75,7 +75,7 @@
 #include "retropp/draw_state.h"
 #include "retropp/engine_config.h"
 #include "retropp/geometry.h"
-#include "retropp/guest_frame.h"
+#include "retropp/raster_content.h"
 #include "retropp/input.h"
 #include "retropp/input_actions.h"
 #include "retropp/renderer.h"
@@ -730,8 +730,8 @@ int main(int argc, char** argv) {
         // Each machine's picture is one screen wide and the layer spans both, so the right-hand one is
         // placed by scrolling its content half a viewport to the left. Outside its own dimensions a
         // picture draws nothing, which keeps the two halves from overlapping.
-        const GuestFrameContent tickedPicture = ticked.video();
-        const GuestFrameContent freePicture   = freeRunning.video();
+        const RasterContent tickedPicture = ticked.video();
+        const RasterContent freePicture   = freeRunning.video();
 
         DrawLayer left{.key = "tick-advanced"};
         left.z       = 0;
@@ -747,7 +747,7 @@ int main(int argc, char** argv) {
         frame.layers.push_back(right);
 
         // The scope band, under the two screens, is this program's own raster: it paints the band on the
-        // CPU into its own RGBA buffer (drawScopes) and submits that buffer through GuestFrameContent, the
+        // CPU into its own RGBA buffer (drawScopes) and submits that buffer through RasterContent, the
         // content type a hosted machine's video() hands back — a layer shows any raster that arrives in
         // that form, whoever drew it. The buffer changes every frame, so its generation is bumped every
         // frame and the engine uploads it anew each time; a raster that held still would keep its
@@ -758,11 +758,11 @@ int main(int argc, char** argv) {
         band.z       = 2;
         band.size    = PixelSize{kViewW, kViewH};
         band.scroll  = LayerScroll{0, -kGuestH};
-        band.content = GuestFrameContent{.pixels     = scopePixels,
-                                         .width      = kViewW,
-                                         .height     = kScopeH,
-                                         .format     = GuestPixelFormat::Rgba8888,
-                                         .generation = scopeGeneration};
+        band.content = RasterContent{.pixels     = scopePixels,
+                                     .width      = kViewW,
+                                     .height     = kScopeH,
+                                     .format     = RasterPixelFormat::Rgba8888,
+                                     .generation = scopeGeneration};
         frame.layers.push_back(band);
 
         renderer.renderFrame(frame);

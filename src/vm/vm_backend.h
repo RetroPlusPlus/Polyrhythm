@@ -20,7 +20,7 @@
 #include <vector>
 
 #include "retropp/driver_binding.h"  // DriverImage / Mapper — the resident-driver image configuration
-#include "retropp/guest_frame.h"     // GuestPixelFormat — the layout a completed frame arrives in
+#include "retropp/raster_content.h"  // RasterPixelFormat — the layout a completed frame arrives in
 #include "retropp/guest_watch.h"     // AccessVerdict — what a watched access is answered with
 #include "retropp/memory_region.h"   // MemoryRegion — a declared place in the guest's address space
 #include "retropp/timing.h"          // CycleDraw — a draw of cycles and the fraction carried
@@ -387,7 +387,7 @@ public:
     // once by the generic host, in the same posture as AudioSampleSink: it fires on the thread that
     // steps the machine.
     using FrameSink = std::function<void(std::span<const std::uint8_t> pixels, int width, int height,
-                                         GuestPixelFormat format)>;
+                                         RasterPixelFormat format)>;
 
     // Install the sink. Idempotent; an empty sink detaches.
     virtual void setFrameSink(FrameSink sink) = 0;
