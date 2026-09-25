@@ -1,14 +1,18 @@
 // Internal SNES / 65816 VM backend — a VmBackend over Snaggletooth's Snes machine.
 //
 // This is the ONE place SNES machine idiom lives: the two-port controller word, the region read from a
-// cartridge's own header, the frame/save observers the machine reports through, and the sound chip's
-// 32'000 Hz frames on their way to a sink at the sink's rate. The generic Vm
-// (vm.cpp) drives it only through VmBackend, so it knows none of it. It names places: a place is a byte of
-// work RAM, the cartridge image or its save named by any bus address that reaches it, or a byte of one of
-// the four memories the bus cannot name, named through the space snes.h folds into the top byte
-// (snes_address.h decodes both); every region verb reads and writes wherever a place resolves. Calling
-// routines, escapes, watches, driver hosting and the audio unit as a machine of its own are not among
-// this core's verbs: each such verb throws, in the seam's posture, so no capability is faked.
+// cartridge's own header, the frame/save observers the machine reports through, the sound chip's
+// 32'000 Hz frames on their way to a sink at the sink's rate, the 65816 register file behind the
+// register ids snes.h fixes, and the image the core writes for the routines it places. The generic Vm
+// (vm.cpp) drives it only through VmBackend, so it knows none of it. It names places: a place is a byte
+// of work RAM, the cartridge image or its save named by any bus address that reaches it, or a byte of
+// one of the four memories the bus cannot name, named through the space snes.h folds into the top byte
+// (snes_address.h decodes both); every region verb reads and writes wherever a place resolves. It runs
+// routines: bytes placed into an image of its own (snes_image.h), each at the address its source named
+// or wherever the arena has room, called in a frame of the engine's own; and a routine the cartridge
+// already holds, called in the guest's own context on the guest's own stack. Escapes, watches, driver
+// hosting and the audio unit as a machine of its own are not among this core's verbs: each such verb
+// throws, in the seam's posture, so no capability is faked.
 //
 // INTERNAL — under src/vm/, never include/retropp/. It pulls Snaggletooth's public snes.h (the Snes
 // machine and the SnesState the tests observe); no snaggletooth:: type reaches include/retropp/.
@@ -27,6 +31,7 @@
 #include "snaggletooth/snes/snes.h"
 #include "src/vm/vm_backend.h"
 #include "src/vm/snes/resampler.h"
+#include "src/vm/snes/snes_image.h"
 
 namespace retropp::vm {
 
@@ -36,7 +41,13 @@ class SnesBackend final : public VmBackend,
 public:
     SnesBackend() = default;
 
+    // A hosted cartridge returns to power-on with its save kept; a routine machine is rebuilt on the
+    // image it wrote, every placed routine intact.
     void reset() override;
+    // On a routine machine: park the CPU on the image's idle loop, run `cycles`, and put the register
+    // file back, so the machine's own time passes between calls and nothing a call marshals moves. A
+    // machine hosting a game's cartridge throws — its image has no spot the engine owns, and running it
+    // would run the game.
     void advanceClock(std::uint64_t cycles) override;
     // The machine's own clock, from the region of the cartridge it hosts (NTSC before it hosts one), and
     // nothing else — asked from the game's thread while the machine runs, so it never touches the running
@@ -48,10 +59,22 @@ public:
                             .hertzDivisor   = static_cast<std::uint32_t>(c.hertzDenominator),
                             .cyclesPerFrame = static_cast<std::uint32_t>(c.masterCyclesPerFrame)};
     }
-    std::uint32_t placeRoutine(std::span<const std::uint8_t> bytes) override;
+    // Place a routine into the image this core writes — at `origin` when the source said one, else at
+    // the first gap from $00:8000 up that holds it — and answer the bus address of its first byte. The
+    // image is built at the first placement and grows to hold a routine in a later bank. Refuses an origin
+    // no image address is, one overlapping a placed routine, the idle loop or the header, and any
+    // placement on a machine hosting a game's cartridge.
+    std::uint32_t placeRoutine(std::span<const std::uint8_t> bytes,
+                               std::optional<std::uint32_t> origin) override;
     void loadRom(std::span<const std::uint8_t> rom) override;
     void bootHostedRom() override;
+    // 65816 source through Snaggletooth's assembler, which is absolute: a source that says its address
+    // with ORG is assembled there, and one that does not is assembled at the first gap of the arena that
+    // holds it, so its labels resolve for where it lands. The bytes are laid from the first range's start
+    // to the last range's end, `origin` is that start, and a label is its offset within the bytes. A
+    // source error throws std::runtime_error naming the line.
     [[nodiscard]] AssembledRoutine assemble(std::string_view source) const override;
+    // 1 for the five 8-bit registers, 2 for the six 16-bit ones, in snes::Reg's order; 0 past PC.
     [[nodiscard]] int registerWidthBytes(std::uint16_t registerId) const override;
     [[nodiscard]] bool regionIsAddressable(const MemoryRegion& region) const override;
     void readRegion(const MemoryRegion& region, std::uint32_t index,
@@ -59,6 +82,10 @@ public:
     void writeRegion(const MemoryRegion& region, std::uint32_t index,
                      std::span<const std::uint8_t> bytes) override;
 
+    // A call in a frame of the engine's own: native mode, 8-bit accumulator and index registers, direct
+    // page $0000, data bank $00, the stack at $1FFF, every other register zero, then the marshaled inputs
+    // over it. run() seats the frame, calls the entry on that stack with the idle loop as the landing,
+    // and ends when the routine's RTS reaches it; the register file it left is what readRegister answers.
     void beginCall(std::uint32_t entry) override;
     void writeRegister(std::uint16_t registerId, std::uint64_t value, int width) override;
     void writeMemory(std::uint32_t address, std::uint64_t value, int width) override;
@@ -83,6 +110,10 @@ public:
                                 std::uint32_t stackTop) override;
     std::uint64_t callResident(std::uint32_t entry, std::span<const ResidentRegister> presets,
                                std::uint64_t maxCpuCycles) override;
+    // A call into code the machine already holds, on the guest's own stack or the engine's scratch top,
+    // the file put back afterwards. A machine parked by a cycle budget is usually part-way through an
+    // instruction; that instruction is finished first, so the call lands at an instruction boundary. The
+    // entry's top bit (snes::rtl) picks the landing a JSL pushes over the one a JSR pushes.
     void callInContext(std::uint32_t entry, std::span<const ResidentRegister> presets,
                        CallStack stack, std::size_t maxInstructions,
                        const std::function<void()>& readOutputs) override;
@@ -122,6 +153,12 @@ private:
     // Hand the frames the DSP produced since the last drain to the sink at its rate, or drop them when
     // no sink listens — either way the machine's queue is empty when this returns.
     void drainAudio();
+    // Write the image that holds every placed routine and put it in the machine: patched in place when
+    // the image keeps its size, a fresh machine when it grew.
+    void rebuildRoutineImage();
+    // The machine at an instruction boundary: an instruction a cycle budget stopped part-way through, or
+    // an interrupt sequence in flight, is finished first.
+    void finishInstruction();
 
     // The memory a place is in, the offset of its first byte there, and that memory's size. Nothing when
     // no cartridge is hosted, or when the address names no memory: a register, open bus, a space this
@@ -146,11 +183,15 @@ private:
     void frame(const snaggletooth::VideoFrame& frame) override;
     void changed(std::span<const std::uint8_t> save) override;
 
-    std::optional<snaggletooth::Snes> snes_;             // the live machine; empty until a ROM is hosted
-    std::vector<std::uint8_t>         rom_;              // the hosted image, kept for save reads and rebuilds
+    std::optional<snaggletooth::Snes> snes_;             // the live machine; empty until an image is held
+    std::vector<std::uint8_t>         rom_;              // the held image, kept for save reads and rebuilds
     snaggletooth::Region              region_ = snaggletooth::Region::Ntsc;  // the cartridge's, from its header
     snaggletooth::CartridgeMap        map_ = snaggletooth::CartridgeMap::LoRom;  // the map the machine reads the image by
-    bool                              romHosted_    = false;  // loadRom has run
+    bool                              romHosted_    = false;  // loadRom has run: the image is the game's
+    bool                              imageBuilt_   = false;  // the image is the engine's own (snes_image.h)
+    std::vector<snes_image::Placement> placed_;             // every routine in the engine's image
+    snaggletooth::Cpu65816State       pending_{};     // the frame beginCall stages for run()
+    std::uint32_t                     pendingEntry_ = 0;  // the entry run() calls
     bool                              videoEnabled_ = false;  // remembered so a rebuild re-attaches the frame observer
     bool                              saveChanged_  = false;  // the guest changed the save since it was last taken
     FrameSink                         frameSink_;     // where a finished frame is forwarded

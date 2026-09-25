@@ -16,6 +16,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -209,6 +210,15 @@ void requireFlatName(std::string_view name, const char* what) {
         throw std::invalid_argument(std::string(what) + " \"" + std::string(name) +
                                     "\" contains a path separator — it is one name, not a path");
     }
+}
+
+// An ISA's name for a refusal that has to say which two disagreed.
+constexpr std::string_view isaName(Isa isa) noexcept {
+    switch (isa) {
+        case Isa::Sm83:     return "SM83";
+        case Isa::Wdc65816: return "65816";
+    }
+    return "an ISA this build does not name";
 }
 
 struct Vm::Impl {
@@ -2058,6 +2068,17 @@ std::uint64_t Vm::readSlot(std::size_t index) {
 
 namespace {
 
+// A routine's bytes only run on a machine whose CPU speaks the ISA they were written for — the binding
+// says which, and the machine's platform fixes its own, so the two are compared at registration, as a
+// driver's are when it is hosted.
+void validateIsa(const RoutineBinding& binding, VMPlatform platform) {
+    if (binding.isa != isaFor(platform)) {
+        throw std::invalid_argument("RoutineBinding.isa names " + std::string(isaName(binding.isa)) +
+                                    ", and this machine's CPU runs " +
+                                    std::string(isaName(isaFor(platform))));
+    }
+}
+
 // Validate a binding location against the width the signature gives that slot. Registers must match
 // the backend's register width; an unknown register id is rejected. Memory accepts any width.
 void validateLocation(const vm::VmBackend& backend, const Location& loc, int valueWidth,
@@ -2087,7 +2108,8 @@ void validateLocation(const vm::VmBackend& backend, const Location& loc, int val
 std::size_t Vm::registerResolved(std::span<const std::uint8_t> routineBytes,
                                  const RoutineBinding& binding,
                                  std::span<const int> inputWidths,
-                                 int outputWidth, int instances) {
+                                 int outputWidth, int instances,
+                                 std::optional<std::uint32_t> origin) {
     // `instances > 1` is a declared seam (multi-instance routing for anti-channel-stealing audio) —
     // not built yet, so it throws. A HardwareSpeed routine is NOT a seam: it registers like any other
     // and is driven via startDriver / stepDriver instead of being called for a value.
@@ -2095,6 +2117,7 @@ std::size_t Vm::registerResolved(std::span<const std::uint8_t> routineBytes,
         throw std::logic_error(
             "multi-instance routing (anti-channel-stealing audio) is not built yet");
     }
+    validateIsa(binding, impl_->platform);
 
     // Arity + width/location validation.
     if (binding.inputs.size() != inputWidths.size()) {
@@ -2123,9 +2146,10 @@ std::size_t Vm::registerResolved(std::span<const std::uint8_t> routineBytes,
         throw std::invalid_argument("entryOffset is past the end of the routine bytes");
     }
 
-    // Inject the bytes into the backend's code space; entry is the placement base + the binding's
-    // offset within those bytes.
-    const std::uint32_t base = impl_->backend->placeRoutine(routineBytes);
+    // Inject the bytes into the backend's code space — at the address they were assembled for when the
+    // assembler said one, wherever the arena has room otherwise; entry is the placement base + the
+    // binding's offset within those bytes.
+    const std::uint32_t base = impl_->backend->placeRoutine(routineBytes, origin);
 
     ResolvedRoutine resolved;
     resolved.entry = base + binding.entryOffset;
@@ -2149,6 +2173,7 @@ std::size_t Vm::bindRoutineResolved(std::uint32_t at, const RoutineBinding& bind
             "bindRoutine: a routine already in place names no pacing and no entry offset — the "
             "address it is bound at is the entry, and a call is not paced");
     }
+    validateIsa(binding, impl_->platform);
     if (binding.inputs.size() != inputWidths.size()) {
         throw std::invalid_argument(
             "RoutineBinding.inputs has " + std::to_string(binding.inputs.size()) +
@@ -2204,7 +2229,13 @@ std::size_t Vm::registerRoutineResolvingPolicy(std::string_view logicalPath,
     if (resolveAssetPolicy(policy, AssetPolicy::Embed) == AssetPolicy::Embed) {
         if (const std::span<const std::uint8_t> baked = detail::findEmbeddedRoutine(logicalPath);
             !baked.empty()) {
-            return registerResolved(baked, binding, inputWidths, outputWidth, instances);
+            // A routine an absolute assembler baked carries the address it was assembled for; one the
+            // SM83 assembler baked carries none and lands wherever the arena has room.
+            const std::optional<detail::EmbeddedPlacement> placement =
+                detail::findEmbeddedRoutinePlacement(logicalPath);
+            return registerResolved(baked, binding, inputWidths, outputWidth, instances,
+                                    placement ? std::optional<std::uint32_t>{placement->origin}
+                                              : std::nullopt);
         }
         detail::warnEmbedNotBaked("routine", logicalPath);
     }
@@ -2221,7 +2252,7 @@ std::size_t Vm::registerRoutineResolvingPolicy(std::string_view logicalPath,
     ss << in.rdbuf();
     const vm::AssembledRoutine assembled = impl_->backend->assemble(ss.str());
     return registerResolved(std::span<const std::uint8_t>(assembled.bytes), binding, inputWidths,
-                            outputWidth, instances);
+                            outputWidth, instances, assembled.origin);
 }
 
 std::uint64_t Vm::invoke(std::size_t handle, std::span<const CallValue> inputs) {

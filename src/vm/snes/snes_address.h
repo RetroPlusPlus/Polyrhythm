@@ -23,20 +23,24 @@
 
 namespace retropp::vm::snes_address {
 
-// An address as the backend reads it: the space its top byte names and the byte's 24-bit address within
-// that space — a bus address for Space::Bus, an offset into the memory for every other space.
+// An address as the backend reads it: the space its top byte names, the byte's 24-bit address within
+// that space — a bus address for Space::Bus, an offset into the memory for every other space — and
+// whether the address names a routine an RTL leaves (snes::rtl), which rides in the top bit.
 struct Decoded {
     snes::Space   space = snes::Space::Bus;
     std::uint32_t at24  = 0;
+    bool          rtl   = false;
 };
 
-// The space and offset `address` names, or nothing when its top byte names no space on this console.
+// The space and offset `address` names, or nothing when its top byte names no space on this console. A
+// routine an RTL leaves is code, and code is on the bus: the bit is refused with any other space.
 [[nodiscard]] constexpr std::optional<Decoded> decode(std::uint32_t address) noexcept {
-    const std::uint32_t tag = address >> 24;
-    if (tag > static_cast<std::uint32_t>(snes::Space::AudioRam)) {
+    const bool          rtl = (address & 0x80000000u) != 0;
+    const std::uint32_t tag = (address >> 24) & 0x7Fu;
+    if (tag > static_cast<std::uint32_t>(snes::Space::AudioRam) || (rtl && tag != 0)) {
         return std::nullopt;
     }
-    return Decoded{.space = static_cast<snes::Space>(tag), .at24 = address & 0x00FFFFFFu};
+    return Decoded{.space = static_cast<snes::Space>(tag), .at24 = address & 0x00FFFFFFu, .rtl = rtl};
 }
 
 // One bus address that reaches `place` under `map`, or nothing when no address does: a register or open

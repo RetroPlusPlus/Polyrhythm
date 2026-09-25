@@ -2,14 +2,17 @@
 
 `Vm::SNES` is a Super Nintendo: the Snaggletooth core behind one backend (`src/vm/snes/`), constructed
 for `VMPlatform::Snes`, running `Isa::Wdc65816`. It hosts and runs a whole cartridge — booted, paced on
-either clock, drawn, heard, played on both controller ports and its battery save kept — through the same
-verbs as every console. This page is what the SNES is behind the surface: its clock, its vocabulary in
-`snes.h`, its picture and sound, its save, what its core refuses and how, and its examples. The verbs
-are on [co-execution.md](co-execution.md).
+either clock, drawn, heard, played on both controller ports and its battery save kept — and it runs
+routines: 65816 source placed into an image of its own and called as typed C++ functions, and a routine a
+cartridge already holds, bound where it sits — through the same verbs as every console. This page is
+what the SNES is behind the surface: its clock, its vocabulary in `snes.h`, what its hardware imposes,
+its assembler's dialect, its picture and sound, its save, what its core refuses and how, and its
+examples. The verbs are on [vm-and-routines.md](vm-and-routines.md) and
+[co-execution.md](co-execution.md).
 
 ```cpp
 #include "retropp/vm.h"    // Vm::SNES, VMPlatform::Snes
-#include "retropp/snes.h"  // snes::Button … snes::held, snes::Ports; snes::WorkRam … snes::AudioRam, snes::videoRam …
+#include "retropp/snes.h"  // snes::A … snes::PC, snes::rtl; snes::WorkRam … snes::AudioRam, snes::videoRam …; snes::Button … snes::Ports
 ```
 
 ## Contents
@@ -18,9 +21,13 @@ are on [co-execution.md](co-execution.md).
 - [What the core answers, and what it refuses](#what-the-core-answers-and-what-it-refuses)
 - [Its clock](#its-clock)
 - [`snes.h` — the vocabulary](#snesh--the-vocabulary)
+  - [Registers](#registers)
   - [The machine's memories](#the-machines-memories)
   - [Memories the bus cannot name](#memories-the-bus-cannot-name)
+  - [A routine's return: `snes::rtl`](#a-routines-return-snesrtl)
   - [The pad, both ports](#the-pad-both-ports)
+- [What the hardware imposes](#what-the-hardware-imposes)
+- [The assembler's dialect](#the-assemblers-dialect)
 - [Its picture](#its-picture)
 - [Its sound](#its-sound)
 - [Its save: `.srm`](#its-save-srm)
@@ -42,6 +49,12 @@ by what it hosts; an image whose header does not say runs at 60 Hz, and so does 
 anything. `run()` is that same power-on with the save carried across, as a cartridge's battery is
 through a power cycle, and `reset()` on a hosted cartridge is the same again.
 
+A machine that hosts no cartridge is a routine machine: the first routine placed on it builds an image
+of the core's own — a LoROM cartridge with a header the console accepts and an idle loop every vector
+points at — and `reset()` rebuilds that image with every placed routine intact. The two are exclusive:
+a machine holding the core's own image refuses `hostRom`, and one hosting a game's cartridge refuses
+`uploadRoutine` / `registerRoutine` (`std::logic_error` either way).
+
 ## What the core answers, and what it refuses
 
 | Verb | On this core |
@@ -52,11 +65,12 @@ through a power cycle, and `reset()` on a hosted cartridge is the same again.
 | `buttons` | answers, both ports — [The pad, both ports](#the-pad-both-ports) |
 | `VmConfig{.key}` · `batterySave` | answers — [Its save](#its-save-srm) |
 | `registerRegions` · `read` / `write`, declared and built on the spot | answers — [`snes.h` — the vocabulary](#snesh--the-vocabulary) |
+| `uploadRoutine` · `registerRoutine` · `assemble` | answers, on a machine hosting no cartridge — [Registers](#registers), [The assembler's dialect](#the-assemblers-dialect) |
+| `bindRoutine` | answers — a routine the cartridge holds, called in the guest's own context; [What the hardware imposes](#what-the-hardware-imposes) says where the call lands |
+| `advanceClock` | answers, on a machine holding the core's own image — the machine idles on that image's own loop; on a machine hosting a game's cartridge, **refuses, `std::logic_error`** — the cartridge advances by running |
 | `registerEscapes` · `registerWatches` | **refuses at the arming, `std::logic_error`** — the core answers no escapes and no watches. A batch with an entry declared armed throws as it registers; an entry declared switched off is recorded, and throws the same when it is switched on |
-| `bindRoutine` | declares against a cartridge address; **the call refuses, `std::logic_error`** — the core makes no routine calls. A binding naming a register refuses at the declaration, `std::invalid_argument` — this core has none to bind |
-| `uploadRoutine` · `registerRoutine` | **refuses, `std::logic_error`** — the core keeps no routine arena. A binding naming a register refuses first, `std::invalid_argument` |
-| `assemble` · `advanceClock` · `hostDriver` | **refuses, `std::logic_error`** — the core assembles no routine source, advances only by running its cartridge, and hosts no driver |
-| `reset` before any cartridge is hosted | `std::logic_error` |
+| `hostDriver` | **refuses, `std::logic_error`** — the core hosts no driver |
+| `reset` before any cartridge is hosted or routine placed | `std::logic_error` |
 
 Each refusal is an exception naming what the core does instead, thrown where the program asked. The
 escape and watch tables exist on the machine — `escapes()` and `watches()` answer — and hold only
@@ -90,6 +104,31 @@ const EngineConfig config{
 A machine free-running on a thread of its own holds the cartridge's cadence whatever the loop does.
 
 ## `snes.h` — the vocabulary
+
+`vm.h` is system-agnostic; `snes.h` is the console's half of the surface — the register file, the
+machine's memories, the memories the bus cannot name, a routine's return and the pad — as the typed
+constants a binding, a declaration or an `ActionMap` names.
+
+### Registers
+
+```cpp
+enum class Reg : std::uint16_t { A, B, P, DB, PB, C, X, Y, D, S, PC };
+```
+
+The 65816 register file, as `Location` constants: `snes::A snes::B snes::P snes::DB snes::PB` are
+8-bit, `snes::C snes::X snes::Y snes::D snes::S snes::PC` 16-bit. `snes::A` is the accumulator's low
+byte and `snes::B` its high byte, the chip's names for the two halves; `snes::C` is the whole 16-bit
+accumulator. `snes::X` and `snes::Y` are 16 bits wide whatever the index-width flag says — in 8-bit index
+mode the chip uses the low byte — so a binding that carries a byte in one carries it as a
+`std::uint16_t`. The enumerator order is the backend's register id and fixes each register's width, so a
+binding that puts a `std::uint8_t` in `snes::X` is refused at registration (`std::invalid_argument`),
+as is one naming a register this machine does not have. A binding on this console says its ISA:
+
+```cpp
+auto mix = vm.registerRoutine<std::uint8_t(std::uint8_t, std::uint16_t)>(
+    "routines/mix.asm", {.inputs = {snes::A, snes::X}, .output = snes::A, .isa = Isa::Wdc65816});
+std::uint8_t half = mix(3, 5);   // 4
+```
 
 ### The machine's memories
 
@@ -148,6 +187,25 @@ A watch on the game's own reads and writes (`AccessSource::GuestAndGame`) is ans
 the CPU sees, which these memories are not in, so it cannot name one — the batch refuses it,
 `std::invalid_argument`.
 
+### A routine's return: `snes::rtl`
+
+```cpp
+constexpr std::uint32_t rtl(std::uint32_t entry) noexcept;
+```
+
+The 65816 has two calls and two returns: a routine a `JSR` enters ends in `RTS`, and one a `JSL` enters
+ends in `RTL`, three bytes on the stack against two. A bare address names a routine an `RTS` leaves;
+`snes::rtl(entry)` names one an `RTL` leaves, and the call into it pushes the landing a `JSL` would:
+
+```cpp
+auto decode = vm.bindRoutine<std::uint16_t(std::uint16_t)>(snes::rtl(0x018000),
+                                                          {.inputs = {snes::C}, .output = snes::C, .isa = Isa::Wdc65816});
+```
+
+The bit rides the top of the 32-bit address, above the 24-bit bus; it names code, so with a memory the
+bus cannot name it resolves nothing. A routine the core places from source returns with `RTS`, always —
+the core places it and calls it, so the convention is the core's.
+
 ### The pad, both ports
 
 ```cpp
@@ -192,6 +250,51 @@ that strobes `$4016` and clocks the serial port past the sixteenth bit reads 1 f
 socket with nothing in it. `snes::Ports{}` is a console with nothing plugged in. Which sockets are filled
 is the game's to say, and it can change while the machine runs, at the next step boundary like any
 `buttons` call.
+
+## What the hardware imposes
+
+Facts a program meets on this console that the capability pages state in the console-agnostic form;
+here is what they are on this hardware.
+
+- **A placed routine begins in a frame of the core's own:** native mode, 8-bit accumulator and index
+  registers with interrupts off (`P = $34`), direct page `$0000`, data bank `$00`, the stack at `$1FFF`,
+  every other register zero, then the binding's inputs over it. It returns with `RTS` to the image's idle
+  loop, and the register file it left is what a register output reads. A routine that wants 16-bit
+  registers sets them itself (`REP #$30`) and says so to the assembler (`A16` / `X16`).
+- **A routine lands where its source says, or where it fits.** A source that says `ORG` is placed at
+  that address, and the core's image grows to a second bank for one that asks for it; a source with no
+  `ORG` is assembled at the first gap of the arena that holds it — from `$00:8000` up, past every placed
+  routine — so its labels resolve for the address it lands at. Two routines never share a byte: an `ORG`
+  over a placed routine, the idle loop or the header is refused, `std::invalid_argument`, as is one at an
+  address no byte of the image is at (work RAM, a register page). Raw bytes handed to `uploadRoutine`
+  take the next gap the same way, so they are position-independent or were assembled for it.
+- **A call into a running cartridge lands at the next instruction boundary.** A cycle budget parks the
+  machine wherever the cycle fell — inside an instruction, more often than not — and the routine runs
+  between two of the guest's instructions: the one in flight finishes first, then the landing is pushed.
+  The register file that goes back afterwards is the file at that boundary, with the interrupt lines as
+  they then stand.
+- **The guest's stack is page one in emulation mode.** A call on the core's own scratch stack pushes
+  its landing at `$1FFF` for a guest in native mode and at `$01FF` for one in emulation mode, where the
+  chip keeps the stack in page one.
+- **A call spends the machine's own time.** The cycles a routine runs are the machine's — the beam moves,
+  the sound chip is paced — and `advanceClock(cycles)` on a routine machine idles it for `cycles` more
+  from where its clock stands, the register file put back afterwards.
+- **A register is not a place.** Reading one on this console can change it — above, under
+  [The machine's memories](#the-machines-memories).
+
+## The assembler's dialect
+
+`registerRoutine` and `assemble` run 65816 source through Snaggletooth's assembler
+(`third_party/snaggletooth/docs/65816-assembly.md`), which is absolute: `ORG $00:8400` says where the
+bytes go, and a source with none is placed where it fits, as above. The dialect carries the register
+widths along the file — `REP` and `SEP` move them, `XCE` after `CLC` or `SEC` changes the mode, and
+`A8` / `A16` / `X8` / `X16` / `EMULATION` / `NATIVE` say what the instructions cannot — and an
+immediate under a width nothing has said is an error, never a guess, so a routine says `A8` before its
+first `LDA #`. `!` marks an absolute operand (`JMP !done`, `LDA !$2140`) and `$` a direct-page one.
+A bad mnemonic, a malformed operand or a width nothing said throws at registration, `std::runtime_error`
+naming the line. The bytes assembled for a call's `Isa::Wdc65816` binding are baked into the binary at
+build time under the `Embed` policy, exactly as an SM83 routine's are; the two registration forms and
+the policy are on [vm-and-routines.md](vm-and-routines.md#authoring-in-assembly-register-from-a-asm-file).
 
 ## Its picture
 
@@ -260,15 +363,17 @@ cartridge (`VM/<key>/<name>.srm`); the mechanism is on
 | | |
 |---|---|
 | `examples/snes/player` | windowed: one cartridge on two machines side by side — one on the tick, one free-running — each in a slot the size of the console's largest picture, so a frame of any size lands in place; the same two pads driving both, each machine's sound in a queue of its own with a key choosing which is heard, a scope of what the device took, the second port plugged and unplugged at a key, and a key cycling how an interlaced picture is shown: each field as it comes, woven straight, woven blended. Asks for a ROM through the native file picker; `--verify` asserts each clock's cadence, the sound reaching a sink, and the picture taking each size the demo cartridge draws, headless |
-| `examples/snes/coexecution` | windowed: the demo cartridge running on its own thread, its picture in a slot the size of the console's largest, beside a panel drawn from its own memory every tick through four declared places — the 256 palette words as swatches (`snes::Palette`), the first sixteen tiles of video RAM decoded from 4 bpp, the sprite's X and Y in work RAM, and the step byte in the image. Keys write each of them while it runs: the sprite's palette word, its X, and the step patched in the image; SPACE parks and resumes. `--verify` round-trips a palette word and the sprite's X and checks a patched step moves the sprite that far a frame, headless |
-| `examples/snes/cartridge/cartridge.h` | the demo cartridge every SNES example hosts — authored as 65816 and SPC700 source and assembled as the program starts: one 32×32 sprite of one-pixel stripes the d-pad moves by a step it reads from a byte of its own image each frame, A and B recolor it, Start writes the battery save, Y switches the screen mode between 1 and 5 so the frame is drawn in half-pixels, X switches the chip to interlace so it hands over fields, and a four-note round on the sound chip |
+| `examples/snes/coexecution` | windowed: the demo cartridge running on its own thread, its picture in a slot the size of the console's largest, beside a panel drawn from its own memory every tick through four declared places — the 256 palette words as swatches (`snes::Palette`), the first sixteen tiles of video RAM decoded from 4 bpp, the sprite's X and Y in work RAM, and the step byte in the image. Keys write each of them while it runs: the sprite's palette word, its X, and the step patched in the image; SPACE parks and resumes. A second machine holds no cartridge and runs `mix`, the average of two bytes, from `routines/mix.asm` placed where it fits; the cartridge carries the same routine at `$00:8400`, bound where it sits — a key calls either for a value and writes it to the sprite's color, the cartridge's own while it is parked. `--verify` round-trips a palette word and the sprite's X, checks a patched step moves the sprite that far a frame, and calls both routines, headless |
+| `examples/snes/cartridge/cartridge.h` | the demo cartridge every SNES example hosts — authored as 65816 and SPC700 source and assembled as the program starts: one 32×32 sprite of one-pixel stripes the d-pad moves by a step it reads from a byte of its own image each frame, A and B recolor it, Start writes the battery save, Y switches the screen mode between 1 and 5 so the frame is drawn in half-pixels, X switches the chip to interlace so it hands over fields, a four-note round on the sound chip, and `mix` at `$00:8400`, a routine of its own a program binds and calls |
 
 ## Where the files are
 
 | What | Where |
 |---|---|
-| The vocabulary — the machine's memories, the space helpers, the pad, both ports | `include/retropp/snes.h` |
-| The backend — the region, places resolved to their byte, the two-port word, the frame and save observers, the refusals | `src/vm/snes/snes_backend.cpp`, `snes_backend.h` |
-| An address decoded to its space, and a byte's bus address | `src/vm/snes/snes_address.h` |
+| The vocabulary — the registers, the machine's memories, the space helpers, `snes::rtl`, the pad, both ports | `include/retropp/snes.h` |
+| The backend — the region, places resolved to their byte, the routine frame and the calls, the two-port word, the frame and save observers, the refusals | `src/vm/snes/snes_backend.cpp`, `snes_backend.h` |
+| An address decoded to its space and its return kind, and a byte's bus address | `src/vm/snes/snes_address.h` |
+| The image a routine machine writes — its header, its idle loop, where a routine fits | `src/vm/snes/snes_image.cpp`, `snes_image.h` |
+| The assembler, and the build step that bakes a routine's source | `third_party/snaggletooth/tools/cpu65816/`, `cmake/bake_snaggletooth_routine.cmake` |
 | The sound chip's rate to the sink's | `src/vm/snes/resampler.h` |
 | The core | `third_party/snaggletooth` |

@@ -90,7 +90,8 @@ hi:     DB $03,$04,$05,$07
 // The program. Reset (in forced blank) sets the screen mode, uploads the sprite tiles and their color,
 // hides every sprite, turns the object screen on, uploads the sound driver to the audio unit and starts
 // it, and enables the vertical-blank NMI + the auto-joypad read; the NMI reads the pad, drives sprite 0
-// and applies the two switches.
+// and applies the two switches. A routine of the cartridge's own at $00:8400, `mix`, averages A and X —
+// the one a program binds where it sits and calls.
 inline constexpr std::string_view kDemoCartridgeSource = R"asm(
         ORG $00:8000
         EMULATION
@@ -326,6 +327,16 @@ noY:    LDA $12
 
         ORG $00:8300
 step:   DB $01                  ; how far a held direction moves the sprite each frame, read from the image
+
+        ORG $00:8400
+        A8
+        X8
+mix:    STA $00                 ; the average of A and X, in A: the carry the add leaves rotates back
+        TXA                     ; in, so the halving is exact for any two bytes
+        CLC
+        ADC $00
+        ROR A
+        RTS
 )asm";
 
 // The assembled cartridge for `region`, over a one-bank LoROM image whose header declares an 8 KB

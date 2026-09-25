@@ -57,8 +57,8 @@ Active development. The core is in place and exercised end to end by a real cons
   game's own resident sound driver as a long-lived addressable machine driven by the player's own
   verbs.
 - **VM host** — a system-agnostic VM that runs surgically-extracted original-hardware routines
-  (authored as `.asm`, assembled in-process) as ordinary typed C++ functions on the Game Boy
-  family. Two cores back it — SameBoy for the Game Boy / Game Boy Color and Snaggletooth for the
+  (authored as `.asm`, assembled in-process) as ordinary typed C++ functions, on the Game Boy family
+  and the SNES. Two cores back it — SameBoy for the Game Boy / Game Boy Color and Snaggletooth for the
   SNES — each behind the same seam, and a game's binary carries only the cores it names.
 - **Co-execution** — a game hosts a whole cartridge and **runs it**: the image boots as the
   hardware would boot it and runs continuously on its own thread, at the platform's own speed or
@@ -75,9 +75,9 @@ Active development. The core is in place and exercised end to end by a real cons
   guest's own context and to any depth, so a native replacement can build its answer out of the
   cartridge's own routines — or a parked machine's own decoders can be run to reach content the
   game never played its way to. The image itself is never modified. A hosted SNES cartridge boots,
-  runs on either clock, draws, sounds, takes both controller ports, keeps its battery save and
-  names the places inside it through the same verbs; the escape, watch and call verbs are the Game
-  Boy family's.
+  runs on either clock, draws, sounds, takes both controller ports, keeps its battery save, names the
+  places inside it and calls the routines it holds through the same verbs; the escape and watch verbs
+  are the Game Boy family's.
 - **A hosted machine's video** — ask a machine for video and the frames it finishes become a
   layer's content, composited by z among native tile and sprite layers like anything else on
   screen: a game's own art over a running cartridge's picture, a transform or a screen-space
@@ -149,8 +149,9 @@ links the `retropp::testkit` target.
   `--recurse-submodules`.
 - **[Snaggletooth](https://github.com/etroimcasso/Snaggletooth)** — vendored as a submodule at
   `third_party/snaggletooth/`, pinned by commit. A clean-room SNES implementation; its machine
-  compiles in to back the SNES core, and its two assemblers are linked only by the tests and the
-  SNES examples, which assemble their cartridges in process. MIT-licensed; pulled with
+  compiles in to back the SNES core, its 65816 assembler assembles a SNES routine's source — at build
+  time into the binary, or in process — and its SPC700 assembler is linked by the tests and the SNES
+  examples, which assemble their cartridges' sound in process. MIT-licensed; pulled with
   `--recurse-submodules`.
 - **[lodepng](https://github.com/lvandeve/lodepng)** — vendored in-tree at
   `third_party/lodepng/` (pinned, zlib/MIT), compiled as a small static lib and linked

@@ -122,9 +122,16 @@ public:
     [[nodiscard]] virtual std::optional<MachineClock> clock() const { return std::nullopt; }
 
     // Inject a routine's extracted bytes into the code space and return the absolute entry address of
-    // its first byte. Throws (std::runtime_error) if the backend's code arena cannot hold it, or
-    // (std::logic_error) if this machine hosts a game's own cartridge — that image has no arena.
-    virtual std::uint32_t placeRoutine(std::span<const std::uint8_t> bytes) = 0;
+    // its first byte. `origin` is the address the bytes were assembled for, when the core's assembler
+    // is absolute: such bytes are correct there and nowhere else, so they land there and the core's
+    // image grows to hold them. With no origin they land wherever the arena has room.
+    //
+    // Throws (std::runtime_error) if the backend's code arena cannot hold it; (std::invalid_argument)
+    // for an origin the core's image cannot hold, one overlapping bytes already placed, or any origin at
+    // all on a core whose routines land where its arena has room; (std::logic_error) if this machine
+    // hosts a game's own cartridge — that image has no arena.
+    virtual std::uint32_t placeRoutine(std::span<const std::uint8_t> bytes,
+                                       std::optional<std::uint32_t> origin) = 0;
 
     // Load a whole cartridge image the game supplies and reset the machine, so the image's bytes are
     // addressable. The backend parses the image's own header; the engine never reads a ROM byte and

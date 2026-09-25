@@ -2,15 +2,17 @@
 
 // The SNES's vocabulary — the platform-specific half of the VM host surface.
 //
-// vm.h is system-agnostic; this header supplies what a declaration or an ActionMap names on this
-// console: the pad and its two ports, the machine's memories as MemoryRegion constants, and the helpers
-// that name a memory the bus cannot reach. `retropp/gb.h` is the Game Boy family's.
+// vm.h is system-agnostic; this header supplies what a binding, a declaration or an ActionMap names on
+// this console: the pad and its two ports, the 65816 register file as Location constants, the machine's
+// memories as MemoryRegion constants, and the helpers that name a memory the bus cannot reach.
+// `retropp/gb.h` is the Game Boy family's.
 
 #include <cstdint>
 #include <optional>
 
 #include "retropp/guest_buttons.h"  // GuestButtons — the opaque word vm.buttons() takes
 #include "retropp/input.h"          // ActionId + InputState — the Button vocabulary is an Actions enum
+#include "retropp/location.h"       // Location — a register a binding names
 #include "retropp/memory_region.h"  // MemoryRegion — the machine's memories are constants of it
 
 namespace retropp::snes {
@@ -110,6 +112,41 @@ struct Ports {
         .r      = down(Button::R),
     };
 }
+
+// ── Registers ───────────────────────────────────────────────────────────────────────────────────
+
+// The 65816 register file, as Location constants a binding names. The enumerator order IS the backend's
+// register id and fixes each register's width: the five 8-bit registers first, then the six 16-bit ones.
+enum class Reg : std::uint16_t { A, B, P, DB, PB, C, X, Y, D, S, PC };
+
+// The readable spelling at a binding site:
+//
+//   RoutineBinding{.inputs = {snes::A, snes::X}, .output = snes::A}
+//
+// A and B are the accumulator's low and high bytes, and C is the whole 16-bit accumulator. X and Y are 16
+// bits wide whatever the index-width flag says; in 8-bit index mode the chip uses the low byte, so a
+// binding that carries a byte in one carries it as a std::uint16_t.
+inline constexpr Location A  = Location::reg(static_cast<std::uint16_t>(Reg::A));   // accumulator, low byte
+inline constexpr Location B  = Location::reg(static_cast<std::uint16_t>(Reg::B));   // accumulator, high byte
+inline constexpr Location P  = Location::reg(static_cast<std::uint16_t>(Reg::P));   // the status byte
+inline constexpr Location DB = Location::reg(static_cast<std::uint16_t>(Reg::DB));  // the data bank
+inline constexpr Location PB = Location::reg(static_cast<std::uint16_t>(Reg::PB));  // the program bank
+inline constexpr Location C  = Location::reg(static_cast<std::uint16_t>(Reg::C));   // the whole accumulator
+inline constexpr Location X  = Location::reg(static_cast<std::uint16_t>(Reg::X));   // index register X
+inline constexpr Location Y  = Location::reg(static_cast<std::uint16_t>(Reg::Y));   // index register Y
+inline constexpr Location D  = Location::reg(static_cast<std::uint16_t>(Reg::D));   // the direct page
+inline constexpr Location S  = Location::reg(static_cast<std::uint16_t>(Reg::S));   // the stack pointer
+inline constexpr Location PC = Location::reg(static_cast<std::uint16_t>(Reg::PC));  // the program counter
+
+// ── A routine's return ──────────────────────────────────────────────────────────────────────────
+
+// A routine a JSL enters and an RTL leaves. Wraps the entry address a bindRoutine, an escape's `.at` or
+// an Instruction::call names; a bare address is a routine a JSR enters and an RTS leaves. The engine
+// pushes the landing a JSL would and, for a replaced routine, stands an RTL at the entry.
+//
+//   auto decode = machine.bindRoutine<std::uint16_t(std::uint16_t)>(snes::rtl(0x018000),
+//                                                                  {.inputs = {snes::C}, .output = snes::C});
+[[nodiscard]] constexpr std::uint32_t rtl(std::uint32_t entry) noexcept { return entry | 0x80000000u; }
 
 // ── The machine's memories ──────────────────────────────────────────────────────────────────────
 

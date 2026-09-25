@@ -29,9 +29,9 @@ its own page: [gameboy.md](gameboy.md), [snes.md](snes.md).
 bytes exactly as they shipped, in memory this process owns, with the behaviour living in your code.
 
 > **The co-execution verbs on this page run on `Vm::GB` and `Vm::GBC`.** A `Vm::SNES` hosts and runs a
-> whole cartridge — `hostRom` / `run` / `speed` / `stop` / `video` / `buttons` / `enableAudio` — and names the places
-> inside it — `registerRegions` / `read` / `write` — but the escape, watch and routine-calling verbs below refuse on
-> it ([snes.md](snes.md#what-the-core-answers-and-what-it-refuses)). Constructing a `Vm` for a
+> whole cartridge — `hostRom` / `run` / `speed` / `stop` / `video` / `buttons` / `enableAudio` — names the places
+> inside it — `registerRegions` / `read` / `write` — and calls the routines it holds — `bindRoutine` — but the escape
+> and watch verbs below refuse on it ([snes.md](snes.md#what-the-core-answers-and-what-it-refuses)). Constructing a `Vm` for a
 > `VMPlatform` with no backend built throws. The verbs, declarations and calling conventions are the same
 > on every console; a console names its registers and memory areas through its own `<console>::` header.
 
@@ -825,7 +825,7 @@ Eight examples: four of one act each, two that put a console's surface on a sing
 | `examples/guest_escape` | escapes at a place in the guest's loop to count what it is doing from C++, then declares its routine replaced and answers it natively, in the routine's own registers |
 | `examples/guest_nesting` | a replacement that answers the cartridge's damage rule by calling the cartridge's **own** generator, nested inside the escape; then, parked, calls its own decompressor on a table the game never reached |
 | `examples/coexecution` | windowed, and every verb on this page acts on one picture: the cartridge marches eight walkers of its own each frame, drawn from the per-step publish. Under its own pace rule they hold a column; with `.replaces` armed they scatter |
-| `examples/snes/coexecution` | windowed: the SNES demo cartridge running beside a panel drawn from its own memory every tick — its palette as swatches, its first sixteen tiles of video RAM decoded, its sprite's position in work RAM, and a step byte inside the image — with keys that write each of them while it runs |
+| `examples/snes/coexecution` | windowed: the SNES demo cartridge running beside a panel drawn from its own memory every tick — its palette as swatches, its first sixteen tiles of video RAM decoded, its sprite's position in work RAM, and a step byte inside the image — with keys that write each of them while it runs; and a routine two ways, placed from 65816 source on a machine of its own and bound where the cartridge holds it, either called for a value that sets the sprite's color |
 | `examples/gb_player` | windowed: one ROM of your own on two machines side by side, one advanced by the engine's tick and one free-running on a clock of its own, both submitting their video as layer content. Asks for a ROM through the native file picker and ships none |
 | `examples/snes/player` | windowed: a SNES cartridge on two machines side by side — one advanced by the engine's tick, one free-running on a clock of its own — the same two pads driving both, each machine's sound in a queue of its own with a key choosing which is heard and a scope of what the device took. Asks for a ROM through the native file picker, and runs its own demo cartridge (`examples/snes/cartridge/`, authored as source and assembled as the program starts) when none is chosen |
 
@@ -860,9 +860,10 @@ outcomes, `AccessSource` and the watch table on the same terms; `bindRoutine`, i
 context, nested to any depth; and `video`, declared through `VmConfig` or switched at runtime, with its
 settings, on either clock.
 
-On a `Vm::SNES`, `hostRom` / `run` / `speed` / `stop` / `video` / `buttons` / `enableAudio` run, and the
+On a `Vm::SNES`, `hostRom` / `run` / `speed` / `stop` / `video` / `buttons` / `enableAudio` run, the
 `MemoryRegion` / `registerRegions` / `read` / `write` surface answers in both its forms, with the `snes::`
-memory constants; the escape, watch and routine-calling verbs above refuse — the exception each throws is
+memory constants, and `bindRoutine` calls a routine the cartridge holds in the guest's own context, with
+the `snes::` register constants; the escape and watch verbs above refuse — the exception each throws is
 on [snes.md](snes.md#what-the-core-answers-and-what-it-refuses).
 
 **Constructing a `Vm` for a `VMPlatform` with no backend built throws** — `Nes`, `Genesis` and

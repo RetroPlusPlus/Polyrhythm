@@ -1,15 +1,18 @@
 #include "src/vm/snes/snes_backend.h"
 
 #include <algorithm>
+#include <cstdio>
 #include <memory>
 #include <stdexcept>
 #include <string>
 #include <utility>
 
-#include "retropp/snes.h"                 // snes::Space — the top byte of a place's address
+#include "cpu65816_asm.h"                 // assembleCpu65816 — the 65816 source a routine is written in
+#include "retropp/snes.h"                 // snes::Space, snes::Reg — the top byte of a place's address, the register ids
 #include "retropp/vm.h"                   // VMPlatform + detail::snesCore's declaration
 #include "snaggletooth/snes/cartridge.h"  // parseCartridgeHeader — the region the machine is built at
 #include "src/vm/snes/snes_address.h"     // decode, busAddressOf — a place resolved to its byte
+#include "src/vm/snes/snes_image.h"       // the image a routine machine writes for what it places
 
 namespace retropp::vm {
 
@@ -54,7 +57,9 @@ std::optional<snaggletooth::Joypad> decodePad(std::uint64_t word, unsigned shift
 }  // namespace
 
 void SnesBackend::emplaceMachine() {
-    snes_.emplace(snaggletooth::SnesConfig{.rom = rom_, .region = region_});
+    // The map is named outright: a game's cartridge is read by the map its header names, the engine's
+    // own image by the map it was written for, and neither depends on the machine reading the header.
+    snes_.emplace(snaggletooth::SnesConfig{.rom = rom_, .region = region_, .map = map_});
     snes_->setSaveObserver(this);
     snes_->setFrameObserver(videoEnabled_ ? this : nullptr);
     saveChanged_ = false;  // a fresh machine has changed nothing since it was last taken
@@ -71,6 +76,10 @@ void SnesBackend::restoreSave(std::vector<std::uint8_t> save) {
 }
 
 void SnesBackend::reset() {
+    if (imageBuilt_) {
+        emplaceMachine();  // the image holds every placed routine; a fresh machine on it is the reset
+        return;
+    }
     if (!romHosted_) {
         throw std::logic_error("reset: no cartridge is hosted on this machine (host the image first)");
     }
@@ -84,6 +93,11 @@ void SnesBackend::reset() {
 void SnesBackend::loadRom(std::span<const std::uint8_t> rom) {
     if (rom.empty()) {
         throw std::invalid_argument("the cartridge image has no bytes");
+    }
+    if (imageBuilt_) {
+        throw std::logic_error(
+            "this VM already holds an image the engine wrote for its routines; a game's cartridge "
+            "cannot share it");
     }
     rom_.assign(rom.begin(), rom.end());  // kept for save reads and machine rebuilds
     region_ = regionOf(rom_);             // the cartridge's own region, from its header
@@ -367,28 +381,289 @@ std::uint64_t SnesBackend::readMemory(std::uint32_t address, int width) {
     return value;
 }
 
+// ── Routines ────────────────────────────────────────────────────────────────────────────────────
+// A routine machine holds an image the engine wrote (snes_image.h). A placed routine is called in a
+// frame of the engine's own, on a stack at $1FFF, with the idle loop as the landing; a routine the
+// cartridge holds is called in the guest's own context. The assembler is absolute, so a source names
+// its own address and its bytes land there.
+
+namespace {
+
+// The guard on a call, in instructions — the size the Game Boy's run-to-return carries.
+constexpr std::size_t kMaxCallInstructions = 1'000'000;
+
+// The frame a placed routine begins in: native mode, 8-bit accumulator and index registers with
+// interrupts off (M, X and I set), direct page $0000, data bank $00, the stack at $1FFF, everything
+// else zero. The program bank is the entry's; the program counter is seated by the call.
+snaggletooth::Cpu65816State engineFrame() {
+    snaggletooth::Cpu65816State frame{};
+    frame.p = 0x34;
+    frame.s = 0x1FFF;
+    frame.e = false;
+    return frame;
+}
+
+// One register of the file, by the id snes::Reg fixes.
+void writeRegisterField(snaggletooth::Cpu65816State& file, snes::Reg reg, std::uint64_t value) {
+    const auto low  = static_cast<std::uint8_t>(value & 0xFF);
+    const auto wide = static_cast<std::uint16_t>(value & 0xFFFF);
+    switch (reg) {
+        case snes::Reg::A:  file.a = static_cast<std::uint16_t>((file.a & 0xFF00) | low); return;
+        case snes::Reg::B:  file.a = static_cast<std::uint16_t>((file.a & 0x00FF) | (low << 8)); return;
+        case snes::Reg::P:  file.p = low; return;
+        case snes::Reg::DB: file.dbr = low; return;
+        case snes::Reg::PB: file.pbr = low; return;
+        case snes::Reg::C:  file.a = wide; return;
+        case snes::Reg::X:  file.x = wide; return;
+        case snes::Reg::Y:  file.y = wide; return;
+        case snes::Reg::D:  file.d = wide; return;
+        case snes::Reg::S:  file.s = wide; return;
+        case snes::Reg::PC: file.pc = wide; return;
+    }
+}
+
+std::uint64_t readRegisterField(const snaggletooth::Cpu65816State& file, snes::Reg reg) {
+    switch (reg) {
+        case snes::Reg::A:  return file.a & 0xFF;
+        case snes::Reg::B:  return (file.a >> 8) & 0xFF;
+        case snes::Reg::P:  return file.p;
+        case snes::Reg::DB: return file.dbr;
+        case snes::Reg::PB: return file.pbr;
+        case snes::Reg::C:  return file.a;
+        case snes::Reg::X:  return file.x;
+        case snes::Reg::Y:  return file.y;
+        case snes::Reg::D:  return file.d;
+        case snes::Reg::S:  return file.s;
+        case snes::Reg::PC: return file.pc;
+    }
+    return 0;
+}
+
+// A 24-bit bus address as the console writes one: $BB:AAAA.
+std::string busAddress(std::uint32_t address) {
+    char text[16];
+    std::snprintf(text, sizeof text, "$%02X:%04X", (address >> 16) & 0xFF, address & 0xFFFF);
+    return text;
+}
+
+}  // namespace
+
+std::uint32_t SnesBackend::placeRoutine(std::span<const std::uint8_t> bytes,
+                                       std::optional<std::uint32_t> origin) {
+    if (romHosted_) {
+        throw std::logic_error(
+            "this VM hosts a game's own cartridge, which has no arena to place a routine into; call "
+            "the hosted image's existing entries instead of injecting new code");
+    }
+    const std::uint32_t at = origin.value_or(snes_image::nextFreeAddress(map_, placed_, bytes.size()));
+    const std::optional<std::size_t> offset = snes_image::imageOffset(map_, at);
+    if (!offset) {
+        throw std::invalid_argument("a routine cannot be placed at " + busAddress(at) +
+                                    ": no byte of the image is at that address");
+    }
+    if (snes_image::overlapsReserved(*offset, bytes.size())) {
+        throw std::invalid_argument("a routine at " + busAddress(at) +
+                                    " would overlap the image's idle loop or its header");
+    }
+    for (const snes_image::Placement& p : placed_) {
+        const std::size_t theirs = *snes_image::imageOffset(map_, p.origin);
+        if (*offset < theirs + p.bytes.size() && theirs < *offset + bytes.size()) {
+            throw std::invalid_argument("a routine at " + busAddress(at) +
+                                        " would overlap the routine placed at " + busAddress(p.origin));
+        }
+    }
+    placed_.push_back(snes_image::Placement{.origin = at,
+                                            .bytes  = std::vector<std::uint8_t>(bytes.begin(), bytes.end())});
+    rebuildRoutineImage();
+    return at;
+}
+
+void SnesBackend::rebuildRoutineImage() {
+    std::vector<std::uint8_t> image = snes_image::buildImage(map_, placed_);
+    if (snes_ && image.size() == rom_.size()) {
+        // The same chip: every byte that changed is written into the live machine, and the machine's
+        // own state — its registers, its work RAM, its clock — stands.
+        for (std::size_t i = 0; i < image.size(); ++i) {
+            if (image[i] != rom_[i]) {
+                snes_->poke(*snaggletooth::romAddress(map_, i), image[i]);
+            }
+        }
+        rom_ = std::move(image);
+        return;
+    }
+    rom_        = std::move(image);
+    imageBuilt_ = true;
+    emplaceMachine();
+}
+
+AssembledRoutine SnesBackend::assemble(std::string_view source) const {
+    snaggletooth::assembler::Assembly assembly =
+        snaggletooth::assembler::assembleCpu65816(source, "routine.asm");
+    if (assembly.ok() && !assembly.ranges.empty() && assembly.ranges.front().start == 0) {
+        // No ORG: the source was assembled at $000000, which is work RAM. Assemble it again at the first
+        // gap of the arena that holds it, so every label inside it resolves for where it will land.
+        const std::uint32_t at = snes_image::nextFreeAddress(map_, placed_, assembly.ranges.back().start +
+                                                                                assembly.ranges.back().bytes.size());
+        assembly = snaggletooth::assembler::assembleCpu65816(
+            "        ORG " + busAddress(at) + "\n" + std::string(source), "routine.asm");
+    }
+    if (!assembly.ok()) {
+        std::string what = "65816 assembly failed:";
+        for (const snaggletooth::assembler::Diagnostic& d : assembly.errors) {
+            what += "\n  line " + std::to_string(d.line) + ": " + d.message;
+        }
+        throw std::runtime_error(what);
+    }
+    if (assembly.ranges.empty()) {
+        throw std::runtime_error("65816 assembly failed: the source emits no bytes");
+    }
+    // The bytes from the first range's start to the last range's end, gaps zero — the layout the source
+    // named; the origin is where the first byte goes.
+    const std::uint32_t first = assembly.ranges.front().start;
+    const std::uint32_t end =
+        assembly.ranges.back().start + static_cast<std::uint32_t>(assembly.ranges.back().bytes.size());
+    AssembledRoutine out;
+    out.bytes  = *snaggletooth::assembler::image(assembly, first, end - first);
+    out.origin = first;
+    for (const auto& [name, value] : assembly.symbols) {
+        if (value >= first && value < end) {
+            out.labels.set(name, value - first);
+        }
+    }
+    return out;
+}
+
+int SnesBackend::registerWidthBytes(std::uint16_t registerId) const {
+    if (registerId > static_cast<std::uint16_t>(snes::Reg::PC)) {
+        return 0;  // not a 65816 register
+    }
+    return registerId >= static_cast<std::uint16_t>(snes::Reg::C) ? 2 : 1;
+}
+
+void SnesBackend::beginCall(std::uint32_t entry) {
+    pending_      = engineFrame();
+    pendingEntry_ = entry;
+}
+
+void SnesBackend::writeRegister(std::uint16_t registerId, std::uint64_t value, int /*width*/) {
+    writeRegisterField(pending_, static_cast<snes::Reg>(registerId), value);
+}
+
+void SnesBackend::run() {
+    if (!snes_) {
+        throw std::logic_error("run: this machine holds no code to call (place a routine first)");
+    }
+    const std::optional<snes_address::Decoded> entry = snes_address::decode(pendingEntry_);
+    if (!entry || entry->space != snes::Space::Bus) {
+        throw std::invalid_argument("run: the entry " + std::to_string(pendingEntry_) +
+                                    " is not a bus address");
+    }
+    // The landing is the program counter as it stands: the idle loop, where the call ends. The machine
+    // is at an instruction boundary — every call ends at one and advanceClock puts the file back — so
+    // the call is never refused for being mid-instruction; a refusal here is the entry's own bank not
+    // mapping it.
+    pending_.pc  = static_cast<std::uint16_t>(snes_image::kIdleLoop & 0xFFFF);
+    pending_.pbr = static_cast<std::uint8_t>(snes_image::kIdleLoop >> 16);
+    snes_->setCpuState(pending_);
+    const snaggletooth::Standin returns =
+        entry->rtl ? snaggletooth::Standin::Long : snaggletooth::Standin::Near;
+    const bool returned =
+        snes_->callOnStack(entry->at24, pending_.s, returns, kMaxCallInstructions);
+    if (!returned && snes_->state().master == 0 && snes_->cpuState() == pending_) {
+        throw std::logic_error("run: the machine refused the call at " + busAddress(entry->at24) +
+                               " — no byte of the image is at that address");
+    }
+}
+
+std::uint64_t SnesBackend::readRegister(std::uint16_t registerId) {
+    return readRegisterField(snes_->cpuState(), static_cast<snes::Reg>(registerId));
+}
+
+void SnesBackend::advanceClock(std::uint64_t cycles) {
+    if (!imageBuilt_) {
+        throw std::logic_error(romHosted_
+                                   ? "advanceClock: this machine hosts a game's cartridge, which "
+                                     "advances by running"
+                                   : "advanceClock: this machine holds no image to idle on (place a "
+                                     "routine first)");
+    }
+    if (cycles == 0) {
+        return;
+    }
+    // Park on the idle loop, spend the cycles, and put the file back: the machine's clock moves and
+    // nothing a call marshals does. A call's cycles are spent ahead of the budget the machine runs, so
+    // the budget owes them; they are paid here, and the clock moves by the whole of `cycles` from where
+    // it stands.
+    const snaggletooth::Cpu65816State saved = snes_->cpuState();
+    snaggletooth::Cpu65816State idle = saved;
+    idle.pc  = static_cast<std::uint16_t>(snes_image::kIdleLoop & 0xFFFF);
+    idle.pbr = static_cast<std::uint8_t>(snes_image::kIdleLoop >> 16);
+    snes_->setCpuState(idle);
+    const snaggletooth::SnesState& state = snes_->state();
+    const std::uint64_t owed = state.master > state.consumed ? state.master - state.consumed : 0;
+    snes_->run(cycles + owed);
+    snes_->setCpuState(saved);
+}
+
+void SnesBackend::finishInstruction() {
+    while (snes_->cpuState().tcu != 0 ||
+           snes_->cpuState().servicing != snaggletooth::InterruptRequest::None) {
+        snes_->step();
+    }
+}
+
+void SnesBackend::callInContext(std::uint32_t entry, std::span<const ResidentRegister> presets,
+                                CallStack stack, std::size_t maxInstructions,
+                                const std::function<void()>& readOutputs) {
+    if (!snes_) {
+        throw std::logic_error("callInContext: this machine holds no code to call");
+    }
+    const std::optional<snes_address::Decoded> decoded = snes_address::decode(entry);
+    if (!decoded || decoded->space != snes::Space::Bus) {
+        throw std::invalid_argument("callInContext: the entry " + std::to_string(entry) +
+                                    " is not a bus address");
+    }
+    if (!snes_->addressable(decoded->at24, 1)) {
+        throw std::invalid_argument("callInContext: no byte of the image is at " +
+                                    busAddress(decoded->at24));
+    }
+    // A cycle budget stops the machine wherever the cycle fell; the instruction it was inside finishes
+    // first, so the routine runs between two of the guest's instructions.
+    finishInstruction();
+
+    const snaggletooth::Cpu65816State saved = snes_->cpuState();
+    snaggletooth::Cpu65816State       file  = saved;
+    for (const ResidentRegister& p : presets) {
+        writeRegisterField(file, static_cast<snes::Reg>(p.registerId), p.value);
+    }
+    snes_->setCpuState(file);
+    // The engine's scratch top is the top of work RAM's first page for a guest in emulation mode, where
+    // the chip keeps the stack in page one, and $1FFF otherwise.
+    const std::uint16_t top = stack == CallStack::Guest ? saved.s : saved.e ? 0x01FF : engineFrame().s;
+    const snaggletooth::Standin returns =
+        decoded->rtl ? snaggletooth::Standin::Long : snaggletooth::Standin::Near;
+    const std::uint64_t before = snes_->state().master;
+    const bool returned = snes_->callOnStack(decoded->at24, top, returns, maxInstructions);
+    if (!returned && snes_->state().master == before) {
+        // Refused with nothing done: the only cause left is the stack the landing would land on.
+        snes_->setCpuState(saved);
+        throw std::logic_error("callInContext: the stack at " + busAddress(top) +
+                               " is not memory the landing can be pushed to");
+    }
+    // The output is read while the routine's answer is still in the registers it left it in, and the
+    // whole file goes back afterwards — with the interrupt lines as they now stand, so an edge the
+    // routine's run took is not taken twice.
+    if (readOutputs) {
+        readOutputs();
+    }
+    snaggletooth::Cpu65816State after = saved;
+    after.nmiPending = snes_->cpuState().nmiPending;
+    after.irqLine    = snes_->cpuState().irqLine;
+    snes_->setCpuState(after);
+}
+
 // ── The verbs this core does not realize. Each throws std::logic_error naming what the core does now.
 //    setEscapeSink / setWatchSink store the sink; installing one is not arming.
-void SnesBackend::advanceClock(std::uint64_t) {
-    throw std::logic_error("advanceClock: the SNES core advances only by running its cartridge");
-}
-std::uint32_t SnesBackend::placeRoutine(std::span<const std::uint8_t>) {
-    throw std::logic_error("placeRoutine: the SNES core hosts a cartridge and keeps no routine arena");
-}
-AssembledRoutine SnesBackend::assemble(std::string_view) const {
-    throw std::logic_error("assemble: the SNES core assembles no routine source");
-}
-int SnesBackend::registerWidthBytes(std::uint16_t) const { return 0; }
-void SnesBackend::beginCall(std::uint32_t) {
-    throw std::logic_error("beginCall: the SNES core makes no routine calls");
-}
-void SnesBackend::writeRegister(std::uint16_t, std::uint64_t, int) {
-    throw std::logic_error("writeRegister: the SNES core makes no routine calls");
-}
-void SnesBackend::run() { throw std::logic_error("run: the SNES core makes no routine calls"); }
-std::uint64_t SnesBackend::readRegister(std::uint16_t) {
-    throw std::logic_error("readRegister: the SNES core makes no routine calls");
-}
 void SnesBackend::beginContinuous(std::uint32_t) {
     throw std::logic_error("beginContinuous: the SNES core hosts no driver");
 }
@@ -397,10 +672,6 @@ void SnesBackend::configureResidentImage(std::span<const DriverImage>, Mapper, s
 }
 std::uint64_t SnesBackend::callResident(std::uint32_t, std::span<const ResidentRegister>, std::uint64_t) {
     throw std::logic_error("callResident: the SNES core hosts no resident driver");
-}
-void SnesBackend::callInContext(std::uint32_t, std::span<const ResidentRegister>, CallStack, std::size_t,
-                                const std::function<void()>&) {
-    throw std::logic_error("callInContext: the SNES core makes no routine calls");
 }
 void SnesBackend::setEscapeSink(EscapeSink sink) { escapeSink_ = std::move(sink); }
 void SnesBackend::armEscape(std::uint32_t, bool) {

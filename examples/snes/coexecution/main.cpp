@@ -18,11 +18,19 @@
 //   5 6    patch the step byte in the image, 1 to 8, while it runs; hold an arrow to see it
 //   SPACE  park the machine where it stands, and resume from there
 //
+// And a routine is a typed C++ function, two ways. A second machine, `routines`, holds no cartridge: it
+// runs `mix` — the average of two bytes, written as 65816 source in routines/mix.asm with no address of
+// its own — placed where the machine has room. The cartridge carries the same routine at $00:8400, bound
+// where it sits and called in the cartridge's own context while it is parked:
+//
+//   7      call the placed routine with the next argument, and write the result to the sprite's color
+//   8      call the cartridge's own copy the same way — park the machine first, with SPACE
+//
 // Modes:
 //   (no args)   the window
-//   --verify    headless: declares the four places, round-trips a palette word and the sprite's X, and
-//               checks a patched step moves the sprite that far a frame; exits nonzero on any miss
-//               (CI runs this on every platform)
+//   --verify    headless: declares the four places, round-trips a palette word and the sprite's X, checks
+//               a patched step moves the sprite that far a frame, and calls both routines for a value;
+//               exits nonzero on any miss (CI runs this on every platform)
 
 #include <array>
 #include <cstdint>
@@ -46,8 +54,8 @@
 #include "retropp/renderer.h"
 #include "retropp/run_loop.h"
 #include "retropp/sdl_platform.h"
-#include "retropp/snes.h"           // snes::Palette, snes::videoRam — the machine's memories by name
-#include "retropp/vm.h"             // Vm — hosting, running, reading and writing
+#include "retropp/snes.h"           // snes::Palette, snes::videoRam — the machine's memories by name; snes::A, snes::X
+#include "retropp/vm.h"             // Vm — hosting, running, reading and writing; Routine, RoutineBinding, Isa
 #include "retropp/windowed_host.h"
 
 #include "examples/snes/cartridge/cartridge.h"
@@ -70,7 +78,7 @@ constexpr int kPanelW = kViewW - kPanelX;
 constexpr int kHeadCol  = 33;  // a heading
 constexpr int kNameCol  = 34;  // a row's label, indented under its heading
 constexpr int kValueCol = 42;  // a row's value
-constexpr int kKeyCol   = 52;  // the keys that change a heading's rows
+constexpr int kKeyCol   = 48;  // the keys that change a heading's rows
 
 constexpr int kSwatchPx = 8;                        // one palette word
 constexpr int kSwatchX = 32, kSwatchY = 5 * kGlyphPx;
@@ -81,8 +89,32 @@ constexpr int kStripX = 32, kStripY = 15 * kGlyphPx;
 
 constexpr std::uint32_t kSpriteXY  = 0x7E0010;  // sprite 0's X, then its Y, in work RAM
 constexpr std::uint32_t kStepByte  = 0x008300;  // the step, in the cartridge image
+constexpr std::uint32_t kMixEntry  = 0x008400;  // the cartridge's own `mix`, where it sits in the image
 constexpr std::size_t   kColorWord = 129;       // object palette 0, color 1: the sprite's color
 constexpr std::uint32_t kTileCount = 16;
+
+// The routine's source, as the panel shows it; the file the machine assembles is routines/mix.asm.
+constexpr std::array<std::string_view, 2> kMixSource{"STA $00  TXA  CLC  ADC $00", "ROR A  RTS"};
+
+// `mix` as a C++ function: A and X in, the average back in A. The binding is the same for the routine
+// the machine places from source and the one the cartridge already holds; the placing call spells it
+// out, because the build reads the ISA from the call's own text to pick the assembler that bakes the file.
+using Mix = Routine<std::uint8_t(std::uint8_t, std::uint16_t)>;
+const RoutineBinding kMixBinding{.inputs = {snes::A, snes::X}, .output = snes::A, .isa = Isa::Wdc65816};
+
+// Register `mix` from its source on a machine that hosts no cartridge. The path is a literal and the
+// binding names the ISA, so the build assembles the file and bakes the bytes into this binary.
+Mix placeMix(Vm& machine) {
+    return machine.registerRoutine<std::uint8_t(std::uint8_t, std::uint16_t)>(
+        "examples/snes/coexecution/routines/mix.asm",
+        {.inputs = {snes::A, snes::X}, .output = snes::A, .isa = Isa::Wdc65816});
+}
+
+// A byte as a gray palette word: the same five bits in red, green and blue.
+[[nodiscard]] std::uint16_t grayWord(std::uint8_t value) {
+    const std::uint16_t five = value >> 3;
+    return static_cast<std::uint16_t>(five | five << 5 | five << 10);
+}
 
 // The places this program names in the machine. Never instantiated — the struct exists so the places
 // have names, and naming one wrong is a compile error rather than a bad address.
@@ -159,7 +191,25 @@ int runVerify() {
     std::printf("  the step patched to 4: X went %u -> %u in one tick with Right held\n",
                 static_cast<unsigned>(before), static_cast<unsigned>(after));
     check(static_cast<std::uint8_t>(after - before) == 4, "the sprite moves by the patched step");
+
+    // A routine placed from source on a machine of its own, and the cartridge's own copy called where it
+    // sits, once the cartridge is parked. A binding for another CPU is refused.
+    Vm::SNES routines;
+    const Mix placed = placeMix(routines);
+    check(placed(3, 5) == 4, "the placed routine averages 3 and 5 to 4");
+    check(placed(255, 255) == 255, "and 255 and 255 to 255, the carry rotated back in");
     machine.stop();
+    const Mix bound = machine.bindRoutine<std::uint8_t(std::uint8_t, std::uint16_t)>(kMixEntry, kMixBinding);
+    check(bound(3, 5) == 4, "the cartridge's own mix answers the same, called parked");
+    check(machine.read(places, &Places::sprite).at(0) == after, "and the cartridge stands where it was parked");
+    bool refused = false;
+    try {
+        const std::vector<std::uint8_t> ret{0x60};
+        (void)routines.uploadRoutine<void()>(ret, {.isa = Isa::Sm83});
+    } catch (const std::invalid_argument&) {
+        refused = true;
+    }
+    check(refused, "a binding for the SM83 is refused on this machine");
 
     std::printf("\ndone%s\n", failures == 0 ? "" : " — with failures");
     return failures == 0 ? 0 : 1;
@@ -167,7 +217,7 @@ int runVerify() {
 
 // ── The panel ───────────────────────────────────────────────────────────────────────────────────
 
-enum class Action : ActionId { ColorOne = 20, ColorTwo, Left32, Right32, StepDown, StepUp, Park };
+enum class Action : ActionId { ColorOne = 20, ColorTwo, Left32, Right32, StepDown, StepUp, Park, MixPlaced, MixBound };
 
 // The font sheet carries digits, then letters, then a blank. Anything else lands on the blank.
 [[nodiscard]] std::size_t glyphCell(char ch) {
@@ -213,6 +263,8 @@ int main(int argc, char** argv) {
         {Action::StepDown, {SDL_SCANCODE_5}},
         {Action::StepUp, {SDL_SCANCODE_6}},
         {Action::Park, {SDL_SCANCODE_SPACE, PadButton::FaceSouth}},
+        {Action::MixPlaced, {SDL_SCANCODE_7}},
+        {Action::MixBound, {SDL_SCANCODE_8}},
     };
     map.add(presets::directional(snes::Button::Up, snes::Button::Down, snes::Button::Left,
                                  snes::Button::Right));
@@ -264,13 +316,22 @@ int main(int argc, char** argv) {
     machine.hostRom(examples::snes::demoCartridge());
     machine.video(true);
     const auto places = declarePlaces(machine);
+    // The cartridge's own `mix`, bound where it sits — declared before the machine runs, called while
+    // it is parked.
+    const Mix bound = machine.bindRoutine<std::uint8_t(std::uint8_t, std::uint16_t)>(kMixEntry, kMixBinding);
     machine.run(Vm::Advance::Continuously);
     bool running = true;
+
+    // The second machine: no cartridge, one routine placed from source.
+    Vm::SNES  routines;
+    const Mix placed = placeMix(routines);
 
     // What the panel shows, sampled once a tick.
     std::vector<std::uint8_t>              palette(snes::Palette.size, 0);
     std::array<std::vector<std::uint8_t>, kTileCount> tiles;
     std::uint8_t spriteX = 0, spriteY = 0, step = 1;
+    std::uint8_t mixA = 32;                  // the argument the next call takes; X is fixed at 200
+    std::string  mixSaid = "";               // the last call, as the panel shows it
     std::string  status = "THE PANEL IS ITS OWN MEMORY";
 
     loop.simTick([&](const InputState& in) {
@@ -311,6 +372,24 @@ int main(int argc, char** argv) {
                 status = "RESUMED FROM WHERE IT STOOD";
             }
             running = !running;
+        }
+
+        // A routine called for a value, and the value written to the sprite's color. The placed one
+        // answers on its own machine any time; the cartridge's own answers in the cartridge's context,
+        // which is the cartridge's to give only while it is parked.
+        const auto callMix = [&](const Mix& mix, const char* which, const char* said) {
+            const std::uint8_t result = mix(mixA, 200);
+            writeColor(grayWord(result), said);
+            mixSaid = "MIX " + std::to_string(mixA) + " 200 = " + std::to_string(result) + "  " + which;
+            mixA = static_cast<std::uint8_t>(mixA + 32);
+        };
+        if (in.justPressed(Action::MixPlaced)) callMix(placed, "PLACED", "THE PLACED ROUTINE SET THE COLOR");
+        if (in.justPressed(Action::MixBound)) {
+            if (running) {
+                status = "PARK IT FIRST  SPACE";
+            } else {
+                callMix(bound, "BOUND", "THE CARTRIDGES OWN MIX SET THE COLOR");
+            }
         }
 
         palette = machine.read(places, &Places::palette);
@@ -379,13 +458,17 @@ int main(int argc, char** argv) {
         put(kHeadCol, 2, "ITS MEMORY READ AS IT RUNS", palDim);
         heading(4, "PALETTE", "1 2 WORD 129");
         heading(14, "VIDEO RAM TILES 0 TO 15", "");
-        heading(18, "THE SPRITE", "3 4 X 32");
-        row(19, "X", std::to_string(spriteX));
-        row(20, "Y", std::to_string(spriteY));
-        heading(22, "STEP IN THE IMAGE", "5 6");
-        row(23, "STEP", std::to_string(step) + " A FRAME");
-        heading(25, "THE MACHINE", "SPACE");
-        row(26, "IT IS", running ? "RUNNING" : "PARKED");
+        heading(17, "THE SPRITE", "3 4 X 32");
+        row(18, "X", std::to_string(spriteX));
+        row(19, "Y", std::to_string(spriteY));
+        heading(20, "THE STEP", "5 6");
+        row(21, "STEP", std::to_string(step) + " A FRAME IN THE IMAGE");
+        heading(22, "THE MACHINE", "SPACE");
+        row(23, "IT IS", running ? "RUNNING" : "PARKED");
+        heading(24, "MIX A X", "7 PLACED 8 BOUND");
+        put(kNameCol, 25, kMixSource[0], palDim);
+        put(kNameCol, 26, kMixSource[1], palDim);
+        put(kNameCol, 27, mixSaid, palText);
         put(kNameCol, 28, "ARROWS MOVE THE SPRITE", palDim);
         put(kHeadCol, 30, status, palLive);
 
@@ -429,7 +512,9 @@ int main(int argc, char** argv) {
     std::printf(
         "SNES co-execution — the demo cartridge on the left, its own memory on the right, read every tick\n"
         "through declared places. Arrows move the sprite. 1 and 2 write its palette word, 3 and 4 write its\n"
-        "X in work RAM, 5 and 6 patch the step byte in the image while it runs, SPACE parks and resumes.\n\n");
+        "X in work RAM, 5 and 6 patch the step byte in the image while it runs, SPACE parks and resumes.\n"
+        "7 calls a routine placed from source on a machine of its own; 8 calls the cartridge's own copy,\n"
+        "bound where it sits, while the cartridge is parked. Either writes its answer to the sprite's color.\n\n");
 
     WindowedHost host{loop, platform};
     host.run();

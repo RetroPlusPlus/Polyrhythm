@@ -144,10 +144,11 @@ names what the core does instead.
 | video, sound, both as above | answers | answers |
 | input — the pad | one pad, `gb::held` | two ports, `snes::Ports` |
 | battery-backed save data | `.sav` | `.srm` |
-| a routine registered from bytes or `.asm` and called for a value | answers | refuses |
-| `advanceClock` — the free-running clock between calls | answers | refuses |
+| a routine registered from bytes or `.asm` and called for a value | answers | answers |
+| `advanceClock` — the free-running clock between calls | answers | answers, on a routine machine |
 | naming places, `read` / `write` by address | answers | answers |
-| escapes, watches, `bindRoutine` | answers | refuses |
+| `bindRoutine` — a routine the cartridge holds, called in its context | answers | answers |
+| escapes, watches | answers | refuses |
 | hosting a resident sound driver | answers | refuses |
 
 The exception each refusal throws, and the message, is on the console's page:

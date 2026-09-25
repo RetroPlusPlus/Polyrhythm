@@ -1038,14 +1038,18 @@ endfunction()
 # (per-call AssetPolicy:: token > per-type default Embed), and acts on it per routine:
 #   * LoadFromPath → COPY the .asm beside the binary (preserving its logical path), so the runtime
 #                    assembles it from assetRoot() — the same copy the asset scan does for a file.
-#   * Embed        → assemble the .asm to BYTECODE AT COMPILE TIME (the constexpr SM83 assembler) and
-#                    register the bytes in the routine registry; ONLY the bytecode ships, the .asm never
-#                    does. This is the producer for retropp::detail::findEmbeddedRoutine.
+#   * Embed        → assemble the .asm to BYTECODE AT COMPILE TIME and register the bytes in the routine
+#                    registry; ONLY the bytecode ships, the .asm never does. This is the producer for
+#                    retropp::detail::findEmbeddedRoutine. Which assembler is the call's own ISA token
+#                    (`Isa::Wdc65816` in a RoutineBinding, a registerAudio's Isa argument, a
+#                    DriverBinding's `.isa`), read from the call text exactly as the policy token is: a
+#                    call naming none is SM83, assembled by the engine's constexpr assembler in the
+#                    generated header; a call naming Snaggletooth's ISA runs its assembler CLI at build
+#                    time (cmake/bake_snaggletooth_routine.cmake), which also records where the bytes go.
 # Only `.asm` paths are routines; a PCM container path (.wav/.ogg) is left to the asset side / its future
-# arm. Only the SM83 ISA exists in v1 (a routine is GameBoy-family) — a future ISA adds its assembler +
-# symbols to the generated registry TU here. Conservative like the asset scan: a missing file is skipped
-# (Embed → runtime disk read; LoadFromPath → the consumer's to ship), comments are stripped before
-# matching, and a LoadFromPath routine is NEVER baked.
+# arm. Conservative like the asset scan: a missing file is skipped (Embed → runtime disk read;
+# LoadFromPath → the consumer's to ship), comments are stripped before matching, and a LoadFromPath
+# routine is NEVER baked.
 function(retropp_autoembed_routines _target)
     get_target_property(_srcs ${_target} SOURCES)
     if(NOT _srcs)
@@ -1088,6 +1092,15 @@ function(retropp_autoembed_routines _target)
                     set(_eff "LoadFromPath")
                 else()
                     set(_eff "Embed")   # per-type default for a routine / chiptune driver
+                endif()
+                # The ISA the call names, kept per logical path for the bake below; none named is SM83.
+                string(MAKE_C_IDENTIFIER "${_logical}" _key)
+                if(_call MATCHES "Isa::Wdc65816")
+                    set(_isa_of_${_key} "Wdc65816")
+                elseif(_call MATCHES "Isa::Spc700")
+                    set(_isa_of_${_key} "Spc700")
+                else()
+                    set(_isa_of_${_key} "Sm83")
                 endif()
                 if(_eff STREQUAL "Embed")
                     list(APPEND _embed_paths "${_logical}")
@@ -1141,6 +1154,8 @@ function(retropp_autoembed_routines _target)
     file(MAKE_DIRECTORY "${_gen_dir}/generated")
     set(_reg_includes "")
     set(_reg_body "")
+    set(_gen_headers "")
+    set(_layout_prev "")
     set(_idx 0)
     # Per-target symbol names, for the reason retropp_autoembed_assets states: these arrays are external,
     # and a library and an executable that both carry baked routines land in one program.
@@ -1153,11 +1168,50 @@ function(retropp_autoembed_routines _target)
             continue()
         endif()
         set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_abs}")
+        set(_sym "retropp_routine_${_ident}_${_idx}")
+        string(MAKE_C_IDENTIFIER "${_logical}" _key)
+        set(_isa "${_isa_of_${_key}}")
+        if(NOT _isa)
+            set(_isa "Sm83")  # a driver's image: its binding's ISA is verified when it is hosted
+        endif()
+        if(NOT _isa STREQUAL "Sm83")
+            # Snaggletooth's assembler, at build time: the CLI assembles the source, and the bake script
+            # writes the header with the bytes, their origin and the ISA. Each bake reads the layout the
+            # one before it wrote, so a target's routines without an ORG of their own are laid out in
+            # turn from the arena's start and never overlap.
+            if(_isa STREQUAL "Wdc65816")
+                set(_cli cpu65816_asm)
+            else()
+                set(_cli spc700_asm)
+            endif()
+            set(_header "${_gen_dir}/generated/routine_${_idx}.h")
+            set(_layout "${_gen_dir}/generated/layout_${_idx}.txt")
+            add_custom_command(
+                OUTPUT "${_header}" "${_layout}"
+                COMMAND ${CMAKE_COMMAND}
+                        -DASSEMBLER=$<TARGET_FILE:${_cli}> -DSOURCE=${_abs} -DLOGICAL=${_logical}
+                        -DSYMBOL=${_sym} -DISA=${_isa} -DHEADER=${_header}
+                        -DLAYOUT_IN=${_layout_prev} -DLAYOUT_OUT=${_layout}
+                        -P "${RETROPP_ENGINE_SOURCE_DIR}/cmake/bake_snaggletooth_routine.cmake"
+                DEPENDS "${_abs}" ${_cli} ${_layout_prev}
+                        "${RETROPP_ENGINE_SOURCE_DIR}/cmake/bake_snaggletooth_routine.cmake"
+                COMMENT "Assembling Embed routine '${_logical}' (${_isa}) for ${_target}"
+                VERBATIM)
+            list(APPEND _gen_headers "${_header}")
+            set(_layout_prev "${_layout}")
+            string(APPEND _reg_includes "#include \"generated/routine_${_idx}.h\"\n")
+            string(APPEND _reg_body
+                "    retropp::detail::registerEmbeddedRoutine(\"${_logical}\", "
+                "retropp::generated::${_sym}.data(), retropp::generated::${_sym}.size(), "
+                "retropp::detail::EmbeddedPlacement{.isa = retropp::generated::${_sym}_isa, "
+                ".origin = retropp::generated::${_sym}_origin});\n")
+            math(EXPR _idx "${_idx} + 1")
+            continue()
+        endif()
         # The .asm SOURCE as a constexpr char[] (each byte cast, so a high-bit UTF-8 byte in a comment
         # does not narrow), exactly as the engine's own preset-source codegen does.
         file(READ "${_abs}" _hex HEX)
         string(REGEX REPLACE "(..)" "char(0x\\1)," _bytes "${_hex}")
-        set(_sym "retropp_routine_${_ident}_${_idx}")
         file(WRITE "${_gen_dir}/generated/routine_${_idx}.h"
             "// AUTO-GENERATED by retropp_autoembed_routines for '${_logical}'. DO NOT EDIT.\n"
             "#pragma once\n#include <array>\n#include <cstddef>\n#include <cstdint>\n#include <string_view>\n"
@@ -1201,6 +1255,11 @@ function(retropp_autoembed_routines _target)
         "}  // namespace\n")
     retropp_anchor_registry(${_target} "${_registry}" routines)
     target_sources(${_target} PRIVATE "${_registry}")
+    if(_gen_headers)
+        # The registry TU includes headers the bake writes at build time, so it is compiled after them.
+        set_source_files_properties("${_registry}" PROPERTIES OBJECT_DEPENDS "${_gen_headers}")
+        target_sources(${_target} PRIVATE ${_gen_headers})
+    endif()
     # The generated TU compiles the engine's INTERNAL constexpr assembler (src/vm/...) over the source —
     # the engine source root resolves the `src/...` includes; _gen_dir resolves the per-routine generated
     # headers. RETROPP_ENGINE_SOURCE_DIR points at the engine tree even when a consumer is the top-level
@@ -1357,6 +1416,7 @@ add_library(retroppengine STATIC
     src/vm/gameboy/sameboy_machine.cpp
     src/vm/gameboy/sameboy_backend.cpp
     src/vm/snes/snes_backend.cpp
+    src/vm/snes/snes_image.cpp
     src/vm/gameboy/gb_routines.cpp
     src/vm/vm.cpp
     src/vm/vm_runner.cpp
@@ -1411,6 +1471,9 @@ target_link_libraries(retroppengine PRIVATE retropp-net)
 # the only engine code that touches it. No public header exposes a GB_* symbol, so it stays an
 # implementation detail consumers link transitively but never see.
 target_link_libraries(retroppengine PRIVATE retropp-sameboy snaggletooth::snaggletooth)
+# PRIVATE: the SNES backend assembles a routine's 65816 source through Snaggletooth's assembler, as the
+# Game Boy backend assembles SM83 through the engine's own. No public header exposes an assembler symbol.
+target_link_libraries(retroppengine PRIVATE snaggletooth_cpu65816)
 # Bake the engine's own VM routine .asm files into constexpr char[] SOURCE headers, so the
 # constexpr SM83 assembler (sm83_assembler.h) turns them into embedded bytecode AT COMPILE TIME
 # (gb_routines.cpp registers from the baked bytes) with no runtime .asm read. The .asm file stays the
@@ -1582,6 +1645,8 @@ if(RETROPP_BUILD_TESTS)
         tests/snes_backend_save_test.cpp
         tests/snes_backend_places_test.cpp
         tests/snes_regions_test.cpp
+        tests/snes_backend_routines_test.cpp
+        tests/snes_routine_embed_scan_test.cpp
         tests/snes_vm_test.cpp
         tests/snes_backend_audio_test.cpp
         tests/net_socket_test.cpp
@@ -1813,7 +1878,7 @@ if(RETROPP_BUILD_TESTS)
     target_link_libraries(vm_linkage_raw_snes PRIVATE retropp::engine)
     retropp_set_warnings(vm_linkage_raw_snes)
 
-    set(_retropp_vm_snes_needle "the snes core hosts a cartridge and keeps no routine arena")
+    set(_retropp_vm_snes_needle "this vm already holds an image the engine wrote for its routines")
 
     add_test(NAME vm_linkage_prebound_snes_carries_its_core
              COMMAND ${CMAKE_COMMAND}

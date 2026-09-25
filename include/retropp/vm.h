@@ -148,6 +148,8 @@ struct RoutineBinding {
     Throttle                throttle = Throttle::HostSpeed;
     std::uint32_t           entryOffset = 0;         // first instruction's offset WITHIN the supplied
                                                      // routine bytes (usually 0). NOT a ROM address.
+    Isa                     isa = Isa::Sm83;         // the ISA the routine is written for (verified at
+                                                     // registration against the machine's own)
 };
 
 // Compile-time constraint on the values a routine I/O location can hold: the unsigned-integral
@@ -922,7 +924,8 @@ private:
     std::size_t registerResolved(std::span<const std::uint8_t> routineBytes,
                                  const RoutineBinding& binding,
                                  std::span<const int> inputWidths,
-                                 int outputWidth, int instances);
+                                 int outputWidth, int instances,
+                                 std::optional<std::uint32_t> origin = std::nullopt);
     // registerRoutine's non-template core: resolve the embed/load policy for `logicalPath`, then either
     // place the build-baked bytes (Embed) or read `assetPath(logicalPath)` + assemble it (LoadFromPath
     // or an un-baked Embed), placing + resolving as registerResolved does.

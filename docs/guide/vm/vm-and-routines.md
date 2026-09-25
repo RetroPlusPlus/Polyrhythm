@@ -65,12 +65,13 @@ enum class VMPlatform { GameBoy, GameBoyColor, Snes, Nes, Genesis, MasterSystem 
 
 `VMPlatform` selects a per-system backend. The call surface is identical across systems because each
 routine's convention is sealed in its own binding; only the register/memory *vocabulary* a binding
-names is system-specific (and lives in a per-system header — `gb.h` for the Game Boy family).
+names is system-specific (and lives in a per-system header — `gb.h` for the Game Boy family, `snes.h`
+for the SNES).
 
-The **GameBoy / GameBoyColor** backend and the **Snes** backend are built. A GameBoy machine runs
-routines (this page); a hosted SNES cartridge runs whole (`co-execution.md`) — `Vm::SNES` and its pad
-vocabulary in `snes.h`, with no `uploadRoutine` / `assemble` surface. The SNES core is the console
-alone: a cartridge whose header names a coprocessor does not boot. Any other enumerator throws
+The **GameBoy / GameBoyColor** backend and the **Snes** backend are built, and both run routines: a
+Game Boy machine from SM83 source or bytes, a SNES machine from 65816 source or bytes, each in its own
+register vocabulary. Either hosts a whole cartridge too (`co-execution.md`). The SNES core is the
+console alone: a cartridge whose header names a coprocessor does not boot. Any other enumerator throws
 `std::runtime_error` ("no backend built") at `Vm` construction; a new system is a drop-in backend,
 not a change to this surface.
 (`vm.platform()` reports back the system a `Vm` was constructed for.)
@@ -80,9 +81,10 @@ frame — and `speed()` is what scales it. A `Vm` is non-copyable but movable.
 
 Each platform maps to an instruction-set architecture — `Isa` (`retropp/isa.h`), via
 `isaFor(VMPlatform)`. The ISA is the real compatibility unit: several consoles can share one (the Game
-Boy and Game Boy Color both run `Isa::Sm83`), so a routine's bytes run on any VM of the same ISA. The
-audio library uses it to verify a chiptune is cued on a compatible VM; a routine consumer rarely names
-it directly.
+Boy and Game Boy Color both run `Isa::Sm83`), so a routine's bytes run on any VM of the same ISA. A
+binding says the ISA its routine is written for (`RoutineBinding::isa`, `Isa::Sm83` unless said), and
+registration refuses a binding whose ISA is not the machine's (`std::invalid_argument`, naming both);
+the audio library verifies a chiptune the same way when it is cued.
 
 ## Registering your own routine
 
@@ -106,6 +108,7 @@ struct RoutineBinding {
     std::optional<Location> output{};        // return value is read from output (nullopt = void)
     Throttle                throttle = Throttle::HostSpeed;
     std::uint32_t           entryOffset = 0; // first instruction's offset WITHIN routineBytes
+    Isa                     isa = Isa::Sm83; // the ISA the routine is written for, verified at registration
 };
 ```
 
@@ -131,8 +134,11 @@ auto f = vm.uploadRoutine<std::uint8_t(std::uint8_t)>(
 ```
 
 The Game Boy register constants (`retropp/gb.h`): `gb::A gb::F gb::B gb::C gb::D gb::E gb::H gb::L`
-(8-bit) and `gb::AF gb::BC gb::DE gb::HL gb::SP gb::PC` (16-bit). A value's width must match its bound
-register (a `uint16_t` bound to `gb::A` throws at registration).
+(8-bit) and `gb::AF gb::BC gb::DE gb::HL gb::SP gb::PC` (16-bit). The SNES's (`retropp/snes.h`):
+`snes::A snes::B snes::P snes::DB snes::PB` (8-bit) and `snes::C snes::X snes::Y snes::D snes::S
+snes::PC` (16-bit), with `.isa = Isa::Wdc65816` on the binding
+([snes.md](snes.md#registers)). A value's width must match its bound register (a `uint16_t` bound to
+`gb::A` throws at registration).
 
 Both forms validate the binding and throw (`std::invalid_argument`) on an inputs/arity mismatch, a
 width/location mismatch, an unknown register, an inaccessible address, a void signature that binds an
@@ -141,9 +147,10 @@ of the bytes — so a malformed binding fails loudly at registration, not silent
 
 ### Authoring in assembly: register from a `.asm` file
 
-You normally don't hand-write byte arrays — you write the routine as **SM83 assembly in a `.asm`
-file** and point `registerRoutine` at it. The VM reads the file and assembles it in-process with an
-built-in SM83 assembler — no external toolchain, no build step, nothing to install:
+You normally don't hand-write byte arrays — you write the routine as **assembly in a `.asm` file**, in
+the machine's own instruction set, and point `registerRoutine` at it. The VM reads the file and
+assembles it in-process with the assembler its ISA selects — the built-in SM83 assembler for the Game Boy
+family, Snaggletooth's 65816 assembler for the SNES — no external toolchain, nothing to install:
 
 ```cpp
 template <typename Sig>
@@ -176,15 +183,21 @@ The optional `policy` is the same `AssetPolicy` the asset and audio forms use:
   `assetRoot()` as `loadAtlas` / `loadMapPng`.
 
 Omit `policy` to take the per-type default (`Embed`); the only way to deviate is the explicit per-call
-token, so the policy reads at the call site.
+token, so the policy reads at the call site. The binding's ISA reads there too: the build picks the
+assembler that bakes the file from the `Isa::` token in the call's own text, so a SNES routine's call
+spells `.isa = Isa::Wdc65816` in place rather than through a binding named elsewhere; a call naming
+none is SM83.
 
-The assembly follows the conventional Game Boy dialect — the same syntax the published disassemblies
-are written in: `;` line comments, `label:` definitions, `$hex` / `%bin` / decimal literals, `[hl]` /
-`[$FF04]` memory operands, condition codes, and the standard SM83 instruction set. Game Boy hardware registers are
-predefined by name, so you write `ldh a, [rDIV]` rather than `ldh a, [$FF04]`; labels are resolved
-across the routine (e.g. `jr` targets). The same `Sig` / `binding` rules as the byte form apply, and
-the routine's entry is its first byte. A bad mnemonic, a malformed operand, an unknown symbol, or an
-unreadable file throws at registration with the offending line — a typo fails loudly, not at call time.
+The SM83 assembly follows the conventional Game Boy dialect — the same syntax the published
+disassemblies are written in: `;` line comments, `label:` definitions, `$hex` / `%bin` / decimal
+literals, `[hl]` / `[$FF04]` memory operands, condition codes, and the standard SM83 instruction set.
+Game Boy hardware registers are predefined by name, so you write `ldh a, [rDIV]` rather than `ldh a,
+[$FF04]`; labels are resolved across the routine (e.g. `jr` targets). The 65816 dialect is the SNES
+page's ([snes.md](snes.md#the-assemblers-dialect)); it is absolute, so a source that says `ORG` lands
+there and one that does not lands where the machine has room. The same `Sig` / `binding` rules as the
+byte form apply, and the routine's entry is its first byte. A bad mnemonic, a malformed operand, an
+unknown symbol, or an unreadable file throws at registration with the offending line — a typo fails
+loudly, not at call time.
 
 The byte form (`uploadRoutine(span, …)`) is the low-level path the `.asm` form assembles down to; reach
 for it only when you already hold assembled bytes.
@@ -195,10 +208,14 @@ for it only when you already hold assembled bytes.
 std::vector<std::uint8_t> Vm::assemble(std::string_view source);
 ```
 
-`assemble` runs SM83 source through this VM's ISA assembler and hands back the machine-code bytes
-**without registering anything** — the path when you hold routine source as a *runtime* string (not a
+`assemble` runs source through this VM's ISA assembler and hands back the machine-code bytes **without
+registering anything** — the path when you hold routine source as a *runtime* string (not a
 compile-time literal path) and want bytes to pass to `uploadRoutine`. It throws on a source error, with
-the offending line. The VM's platform fixes the ISA, so the right assembler is always selected.
+the offending line. The VM's platform fixes the ISA, so the right assembler is always selected: a Game
+Boy machine answers SM83 bytes, which `uploadRoutine` places where its arena has room; a SNES machine
+answers 65816 bytes assembled for the address the source names, or for the first gap of its arena when
+the source names none — and `uploadRoutine` on it takes the next gap, so bytes assembled this way land
+where they were assembled for as long as nothing is placed in between.
 
 ### State persists across calls
 
@@ -444,6 +461,14 @@ byte-reproducible in plain C++, so it is a porting job rather than a VM routine.
   needs the backend to serve it: a `GbHardwareMemory` value, its direct-access mapping in
   `src/vm/gameboy/sameboy_machine.cpp`, and its range in `regionFor` / `regionIsAddressable`
   (`src/vm/gameboy/sameboy_backend.cpp`). Updating one and not the others reddens the suite.
+- **Add register/memory vocabulary for the SNES:** extend `include/retropp/snes.h` — CPU registers
+  as `Location` constants in `snes::Reg`'s order (the id fixes the width), memories as `MemoryRegion`
+  constants with their space in the top byte. A new memory also needs the backend to serve it: a
+  `Memory` value and its read and write in `src/vm/snes/snes_backend.cpp`, and its space decoded in
+  `src/vm/snes/snes_address.h`.
+- **Change where a SNES routine lands:** the image a routine machine writes — its size, header, idle
+  loop and the gap search — is `src/vm/snes/snes_image.cpp`; the build-time layout of routines with no
+  `ORG` of their own is `cmake/bake_snaggletooth_routine.cmake` and follows the same rule.
 - **Add a whole new system (NES, Genesis, …):** add a `src/vm/<system>/` folder with its backend and
   its `detail::<system>Core` hook, its `VMPlatform` enumerators, its `detail::coreFor` case and its
   pre-bound `Vm::` types in `vm.h` — the public `vm.h` surface does not change. Every system's machine
@@ -459,6 +484,8 @@ free-running-divider model), the host-speed / single-instance path, the `Hardwar
 (driving the [audio chain](../audio.md)), and the resident-driver surface (`hostDriver` / `tickDriver` /
 `readSlot`, with banked placement via `gb::banked` + `gb::Mbc3`), and cartridge hosting (`hostRom`
 with the `MemoryRegion` / `registerRegions` / `read` / `write` surface and the `gb::` memory
-constants); and the SNES backend — `Vm::SNES`, hosting a whole cartridge with its pad vocabulary in
-`snes.h` (`co-execution.md`). Declared seams: `instances > 1` (registering with more than one throws
+constants); and the SNES backend — `Vm::SNES`, both registration forms from 65816 source or bytes with
+the `snes::` register vocabulary and `snes::rtl`, `assemble`, `advanceClock`, `bindRoutine` into a
+hosted cartridge, and hosting a whole cartridge with its pad vocabulary in `snes.h`
+(`co-execution.md`). Declared seams: `instances > 1` (registering with more than one throws
 `std::logic_error`) and binding a location by label name.

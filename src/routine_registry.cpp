@@ -13,8 +13,9 @@ namespace retropp {
 namespace {
 
 struct EmbeddedRoutine {
-    const std::uint8_t* bytes;
-    std::size_t         size;
+    const std::uint8_t*                      bytes;
+    std::size_t                              size;
+    std::optional<detail::EmbeddedPlacement> placement;  // an absolute assembler's routine only
 };
 
 // Function-local static (the asset_registry pattern): constructed on first use, before any pre-main
@@ -28,8 +29,9 @@ std::unordered_map<std::string, EmbeddedRoutine>& registry() {
 
 namespace detail {
 
-void registerEmbeddedRoutine(std::string_view path, const std::uint8_t* bytes, std::size_t size) {
-    registry()[std::string(path)] = EmbeddedRoutine{bytes, size};
+void registerEmbeddedRoutine(std::string_view path, const std::uint8_t* bytes, std::size_t size,
+                             std::optional<EmbeddedPlacement> placement) {
+    registry()[std::string(path)] = EmbeddedRoutine{.bytes = bytes, .size = size, .placement = placement};
 }
 
 std::span<const std::uint8_t> findEmbeddedRoutine(std::string_view path) {
@@ -39,6 +41,15 @@ std::span<const std::uint8_t> findEmbeddedRoutine(std::string_view path) {
         return {};
     }
     return {it->second.bytes, it->second.size};
+}
+
+std::optional<EmbeddedPlacement> findEmbeddedRoutinePlacement(std::string_view path) {
+    const auto& reg = registry();
+    const auto  it  = reg.find(std::string(path));
+    if (it == reg.end()) {
+        return std::nullopt;
+    }
+    return it->second.placement;
 }
 
 }  // namespace detail
