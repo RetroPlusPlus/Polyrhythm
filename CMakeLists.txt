@@ -791,11 +791,20 @@ endfunction()
 # retropp_finalize_assets). The convention for NEW examples; existing flat demos keep the shared pile
 # (retiring the shared pile is a separate cleanup).
 # DIRECTORY names a grouping subdirectory when several examples for one system share a folder (e.g.
-# snes/player); it defaults to the example's own name, so a flat example passes nothing.
+# snes/player); it defaults to the example's own name, so a flat example passes nothing. The build tree
+# keeps the grouping: examples/snes/player builds into build/examples/snes/player_demo, and a flat
+# example into build/examples/<name>_demo.
 function(retropp_add_example _name)
     cmake_parse_arguments(PARSE_ARGV 1 _retropp_ex "" "DIRECTORY" "")
     if(NOT _retropp_ex_DIRECTORY)
         set(_retropp_ex_DIRECTORY "${_name}")
+    endif()
+    get_filename_component(_retropp_ex_group "${_retropp_ex_DIRECTORY}" DIRECTORY)
+    get_filename_component(_retropp_ex_leaf "${_retropp_ex_DIRECTORY}" NAME)
+    if(_retropp_ex_group)
+        set(_retropp_ex_out "${CMAKE_BINARY_DIR}/examples/${_retropp_ex_group}/${_retropp_ex_leaf}_demo")
+    else()
+        set(_retropp_ex_out "${CMAKE_BINARY_DIR}/examples/${_name}_demo")
     endif()
     file(GLOB _retropp_ex_srcs CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/examples/${_retropp_ex_DIRECTORY}/*.cpp")
     add_executable(retropp-${_name}-demo ${_retropp_ex_srcs})
@@ -804,7 +813,7 @@ function(retropp_add_example _name)
     retropp_set_warnings(retropp-${_name}-demo)
     retropp_autocompile_shaders(retropp-${_name}-demo)
     set_target_properties(retropp-${_name}-demo PROPERTIES
-        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/examples/${_name}_demo")
+        RUNTIME_OUTPUT_DIRECTORY "${_retropp_ex_out}")
 endfunction()
 
 # Asset embed/copy — driven ENTIRELY by the code. The asset POLICY in a loadAtlas() /
