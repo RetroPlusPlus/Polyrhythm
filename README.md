@@ -83,9 +83,11 @@ Active development. The core is in place and exercised end to end by a real cons
   effect on it, several machines on one screen at once. Either clock drives it — a machine
   advanced by the game's tick answers from the tick boundary, one running on a thread of its own
   hands each finished frame across — and what a game reads is always a completed frame, never one
-  being drawn. What a console core provides is a completion, a buffer, dimensions and a pixel
-  layout; it is never asked how fast it runs, which is what lets a core of another resolution
-  implement the same seam. Off unless a machine is asked for it, because a raster costs cycles.
+  being drawn. What a console core provides is a completion, a buffer, dimensions, a pixel layout
+  and, for an interlaced picture, which field this is; it is never asked how fast it runs, which is
+  what lets a core of another resolution implement the same seam. A picture of any size fits the
+  slot a layer gives it, and the fields of an interlaced picture are woven when the game asks. Off
+  unless a machine is asked for it, because a raster costs cycles.
 - **Persistence** — versioned, atomically-written save documents; a separate store for a
   player's other files; and registration for arbitrary byte assets that are never interpreted.
 

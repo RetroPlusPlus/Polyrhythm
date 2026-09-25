@@ -222,7 +222,7 @@ TEST(SnesGuestInput, APressReachesThePictureInAFixedNumberOfFrames) {
     SnesBackend backend;
     std::vector<bool> lit;  // whether each delivered frame's backdrop is anything but black
     backend.setVideoEnabled(true);
-    backend.setFrameSink([&lit](std::span<const std::uint8_t> pixels, int, int, RasterPixelFormat) {
+    backend.setFrameSink([&lit](std::span<const std::uint8_t> pixels, int, int, RasterPixelFormat, vm::FrameField) {
         lit.push_back(!pixels.empty() && (pixels[0] != 0 || pixels[1] != 0 || pixels[2] != 0));
     });
     backend.loadRom(drawsPadCartridge());

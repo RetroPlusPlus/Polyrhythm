@@ -273,10 +273,12 @@ public:
 
     [[nodiscard]] bool videoEnabled() const noexcept { return videoOn_; }
 
-    // Finish one frame of `pixels` at these dimensions — where a real core's vblank fires.
-    void finishFrame(std::span<const std::uint8_t> pixels, int width, int height) {
+    // Finish one frame of `pixels` at these dimensions — where a real core's vblank fires. `field` is what
+    // a real core reports: a whole frame unless the case hands over a field of an interlaced picture.
+    void finishFrame(std::span<const std::uint8_t> pixels, int width, int height,
+                     vm::FrameField field = vm::FrameField::Whole) {
         if (videoOn_ && frameSink_) {
-            frameSink_(pixels, width, height, RasterPixelFormat::Rgba8888);
+            frameSink_(pixels, width, height, RasterPixelFormat::Rgba8888, field);
         }
     }
 

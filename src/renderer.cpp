@@ -306,6 +306,8 @@ template <class T>
             const RasterContent& gc = std::get<RasterContent>(l.content);
             h = foldValue(h, gc.width);
             h = foldValue(h, gc.height);
+            h = foldValue(h, gc.fit.width);   // a changed fit is a different picture on screen
+            h = foldValue(h, gc.fit.height);
             h = foldValue(h, gc.format);
             h = foldValue(h, gc.generation);
             break;
@@ -345,8 +347,8 @@ struct RasterUniforms {
     float layerW, layerH;
     float rasterW, rasterH;      // register 1: the raster's own dimensions, pixels
     float alpha, composeScale;
-    float snap;                  // register 2: 1 = snap the transform's destination pixel to the grid
-    float pad0, pad1, pad2;
+    float fitW, fitH;            // register 2: the size the raster is shown at, pixels — its own when unset
+    float snap, pad0;            //              1 = snap the transform's destination pixel to the grid
     float invRow0[4];            // inverse transform homography, rows 0..2 (registers 3..5)
     float invRow1[4];
     float invRow2[4];
@@ -4713,6 +4715,10 @@ SDL_GPUTexture* Renderer::composeViewport(SDL_GPUCommandBuffer* cmd, const Frame
             u.layerH       = static_cast<float>(composeH_);
             u.rasterW      = static_cast<float>(gc.width);
             u.rasterH      = static_cast<float>(gc.height);
+            // The size the raster fills: what `fit` names, or the raster's own on an axis left at 0. An
+            // unset fit makes the ratio the fragment scales by exactly one, so the texel is the pixel's.
+            u.fitW         = static_cast<float>(gc.fit.width  > 0 ? gc.fit.width  : gc.width);
+            u.fitH         = static_cast<float>(gc.fit.height > 0 ? gc.fit.height : gc.height);
             u.alpha        = clampAlpha(layer.alpha);
             u.composeScale = static_cast<float>(composeScale_);
             u.snap         = snapF;

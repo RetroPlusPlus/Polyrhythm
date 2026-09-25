@@ -109,7 +109,8 @@ struct ViewportResolution {
     Vec2      center() const;   // {width/2, height/2} — float; a half-pixel on odd dimensions
 
     static const ViewportResolution GameBoy, GameBoyColor, GameBoyAdvance,
-                                    Nes, Snes, Genesis, MasterSystem;
+                                    Nes, Snes, SnesHiRes, SnesInterlaced, SnesHiResInterlaced,
+                                    Genesis, MasterSystem;
 };
 ```
 
@@ -132,6 +133,11 @@ content dead-center on the viewport; even dimensions (every preset) give a whole
 It is not an exhaustive registry — add platforms as needed. The platform generalizes beyond the Game
 Boy, so a fixed resolution baked into the type would be the hardcoded-dimensions mistake the project
 avoids elsewhere.
+
+A console whose picture comes in more than one size names each: `Snes` is 256×224, `SnesHiRes` 512×224 —
+the picture drawn in half-pixels — `SnesInterlaced` 256×448 — two fields woven — and `SnesHiResInterlaced`
+512×448. A viewport that holds the largest shows every size such a cartridge draws exactly, through a
+raster layer's `fit` ([draw-state.md](draw-state.md#rastercontent--a-raster-of-pixels)).
 
 ## Filling the window: `integerScaleToFitRect`
 

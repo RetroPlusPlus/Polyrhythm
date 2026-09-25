@@ -145,10 +145,18 @@ void SnesBackend::setButtons(std::uint64_t held) {
 }
 
 void SnesBackend::frame(const snaggletooth::VideoFrame& frame) {
-    if (frameSink_) {
-        frameSink_(frame.pixels, static_cast<int>(frame.width), static_cast<int>(frame.height),
-                   RasterPixelFormat::Rgba8888);
+    if (!frameSink_) {
+        return;
     }
+    // A frame drawn while the program asks the chip to interlace is one field of the picture, at the
+    // parity the machine reports; otherwise it is the whole picture, whatever parity the machine counts.
+    // The register is read as the frame completes, so the frame the program switches it in is reported
+    // by the value the switch left.
+    const FrameField field = !snes_->state().ppu.interlace() ? FrameField::Whole
+                             : (frame.field & 1u) != 0u    ? FrameField::Odd
+                                                            : FrameField::Even;
+    frameSink_(frame.pixels, static_cast<int>(frame.width), static_cast<int>(frame.height),
+               RasterPixelFormat::Rgba8888, field);
 }
 
 void SnesBackend::setFrameSink(FrameSink sink) { frameSink_ = std::move(sink); }

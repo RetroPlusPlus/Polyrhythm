@@ -14,6 +14,10 @@ namespace retropp {
 // (ViewportResolution::GameBoyAdvance, …), the self-type-constant idiom: declared in-class,
 // defined inline constexpr just below. A resolution IS a {width, height} tuple, so a preset and
 // a raw value are interchangeable (the value-as-data pattern, like PaletteSize / TickPeriodNs).
+// A console whose picture comes in more than one size names each: the SNES's 256×224 is `Snes`, and
+// `SnesHiRes`, `SnesInterlaced` and `SnesHiResInterlaced` are the same picture drawn in half-pixels, as
+// two woven fields, and both at once. A viewport that holds the largest shows every size such a
+// cartridge draws exactly, through a raster layer's `fit` (raster_content.h).
 // Not an exhaustive registry; add platforms as needed. The platform generalizes beyond the Game
 // Boy, so a fixed resolution baked into the type would be the hardcoded-dimensions mistake the
 // project avoids elsewhere.
@@ -37,6 +41,9 @@ struct ViewportResolution {
     static const ViewportResolution GameBoyAdvance;
     static const ViewportResolution Nes;
     static const ViewportResolution Snes;
+    static const ViewportResolution SnesHiRes;            // 512 wide: the picture drawn in half-pixels
+    static const ViewportResolution SnesInterlaced;       // 448 tall: two 224-line fields woven
+    static const ViewportResolution SnesHiResInterlaced;  // both
     static const ViewportResolution Genesis;
     static const ViewportResolution MasterSystem;
 };
@@ -46,6 +53,9 @@ inline constexpr ViewportResolution ViewportResolution::GameBoyColor{160, 144};
 inline constexpr ViewportResolution ViewportResolution::GameBoyAdvance{240, 160};
 inline constexpr ViewportResolution ViewportResolution::Nes{256, 240};
 inline constexpr ViewportResolution ViewportResolution::Snes{256, 224};
+inline constexpr ViewportResolution ViewportResolution::SnesHiRes{512, 224};
+inline constexpr ViewportResolution ViewportResolution::SnesInterlaced{256, 448};
+inline constexpr ViewportResolution ViewportResolution::SnesHiResInterlaced{512, 448};
 inline constexpr ViewportResolution ViewportResolution::Genesis{320, 224};
 inline constexpr ViewportResolution ViewportResolution::MasterSystem{256, 192};
 

@@ -1576,6 +1576,7 @@ if(RETROPP_BUILD_TESTS)
         tests/net_socket_test.cpp
         tests/net_tls_test.cpp
         tests/vm_frame_sink_test.cpp
+        tests/vm_video_weave_test.cpp
         tests/guest_nesting_test.cpp
         tests/sameboy_nesting_test.cpp
         tests/region_map_test.cpp

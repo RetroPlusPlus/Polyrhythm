@@ -92,7 +92,8 @@ public:
     void armWatch(const MemoryRegion& where, bool onRead, bool onWrite) override;
     void disarmWatch(const MemoryRegion& where, bool onRead, bool onWrite) override;
 
-    // Picture: forward each frame Snaggletooth finishes to the engine's sink, as Rgba8888.
+    // Picture: forward each frame Snaggletooth finishes to the engine's sink, as Rgba8888 — a whole frame,
+    // or one field of an interlaced picture while the program has the chip interlace.
     void setFrameSink(FrameSink sink) override;
     void setVideoEnabled(bool enabled) override;
 

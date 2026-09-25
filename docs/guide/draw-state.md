@@ -223,6 +223,7 @@ struct RasterContent {
     int               width  = 0;
     int               height = 0;
     RasterPixelFormat format = RasterPixelFormat::Rgba8888;
+    PixelSize         fit{};               // the size it is shown at; {0, 0} = its own
     std::uint64_t     generation = 0;      // how many rasters the source has finished
 };
 
@@ -248,6 +249,20 @@ holds for both:
   nothing, so a small raster on a viewport-sized layer leaves the layers beneath it showing everywhere
   else. A raster whose `pixels` holds fewer than `width × height × bytesPerPixel(format)` bytes is not
   drawn.
+- **`fit` is the size it is shown at.** Unset, a raster is shown at its own size. Set, it fills exactly
+  `fit`, each viewport pixel taking the texel under it — a raster smaller than its fit repeats texels and
+  one larger drops them, with no filtering between — and an axis left at 0 keeps the raster's own size on
+  that axis. The fit is placed by `scroll` and transformed by `transform` as the raster is, and a changed
+  fit recomposes the frame. A raster larger than its fit is sampled on the grid the frame composes on:
+  at viewport resolution the texels beyond the slot's pixel count are dropped; on the interpolation path
+  the compose grid is the window's integer scale, so a finer window keeps them. One slot shows whatever
+  size a source draws — a machine whose picture is 256 or 512 wide lands in the same place either way:
+
+  ```cpp
+  RasterContent picture = machine.video();
+  picture.fit    = PixelSize{256, 224};   // whatever the chip drew, one screen
+  screen.content = picture;
+  ```
 - **`pixels` is read during `renderFrame`**, so it lives at least that long. A raster that changes every
   frame costs one upload of its size every frame.
 
@@ -264,10 +279,13 @@ screen.size    = PixelSize{160, 144};
 screen.content = machine.video();       // valid for this renderFrame call
 ```
 
-The dimensions and the layout are the machine's own — a machine that draws 256×224 says so, and one
-whose pixels are laid out differently names a different `RasterPixelFormat`. Nothing here says how often
-a machine draws: the platform holds the frame it finished and shows that one, so a machine slower than
-the display keeps its picture on screen rather than flickering.
+The dimensions and the layout are the machine's own — a machine that draws 256×224 says so, one that
+draws 512 wide says that, and one whose pixels are laid out differently names a different
+`RasterPixelFormat`. A machine whose picture comes in more than one size is shown in one slot through
+`fit`, and a viewport sized to its largest picture (`ViewportResolution::SnesHiResInterlaced`) shows
+every size exactly. Nothing here says how often a machine draws: the platform holds the frame it
+finished and shows that one, so a machine slower than the display keeps its picture on screen rather
+than flickering.
 
 Here `generation` is the platform's count of the frames the machine has finished, not something the
 game declares. It is a value, so reading it leaves it where it is: two `video()` calls in one frame

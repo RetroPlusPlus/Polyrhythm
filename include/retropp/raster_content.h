@@ -21,10 +21,16 @@
 // half-drawn picture cannot be told from a finished one by looking at it — so the machine says when a
 // frame is done, and the platform never asks mid-raster. Nothing here says how OFTEN a source draws,
 // because nothing needs it — the completion is the whole signal.
+//
+// A raster is shown at its own size unless `fit` says otherwise. A source that draws at more than one
+// size — a machine whose picture widens or gains lines as its program asks — lands in the one slot a
+// layer gives it, and the slot decides how many pixels the raster gets, never the raster.
 
 #include <cstddef>
 #include <cstdint>
 #include <span>
+
+#include "retropp/geometry.h"  // PixelSize
 
 namespace retropp {
 
@@ -51,6 +57,12 @@ struct RasterContent {
     int               width  = 0;
     int               height = 0;
     RasterPixelFormat format = RasterPixelFormat::Rgba8888;
+    // The size the raster is shown at, in viewport pixels. {0, 0} — the default — shows it at its own
+    // `width` × `height`. Set, the raster fills exactly this size, each viewport pixel taking the texel
+    // under it, so a raster larger than its fit drops texels and one smaller repeats them; an axis left
+    // at 0 keeps the raster's own size on that axis. It is placed by the layer's scroll and transformed
+    // by the layer's transform as any raster is.
+    PixelSize         fit{};
     // How many frames this raster's source has finished — 0 before the first. For a machine's picture
     // the platform counts the completions the machine reported; a program drawing its own raster counts
     // its own. The pixels are never examined to decide anything. Two submissions carrying the same

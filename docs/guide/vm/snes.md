@@ -133,10 +133,37 @@ is the game's to say, and it can change while the machine runs, at the next step
 ## Its picture
 
 `video()` hands back the last frame the picture chip finished, as `RasterContent` in `Rgba8888`, at the
-dimensions the cartridge's program has the chip draw — 256 or 512 wide, 224 or 239 tall. The layer shows
-the picture at those dimensions and draws nothing outside them. Everything else about video —
-declaring it at construction, either clock, when a frame becomes visible, `generation` — is
-[co-execution.md](co-execution.md#video-showing-its-picture).
+dimensions the cartridge's program has the chip draw — 256 wide, or 512 when any line of the frame was
+drawn in half-pixels (BG modes 5 and 6, or SETINI's pseudo-hi-res bit), and 224 tall, or 239 when SETINI
+asks for the taller picture. With SETINI's interlace bit set, the chip draws one field a frame — every
+other line of the picture, at alternating parity — and each is handed over as a field; woven, the two
+make a 448-line picture (478 for the taller one). Which size arrives is the program's, from frame to
+frame, so a layer shows the picture through its `fit` and the viewport gives it the room:
+
+| The picture | Its size | `ViewportResolution` |
+|---|---|---|
+| progressive | 256×224 | `Snes` |
+| drawn in half-pixels | 512×224 | `SnesHiRes` |
+| two fields woven | 256×448 | `SnesInterlaced` |
+| both | 512×448 | `SnesHiResInterlaced` |
+
+```cpp
+Vm::SNES snes{VmConfig{.key = "snes", .video = true}};
+snes.video(true, {.interlacing = {.on = true}});   // weave the fields when the program interlaces
+
+DrawLayer screen{.key = "screen"};
+screen.size = PixelSize{512, 448};                 // a viewport of ViewportResolution::SnesHiResInterlaced
+RasterContent picture = snes.video();
+picture.fit    = PixelSize{512, 448};              // 256×224, 512×224, 256×448 or 512×448: one slot
+screen.content = picture;
+```
+
+A slot the size of the largest picture shows every size exactly — a 256-wide picture doubles each
+pixel, a 224-line one doubles each line, and the 512×448 picture is one to one. A slot of 256×224 shows
+every size too, dropping the half-pixels and the second field's lines on the grid the frame composes on.
+The 239-line picture and its woven 478 are raw values, `{256, 239}` and `{512, 478}`. Everything else
+about video — declaring it at construction, either clock, when a frame becomes visible, `generation`,
+the settings — is [co-execution.md](co-execution.md#video-showing-its-picture).
 
 ## Its sound
 
@@ -169,8 +196,8 @@ cartridge (`VM/<key>/<name>.srm`); the mechanism is on
 
 | | |
 |---|---|
-| `examples/snes/player` | windowed: one cartridge on two machines side by side — one on the tick, one free-running — the same two pads driving both, each machine's sound in a queue of its own with a key choosing which is heard, a scope of what the device took, the second port plugged and unplugged at a key. Asks for a ROM through the native file picker; `--verify` asserts each clock's cadence and the sound reaching a sink, headless |
-| `examples/snes/cartridge/cartridge.h` | the demo cartridge the player runs when no ROM is chosen — authored as 65816 and SPC700 source and assembled as the program starts: one 32×32 sprite the d-pad moves, A and B recolor it, Start writes the battery save, and a four-note round on the sound chip |
+| `examples/snes/player` | windowed: one cartridge on two machines side by side — one on the tick, one free-running — each in a slot the size of the console's largest picture, so a frame of any size lands in place; the same two pads driving both, each machine's sound in a queue of its own with a key choosing which is heard, a scope of what the device took, the second port plugged and unplugged at a key, and a key cycling how an interlaced picture is shown: each field as it comes, woven straight, woven blended. Asks for a ROM through the native file picker; `--verify` asserts each clock's cadence, the sound reaching a sink, and the picture taking each size the demo cartridge draws, headless |
+| `examples/snes/cartridge/cartridge.h` | the demo cartridge the player runs when no ROM is chosen — authored as 65816 and SPC700 source and assembled as the program starts: one 32×32 sprite of one-pixel stripes the d-pad moves, A and B recolor it, Start writes the battery save, Y switches the screen mode between 1 and 5 so the frame is drawn in half-pixels, X switches the chip to interlace so it hands over fields, and a four-note round on the sound chip |
 
 ## Where the files are
 

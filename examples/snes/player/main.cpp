@@ -21,11 +21,19 @@
 // same sound show as one line. Press 3 to switch the device between 48'000 Hz and 44'100 Hz: the pitch
 // stays where it is, because the conversion follows the rate.
 //
-// Reading the picture is those three lines, exactly as the Game Boy player's:
+// Each machine's picture lands in a slot the size of the console's largest picture, 512×448, through the
+// raster's `fit`: a 256×224 frame doubles each pixel, a 512-wide one lands one to one, and an interlaced
+// run's two fields, woven, fill the height. Press 6 to cycle how an interlaced picture is shown — each
+// field as it comes, woven straight, woven blended — on both machines at once. The demo cartridge's Y
+// switches it to the half-pixel screen mode and its X switches the chip to interlace, so all four sizes
+// are a key away.
+//
+// Reading the picture is those four lines, the fit being the one the Game Boy player does not need:
 //
 //     Vm machine{VMPlatform::Snes, VmConfig{.key = "…", .video = true}};
 //     machine.run(Vm::Advance::OnTick);       // one engine tick advances it by one of its frames
-//     screen.content = machine.video();       // the last complete frame it drew
+//     RasterContent picture = machine.video(); // the last complete frame it drew, at whatever size
+//     picture.fit = PixelSize{512, 448};       // ...shown in one slot
 //
 // PORT TWO is the player's to plug: press 2 to plug or unplug a second controller. The player owns this
 // — a program knows which sockets it filled — and prints the port's state; the demo cartridge is a
@@ -36,9 +44,10 @@
 //                                      (cancel to run the built-in demo cartridge)
 //   <seconds> [out.csv] [rom]          capture: run headless-timed and write one row per drawn frame
 //                                      (the demo cartridge when no ROM is named, so it runs unattended)
-//   --verify                           headless: assert each clock holds the hardware's cadence and the
-//                                      cartridge's sound reaches a sink, exit nonzero on any miss (CI
-//                                      runs this on every platform)
+//   --verify                           headless: assert each clock holds the hardware's cadence, the
+//                                      cartridge's sound reaches a sink, and the picture takes each size
+//                                      the demo cartridge draws; exit nonzero on any miss (CI runs this
+//                                      on every platform)
 //
 // Bring your own cartridge: pass its path as the third argument; it is read from disk and nothing more.
 // A dev drives the window.
@@ -91,16 +100,17 @@ namespace {
 
 using namespace retropp;
 
-constexpr int kGuestW = 256, kGuestH = 224;             // one SNES screen
+constexpr int kGuestW = 512, kGuestH = 448;             // one SNES screen: the console's largest picture
 constexpr int kScopeH = 48;                             // the band under them, showing the sound
 constexpr int kViewW = kGuestW * 2, kViewH = kGuestH + kScopeH;   // two screens side by side, a scope under each
-constexpr int kScale = 4;                               // 512×272 × 4 = a 2048×1088 window
+constexpr int kScale = 2;                               // 1024×496 × 2 = a 2048×992 window
 constexpr std::size_t kScopeFrames = kViewW;            // one frame per column of the whole band
 
 // A player-level action, numbered clear of the twelve pad buttons (snes::Button is 0-11): the key that
 // plugs and unplugs the second controller, the key that switches the device's rate, the key that
-// cycles which machine is heard, and the key that switches how the scopes are laid out.
-enum class Player : ActionId { TogglePort2 = 20, ToggleRate = 21, CycleHeard = 22, ToggleScope = 23 };
+// cycles which machine is heard, the key that switches how the scopes are laid out, and the key that
+// cycles how an interlaced picture is shown.
+enum class Player : ActionId { TogglePort2 = 20, ToggleRate = 21, CycleHeard = 22, ToggleScope = 23, CycleWeave = 24 };
 
 // ── Sound ───────────────────────────────────────────────────────────────────────────────────────
 // A machine's sound reaches the device through a queue of its own: the thread that steps the machine
@@ -190,6 +200,28 @@ struct TraceColor {
 };
 constexpr TraceColor kLeftColor{.r = 255, .g = 200, .b = 64};
 constexpr TraceColor kRightColor{.r = 64, .g = 200, .b = 255};
+
+// How an interlaced picture is shown, on both machines: each field as it comes, or woven. The 6 key
+// cycles it; the options each step hands to video() are the whole of the change.
+enum class Shown : std::uint8_t { Fields, Straight, Blend };
+
+const char* shownName(Shown shown) {
+    switch (shown) {
+        case Shown::Fields:   return "each field as it comes";
+        case Shown::Straight: return "woven straight";
+        case Shown::Blend:    return "woven, each line blended with the one below";
+    }
+    return "";
+}
+
+VideoOptions optionsFor(Shown shown) {
+    switch (shown) {
+        case Shown::Fields:   return {.interlacing = {.on = false}};
+        case Shown::Straight: return {.interlacing = {.on = true, .type = Weave::Straight}};
+        case Shown::Blend:    return {.interlacing = {.on = true, .type = Weave::Blend}};
+    }
+    return {};
+}
 
 // Paint the whole band its dark background.
 void clearBand(std::vector<std::uint8_t>& pixels) {
@@ -421,7 +453,7 @@ void watchAllFactors(snaggletooth::Region region, const char* tag, double baseHz
 
 int runVerify() {
     int failures = 0;
-    std::printf("snes_player --verify: the SNES core holds each clock's cadence and its sound reaches a sink\n\n");
+    std::printf("snes_player --verify: the SNES core holds each clock's cadence, its sound reaches a sink, and its picture takes each size\n\n");
 
     // The console's own rates: 236'250'000/11 Hz over 357'366 cycles a frame is 60.0988; PAL is
     // 21'281'370 Hz over 425'568 is 50.0070.
@@ -444,6 +476,45 @@ int runVerify() {
     if (lived + 1 < 600 || lived > 601) {
         std::printf("  VERIFY FAILED: 600 ticks finished %llu frames, not 600 (±1)\n",
                     static_cast<unsigned long long>(lived));
+        ++failures;
+    }
+
+    // The picture takes the size the cartridge's program has the chip draw. A press of Y switches the
+    // demo to mode 5 and the frame widens to 512; a press of X sets the interlace bits and the machine
+    // hands over fields, which weaving makes a 448-line picture and which, unwoven, arrive 224 tall. A
+    // press is held two ticks so the auto-read sees it, and three more ticks carry the switch to a
+    // delivered frame.
+    Vm::SNES sized{VmConfig{.video = true}};
+    sized.hostRom(examples::snes::demoCartridge(snaggletooth::Region::Ntsc));
+    sized.run(Vm::Advance::OnTick);
+    const auto ticks = [&sized](int n) {
+        for (int i = 0; i < n; ++i) {
+            sized.advanceTick();
+        }
+    };
+    const auto press = [&](snes::Buttons held) {
+        sized.buttons(snes::Ports{.one = held, .two = std::nullopt});
+        ticks(2);
+        sized.buttons(snes::Ports{.one = snes::Buttons{}, .two = std::nullopt});
+        ticks(3);
+    };
+    ticks(3);
+    const RasterContent plain = sized.video();
+    press(snes::Buttons{.y = true});
+    const RasterContent wide = sized.video();
+    sized.video(true, {.interlacing = {.on = true}});
+    press(snes::Buttons{.x = true});
+    const RasterContent woven = sized.video();
+    sized.video(true, {.interlacing = {.on = false}});
+    ticks(3);
+    const RasterContent fields = sized.video();
+    sized.stop();
+    std::printf("\n  the picture: %dx%d, then %dx%d in mode 5, %dx%d interlaced and woven, %dx%d as fields\n",
+                plain.width, plain.height, wide.width, wide.height, woven.width, woven.height,
+                fields.width, fields.height);
+    if (plain.width != 256 || plain.height != 224 || wide.width != 512 || wide.height != 224 ||
+        woven.width != 512 || woven.height != 448 || fields.width != 512 || fields.height != 224) {
+        std::printf("  VERIFY FAILED: expected 256x224, 512x224, 512x448 and 512x224\n");
         ++failures;
     }
 
@@ -550,6 +621,9 @@ int main(int argc, char** argv) {
         machine->hostRom(std::span<const std::uint8_t>(rom));
         machine->video(true);
     }
+    Shown shown = Shown::Straight;   // the 6 key writes it; both machines take each change at their next step
+    ticked.video(true, optionsFor(shown));
+    freeRunning.video(true, optionsFor(shown));
 
     // The sound: each machine's frames go into its own queue from the thread that steps it — the game's
     // for the left machine, its own for the right. The device pulls on SDL's audio thread from the
@@ -630,7 +704,8 @@ int main(int argc, char** argv) {
 
     // The SNES pad, bound to keys and a gamepad; editing these rows is all rebinding is. The number keys
     // are the player's own: the 2 key plugs and unplugs the second controller, the 3 key switches the
-    // device's rate, the 4 key cycles which machine is heard, the 5 key switches how the scopes are laid out.
+    // device's rate, the 4 key cycles which machine is heard, the 5 key switches how the scopes are laid out,
+    // the 6 key cycles how an interlaced picture is shown.
     ActionMap controls{
         {snes::Button::A,      {SDL_SCANCODE_X, PadButton::FaceLabelA}},
         {snes::Button::B,      {SDL_SCANCODE_Z, PadButton::FaceLabelB}},
@@ -644,6 +719,7 @@ int main(int argc, char** argv) {
         {Player::ToggleRate,   {SDL_SCANCODE_3}},
         {Player::CycleHeard,   {SDL_SCANCODE_4}},
         {Player::ToggleScope,  {SDL_SCANCODE_5}},
+        {Player::CycleWeave,   {SDL_SCANCODE_6}},
     };
     controls.add(presets::directional(snes::Button::Up, snes::Button::Down, snes::Button::Left,
                                       snes::Button::Right));
@@ -677,6 +753,12 @@ int main(int argc, char** argv) {
             scopeView = (scopeView == ScopeView::Split) ? ScopeView::Overlaid : ScopeView::Split;
             std::printf("scopes: %s\n", scopeView == ScopeView::Split ? "one under each screen"
                                                                       : "one across both, traces overlaid");
+        }
+        if (input.justPressed(Player::CycleWeave)) {
+            shown = static_cast<Shown>((static_cast<int>(shown) + 1) % 3);
+            ticked.video(true, optionsFor(shown));
+            freeRunning.video(true, optionsFor(shown));
+            std::printf("interlaced picture: %s\n", shownName(shown));
         }
         if (input.justPressed(Player::ToggleRate)) {
             // Both machines park, their sound is pointed at the new rate, the device reopens at it, and
@@ -727,11 +809,14 @@ int main(int argc, char** argv) {
     FrameDrawState frame;
     loop.renderLoop([&]() {
         frame.layers.clear();
-        // Each machine's picture is one screen wide and the layer spans both, so the right-hand one is
-        // placed by scrolling its content half a viewport to the left. Outside its own dimensions a
-        // picture draws nothing, which keeps the two halves from overlapping.
-        const RasterContent tickedPicture = ticked.video();
-        const RasterContent freePicture   = freeRunning.video();
+        // Each machine's picture lands in a slot one screen wide — the console's largest picture, so a
+        // frame of any size fits it — and the layer spans both, so the right-hand one is placed by
+        // scrolling its content half a viewport to the left. Outside its fit a picture draws nothing,
+        // which keeps the two halves from overlapping.
+        RasterContent tickedPicture = ticked.video();
+        RasterContent freePicture   = freeRunning.video();
+        tickedPicture.fit = PixelSize{kGuestW, kGuestH};
+        freePicture.fit   = PixelSize{kGuestW, kGuestH};
 
         DrawLayer left{.key = "tick-advanced"};
         left.z       = 0;
@@ -800,6 +885,9 @@ int main(int argc, char** argv) {
         "unplugs a second controller. 4 cycles what is heard: nothing, the left machine, the right "
         "machine, both (left machine in the left speaker, right machine in the right), and round again "
         "— it starts silent. 5 lays the scopes out one under each screen or overlaid across both. "
+        "6 cycles how an interlaced picture is shown: each field as it comes, woven straight, woven "
+        "blended — it starts woven straight. Y switches the cartridge to the half-pixel screen mode and "
+        "X switches its chip to interlace. "
         "3 switches the device between 48 kHz and 44.1 kHz — the pitch stays put. "
         "Both machines take the same buttons.\n"
         "Close the window to quit.\n");

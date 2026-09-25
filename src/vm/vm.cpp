@@ -292,10 +292,24 @@ struct Vm::Impl {
         // Whether the machine draws. Read on the game thread by video(), written on whichever thread
         // applies the change — the game's own for a parked machine, the machine's own for a running one.
         std::atomic<bool> on{false};
-        // A video(bool) issued while the machine runs, waiting for a step boundary to be applied on
-        // the machine's own thread. Guarded by `mx`.
-        bool pendingChange     = false;
-        bool pendingChangeWant = false;
+        // A video(bool, options) issued while the machine runs, waiting for a step boundary to be applied
+        // on the machine's own thread. Guarded by `mx`. Two calls before one boundary merge: a member the
+        // later call sets wins, one it leaves unset keeps the earlier call's.
+        bool         pendingChange     = false;
+        bool         pendingChangeWant = false;
+        VideoOptions pendingOptions;
+        // The machine's video settings, as the last video(bool, options) left them. Written only where
+        // the sink is installed — the thread that owns the machine — and read by the sink on that same
+        // thread, so nothing guards them.
+        bool  interlacing = false;
+        Weave weave       = Weave::Straight;
+        // The woven picture while interlacing is on: twice a field's height, each field's lines at their
+        // own parity. `wovenSeen` says a field has landed in it since it was built or dropped. The sink's
+        // own, one thread.
+        std::vector<std::uint8_t> woven;
+        int  wovenWidth  = 0;
+        int  wovenHeight = 0;      // a field's height; the picture is twice this
+        bool wovenSeen   = false;
     };
     Video video;
 
@@ -327,29 +341,93 @@ struct Vm::Impl {
     // machine, so it runs on whichever thread owns it: the game's for a parked machine, and the
     // machine's own — from a step boundary — for a running one. Installing a sink from the game thread
     // while the machine's own thread is calling it is a race, which is the whole reason for the queue.
-    void applyVideo(bool drawing) {
+    void applyVideo(bool drawing, const VideoOptions& options) {
+        // The settings first, on the owning thread, whether or not the machine draws: a setting given
+        // with the switch off is held for when it is next on.
+        if (options.interlacing.on) {
+            video.interlacing = *options.interlacing.on;
+        }
+        if (options.interlacing.type) {
+            video.weave = *options.interlacing.type;
+        }
         if (!drawing) {
             backend->setVideoEnabled(false);
             backend->setFrameSink({});
             video.on.store(false, std::memory_order_relaxed);
+            video.wovenSeen = false;  // the fields held describe a picture that is over
             return;
         }
         // The sink fires on whatever thread steps the machine — the game's own under Advance::OnTick,
         // the machine's own under Advance::Continuously. It copies the finished frame into the buffer
         // it owns and hands it over; the hand-off is the only thing the two threads share.
         backend->setFrameSink([impl = this](std::span<const std::uint8_t> pixels, int width, int height,
-                                            RasterPixelFormat format) {
-            impl->video.filling.assign(pixels.begin(), pixels.end());
-            const std::lock_guard guard{impl->video.mx};
-            impl->video.filling.swap(impl->video.ready);
-            impl->video.readyWidth  = width;
-            impl->video.readyHeight = height;
-            impl->video.readyFormat = format;
-            impl->video.readyHeld   = true;
-            ++impl->video.completed;
+                                            RasterPixelFormat format, vm::FrameField field) {
+            impl->takeFrame(pixels, width, height, format, field);
         });
         backend->setVideoEnabled(true);
         video.on.store(true, std::memory_order_relaxed);
+    }
+
+    // The frame sink's body, on the thread that steps the machine. A whole frame, or a field while
+    // interlacing is off, is copied as it is; a field while interlacing is on lands at its parity in the
+    // woven picture, and the whole picture is what is handed over. Either way the hand-off is one swap
+    // under the lock.
+    void takeFrame(std::span<const std::uint8_t> pixels, int width, int height, RasterPixelFormat format,
+                   vm::FrameField field) {
+        int shownHeight = height;
+        if (!video.interlacing || field == vm::FrameField::Whole) {
+            video.wovenSeen = false;  // the fields held do not describe this picture
+            video.filling.assign(pixels.begin(), pixels.end());
+        } else {
+            weaveField(pixels, width, height, format, field);
+            shownHeight = 2 * height;
+        }
+        const std::lock_guard guard{video.mx};
+        video.filling.swap(video.ready);
+        video.readyWidth  = width;
+        video.readyHeight = shownHeight;
+        video.readyFormat = format;
+        video.readyHeld   = true;
+        ++video.completed;
+    }
+
+    // Land one field in the woven picture and produce the picture to hand over into `filling`. Line y of
+    // the field of parity p is line 2y + p of the picture. The first field after the picture is built or
+    // dropped fills both parities, so no line shows nothing until the other field arrives; a field whose
+    // size differs from the picture's rebuilds it.
+    void weaveField(std::span<const std::uint8_t> pixels, int width, int height, RasterPixelFormat format,
+                    vm::FrameField field) {
+        const std::size_t row    = static_cast<std::size_t>(width) * bytesPerPixel(format);
+        const std::size_t parity = field == vm::FrameField::Odd ? 1 : 0;
+        const bool rebuild = !video.wovenSeen || video.wovenWidth != width || video.wovenHeight != height;
+        if (rebuild) {
+            video.woven.assign(row * static_cast<std::size_t>(height) * 2, 0);
+            video.wovenWidth  = width;
+            video.wovenHeight = height;
+            video.wovenSeen   = true;
+        }
+        for (std::size_t y = 0; y < static_cast<std::size_t>(height); ++y) {
+            const std::uint8_t* line = pixels.data() + y * row;
+            std::copy_n(line, row, video.woven.data() + (2 * y + parity) * row);
+            if (rebuild) {
+                std::copy_n(line, row, video.woven.data() + (2 * y + 1 - parity) * row);
+            }
+        }
+        if (video.weave == Weave::Straight) {
+            video.filling.assign(video.woven.begin(), video.woven.end());
+            return;
+        }
+        // Blend: each line averaged with the line below it, byte by byte; the last line with itself.
+        const std::size_t rows = static_cast<std::size_t>(height) * 2;
+        video.filling.resize(video.woven.size());
+        for (std::size_t r = 0; r < rows; ++r) {
+            const std::uint8_t* a   = video.woven.data() + r * row;
+            const std::uint8_t* b   = video.woven.data() + (r + 1 < rows ? r + 1 : r) * row;
+            std::uint8_t*       out = video.filling.data() + r * row;
+            for (std::size_t i = 0; i < row; ++i) {
+                out[i] = static_cast<std::uint8_t>((static_cast<unsigned>(a[i]) + b[i]) / 2u);
+            }
+        }
     }
 
     // Whether this machine has been asked to draw — counting a request that has not reached a step
@@ -360,26 +438,32 @@ struct Vm::Impl {
         if (video.on.load(std::memory_order_relaxed)) {
             return true;
         }
+        // The request is cleared under `mx` only after the machine reports that it draws, so a reader
+        // that finds no request under the same lock reads `on` again there and finds it set — the two
+        // reads are ordered by the lock, and there is no moment between them for the switch to hide in.
         const std::lock_guard guard{video.mx};
-        return video.pendingChange && video.pendingChangeWant;
+        return (video.pendingChange && video.pendingChangeWant) || video.on.load(std::memory_order_relaxed);
     }
 
     // The step boundary's video step: apply a change the game asked for while the machine was
     // running, on the thread that owns the machine.
     void drainVideoChange() {
-        bool wanted = false;
+        bool         wanted = false;
+        VideoOptions options;
         {
             const std::lock_guard guard{video.mx};
             if (!video.pendingChange) {
                 return;
             }
-            wanted = video.pendingChangeWant;
+            wanted  = video.pendingChangeWant;
+            options = video.pendingOptions;
         }
-        applyVideo(wanted);
+        applyVideo(wanted, options);
         // Cleared only AFTER the change has landed, so a reader is never caught between the request
         // being taken and the machine reporting that it draws — it sees one or the other, never a gap.
         const std::lock_guard guard{video.mx};
-        video.pendingChange = false;
+        video.pendingChange  = false;
+        video.pendingOptions = VideoOptions{};
     }
 
     // Take the newest completed frame, if one is waiting. Called at the tick boundary for a machine the
@@ -1400,17 +1484,25 @@ void Vm::buttons(GuestButtons held) {
     impl_->backend->setButtons(held.held);
 }
 
-void Vm::video(bool drawing) {
+void Vm::video(bool drawing) { video(drawing, VideoOptions{}); }
+
+void Vm::video(bool drawing, VideoOptions options) {
     if (impl_->running()) {
         // The machine owns itself while it runs: installing the sink here would be writing the very
         // function its own thread is calling. Queue it for the next step boundary, where every other
-        // change issued to a running machine lands.
+        // change issued to a running machine lands; the settings ride with the switch.
         const std::lock_guard guard{impl_->video.mx};
         impl_->video.pendingChange     = true;
         impl_->video.pendingChangeWant = drawing;
+        if (options.interlacing.on) {
+            impl_->video.pendingOptions.interlacing.on = options.interlacing.on;
+        }
+        if (options.interlacing.type) {
+            impl_->video.pendingOptions.interlacing.type = options.interlacing.type;
+        }
         return;
     }
-    impl_->applyVideo(drawing);
+    impl_->applyVideo(drawing, options);
 }
 
 RasterContent Vm::video() const {

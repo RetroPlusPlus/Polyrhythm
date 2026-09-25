@@ -353,6 +353,32 @@ struct DeclaredRegion {
     std::string_view name;
 };
 
+// How the fields of an interlaced picture are shown as one. A machine whose program has the chip
+// interlace hands over one field a frame, each holding every other line of the picture at alternating
+// parity; woven, the two make a picture twice a field's height, updated a field at a time.
+enum class Weave : std::uint8_t {
+    // Each field's lines land at their own parity and the picture holds the newest field of each. Exact
+    // for a still picture and for the hi-res text interlace exists for; a moving edge combs, one field
+    // against the other, for the frame it moves in.
+    Straight,
+    // The straight weave with each line averaged with the line below it, so a moving edge blends
+    // instead of combing, at the cost of vertical sharpness.
+    Blend,
+};
+
+// The interlacing half of a machine's video settings. An unset member keeps the value the machine
+// holds, so a call states only what it changes.
+struct InterlaceOptions {
+    std::optional<bool>  on;    // weave the fields into one picture; off shows each field as it comes
+    std::optional<Weave> type;  // how they are woven
+};
+
+// A machine's video settings, beside the on/off switch: what the host does with the frames a machine
+// hands over. Unset keeps what the machine holds.
+struct VideoOptions {
+    InterlaceOptions interlacing;
+};
+
 // The VM host. Owns one backend machine (selected by VMPlatform); routines registered on it share
 // its memory (so RNG seed state persists across calls). Non-copyable (owns a machine); movable.
 // What a machine produces, declared at construction. A machine hosts without producing anything: it
@@ -596,6 +622,22 @@ public:
     //
     // Throws std::logic_error if this machine's core produces no video at all.
     void video(bool drawing);
+
+    // The same switch, with the machine's video settings declared beside it. What is set here is held
+    // by the machine and applies to every frame it hands over from then on; an option left unset keeps
+    // its held value, so video(true) alone changes nothing but the switch, and a machine never given
+    // options shows each frame as it arrives. Interlacing is the setting:
+    //
+    //     vm.video(true, {.interlacing = {.on = true, .type = Weave::Straight}});   // weave the fields
+    //     vm.video(true, {.interlacing = {.on = false}});                          // each field as it comes
+    //     vm.video(false, {.interlacing = {.on = true}});                          // off; woven when next on
+    //
+    // Weaving applies to a machine that hands over fields — one whose program has the chip interlace.
+    // Its picture is then twice a field's height, every field advances `generation`, and a whole frame
+    // from the same machine passes through as it is. The guest decides whether to interlace; this
+    // decides only how the host shows it. Asked of a RUNNING machine, the settings land with the switch
+    // at its next step boundary. Throws as video(bool) does.
+    void video(bool drawing, VideoOptions options);
 
     // The last complete frame the machine drew, as a layer's content — hand it straight to a
     // DrawLayer. The pixels stay valid until the next advanceTick.
