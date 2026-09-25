@@ -9,7 +9,7 @@ are on [co-execution.md](co-execution.md).
 
 ```cpp
 #include "retropp/vm.h"    // Vm::SNES, VMPlatform::Snes
-#include "retropp/snes.h"  // snes::Button, snes::Buttons, snes::Ports, snes::held
+#include "retropp/snes.h"  // snes::Button … snes::held, snes::Ports; snes::WorkRam … snes::AudioRam, snes::videoRam …
 ```
 
 ## Contents
@@ -17,7 +17,10 @@ are on [co-execution.md](co-execution.md).
 - [One machine, its cartridge's region](#one-machine-its-cartridges-region)
 - [What the core answers, and what it refuses](#what-the-core-answers-and-what-it-refuses)
 - [Its clock](#its-clock)
-- [`snes.h` — the pad, both ports](#snesh--the-pad-both-ports)
+- [`snes.h` — the vocabulary](#snesh--the-vocabulary)
+  - [The machine's memories](#the-machines-memories)
+  - [Memories the bus cannot name](#memories-the-bus-cannot-name)
+  - [The pad, both ports](#the-pad-both-ports)
 - [Its picture](#its-picture)
 - [Its sound](#its-sound)
 - [Its save: `.srm`](#its-save-srm)
@@ -46,17 +49,18 @@ through a power cycle, and `reset()` on a hosted cartridge is the same again.
 | `hostRom` · `run` · `speed` · `stop` · `reset` · `advanceTick` | answers |
 | `video` · `VmConfig{.video}` | answers — [Its picture](#its-picture) |
 | `enableAudio` | answers — [Its sound](#its-sound) |
-| `buttons` | answers, both ports — [`snes.h`](#snesh--the-pad-both-ports) |
+| `buttons` | answers, both ports — [The pad, both ports](#the-pad-both-ports) |
 | `VmConfig{.key}` · `batterySave` | answers — [Its save](#its-save-srm) |
-| `registerRegions` · `registerEscapes` · `registerWatches` · `bindRoutine` | **refuses at the declaration, `std::invalid_argument`**: the batch reports every entry as not reachable on this machine, because this core names no place in guest memory by address |
-| `uploadRoutine` · `registerRoutine` | **refuses, `std::invalid_argument`** for a binding naming a register or an address — this core has neither to bind; a binding naming nothing reaches the core, which keeps no routine arena, `std::logic_error` |
-| `read` / `write` of a place built on the spot, on a parked machine | **refuses, `std::logic_error`** — the core names no places in guest memory |
+| `registerRegions` · `read` / `write`, declared and built on the spot | answers — [`snes.h` — the vocabulary](#snesh--the-vocabulary) |
+| `registerEscapes` · `registerWatches` | **refuses at the arming, `std::logic_error`** — the core answers no escapes and no watches. A batch with an entry declared armed throws as it registers; an entry declared switched off is recorded, and throws the same when it is switched on |
+| `bindRoutine` | declares against a cartridge address; **the call refuses, `std::logic_error`** — the core makes no routine calls. A binding naming a register refuses at the declaration, `std::invalid_argument` — this core has none to bind |
+| `uploadRoutine` · `registerRoutine` | **refuses, `std::logic_error`** — the core keeps no routine arena. A binding naming a register refuses first, `std::invalid_argument` |
 | `assemble` · `advanceClock` · `hostDriver` | **refuses, `std::logic_error`** — the core assembles no routine source, advances only by running its cartridge, and hosts no driver |
 | `reset` before any cartridge is hosted | `std::logic_error` |
 
 Each refusal is an exception naming what the core does instead, thrown where the program asked. The
-escape and watch tables exist on the machine — `escapes()` and `watches()` answer — and hold nothing,
-because no declaration reaches them.
+escape and watch tables exist on the machine — `escapes()` and `watches()` answer — and hold only
+entries declared switched off.
 
 ## Its clock
 
@@ -85,7 +89,66 @@ const EngineConfig config{
 
 A machine free-running on a thread of its own holds the cartridge's cadence whatever the loop does.
 
-## `snes.h` — the pad, both ports
+## `snes.h` — the vocabulary
+
+### The machine's memories
+
+`snes.h` ships the console's memories as `MemoryRegion` constants, the same value a game fills in for a
+place of its own:
+
+```cpp
+const std::vector<std::uint8_t> colors = vm.read(snes::Palette);   // all 256 palette words
+```
+
+| Constant | `.at` | `.size` | What |
+|---|---|---|---|
+| `snes::WorkRam` | `0x7E0000` | `0x20000` | the 128 KB of work RAM, banks `$7E`–`$7F` |
+| `snes::VideoRam` | `snes::videoRam(0)` | `0x10000` | the picture chip's 64 KB, by byte: tiles and maps |
+| `snes::Palette` | `snes::palette(0)` | `0x200` | CGRAM: the 256 palette words |
+| `snes::Sprites` | `snes::sprites(0)` | `0x220` | OAM: the 128 sprite entries and the 32 bytes of their high bits |
+| `snes::AudioRam` | `snes::audioRam(0)` | `0x10000` | the audio unit's 64 KB |
+
+Each has `count == 1`, so reading one with no index hands back the whole memory, and each can be
+declared in a batch like any other place. The cartridge and its save are not constants — their sizes
+are the image's — so a place inside either is a plain bus address, `0x008000` or `0x700000`.
+
+**Every alias of a byte names that byte.** The bus reaches the low 8 KB of work RAM at `$7E:0000`–`$1FFF`
+and at `$0000`–`$1FFF` of every system bank, and the image and the save in every bank the cartridge's map
+repeats them in; `0x000010`, `0x7E0010` and `0xBF0010` are one cell of work RAM, and a place declared at
+any of them reads and writes it. A place's entries stride through the memory it starts in, so an array
+that runs past the end of a LoROM bank's window reads the image's next bytes rather than whatever the
+next address mirrors — the index is a parameter for that reason, as on every console.
+
+A write into the cartridge patches the machine's copy of the image and the image a `reset()` or a
+`run()` rebuilds it from, so a patch survives both; the file the bytes came from is untouched.
+
+**Registers are not places.** Reading one on this console can change it — a read of `$4210` clears the
+NMI flag — so a place at a register address, like one at an address no memory answers, does not
+resolve, and a batch naming one reports it as not reachable on this machine.
+
+### Memories the bus cannot name
+
+The picture chip's three memories and the audio unit's RAM are not on the 65816's bus: a program
+reaches them through ports, one byte at a time. A place inside one says which memory in the top byte of
+its address, through a helper:
+
+```cpp
+MemoryRegion{.at = snes::videoRam(0x2000), .size = 32}          // one 4 bpp tile, 0x2000 bytes in
+MemoryRegion{.at = snes::palette(129 * 2), .size = 2}          // palette word 129
+MemoryRegion{.at = snes::videoRam(0), .size = 32, .count = 16}  // the first sixteen tiles, one entry each
+```
+
+`snes::videoRam`, `snes::palette`, `snes::sprites` and `snes::audioRam` each take the byte's offset in
+the memory; `snes::inSpace(snes::Space, offset)` is the form they share. A place is read and written the
+way the chip reads the memory — no port address steps, no latch moves, no register is driven — and the
+picture chip reads its memories at every dot, so a write shows from the next one. A place past the end
+of its memory does not resolve.
+
+A watch on the game's own reads and writes (`AccessSource::GuestAndGame`) is answered in the flat space
+the CPU sees, which these memories are not in, so it cannot name one — the batch refuses it,
+`std::invalid_argument`.
+
+### The pad, both ports
 
 ```cpp
 enum class Button : ActionId { B, Y, Select, Start, Up, Down, Left, Right, A, X, L, R };
@@ -197,13 +260,15 @@ cartridge (`VM/<key>/<name>.srm`); the mechanism is on
 | | |
 |---|---|
 | `examples/snes/player` | windowed: one cartridge on two machines side by side — one on the tick, one free-running — each in a slot the size of the console's largest picture, so a frame of any size lands in place; the same two pads driving both, each machine's sound in a queue of its own with a key choosing which is heard, a scope of what the device took, the second port plugged and unplugged at a key, and a key cycling how an interlaced picture is shown: each field as it comes, woven straight, woven blended. Asks for a ROM through the native file picker; `--verify` asserts each clock's cadence, the sound reaching a sink, and the picture taking each size the demo cartridge draws, headless |
-| `examples/snes/cartridge/cartridge.h` | the demo cartridge the player runs when no ROM is chosen — authored as 65816 and SPC700 source and assembled as the program starts: one 32×32 sprite of one-pixel stripes the d-pad moves, A and B recolor it, Start writes the battery save, Y switches the screen mode between 1 and 5 so the frame is drawn in half-pixels, X switches the chip to interlace so it hands over fields, and a four-note round on the sound chip |
+| `examples/snes/coexecution` | windowed: the demo cartridge running on its own thread, its picture in a slot the size of the console's largest, beside a panel drawn from its own memory every tick through four declared places — the 256 palette words as swatches (`snes::Palette`), the first sixteen tiles of video RAM decoded from 4 bpp, the sprite's X and Y in work RAM, and the step byte in the image. Keys write each of them while it runs: the sprite's palette word, its X, and the step patched in the image; SPACE parks and resumes. `--verify` round-trips a palette word and the sprite's X and checks a patched step moves the sprite that far a frame, headless |
+| `examples/snes/cartridge/cartridge.h` | the demo cartridge every SNES example hosts — authored as 65816 and SPC700 source and assembled as the program starts: one 32×32 sprite of one-pixel stripes the d-pad moves by a step it reads from a byte of its own image each frame, A and B recolor it, Start writes the battery save, Y switches the screen mode between 1 and 5 so the frame is drawn in half-pixels, X switches the chip to interlace so it hands over fields, and a four-note round on the sound chip |
 
 ## Where the files are
 
 | What | Where |
 |---|---|
-| The vocabulary — the pad, both ports | `include/retropp/snes.h` |
-| The backend — the region, the two-port word, the frame and save observers, the refusals | `src/vm/snes/snes_backend.cpp`, `snes_backend.h` |
+| The vocabulary — the machine's memories, the space helpers, the pad, both ports | `include/retropp/snes.h` |
+| The backend — the region, places resolved to their byte, the two-port word, the frame and save observers, the refusals | `src/vm/snes/snes_backend.cpp`, `snes_backend.h` |
+| An address decoded to its space, and a byte's bus address | `src/vm/snes/snes_address.h` |
 | The sound chip's rate to the sink's | `src/vm/snes/resampler.h` |
 | The core | `third_party/snaggletooth` |

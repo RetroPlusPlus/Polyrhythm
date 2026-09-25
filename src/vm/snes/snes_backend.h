@@ -3,8 +3,11 @@
 // This is the ONE place SNES machine idiom lives: the two-port controller word, the region read from a
 // cartridge's own header, the frame/save observers the machine reports through, and the sound chip's
 // 32'000 Hz frames on their way to a sink at the sink's rate. The generic Vm
-// (vm.cpp) drives it only through VmBackend, so it knows none of it. The machine's routine and register
-// vocabulary — naming places, calling routines, escapes, watches, driver hosting, its APU — is not among
+// (vm.cpp) drives it only through VmBackend, so it knows none of it. It names places: a place is a byte of
+// work RAM, the cartridge image or its save named by any bus address that reaches it, or a byte of one of
+// the four memories the bus cannot name, named through the space snes.h folds into the top byte
+// (snes_address.h decodes both); every region verb reads and writes wherever a place resolves. Calling
+// routines, escapes, watches, driver hosting and the audio unit as a machine of its own are not among
 // this core's verbs: each such verb throws, in the seam's posture, so no capability is faked.
 //
 // INTERNAL — under src/vm/, never include/retropp/. It pulls Snaggletooth's public snes.h (the Snes
@@ -18,6 +21,7 @@
 #include <optional>
 #include <span>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "snaggletooth/snes/snes.h"
@@ -119,6 +123,24 @@ private:
     // no sink listens — either way the machine's queue is empty when this returns.
     void drainAudio();
 
+    // The memory a place is in, the offset of its first byte there, and that memory's size. Nothing when
+    // no cartridge is hosted, or when the address names no memory: a register, open bus, a space this
+    // console does not have, or an offset past the end of the memory it names.
+    enum class Memory : std::uint8_t { WorkRam, Cartridge, Save, VideoRam, Palette, Sprites, AudioRam };
+    struct Resolved {
+        Memory      memory;
+        std::size_t base;
+        std::size_t size;
+    };
+    [[nodiscard]] std::optional<Resolved> resolve(std::uint32_t address) const;
+    // Where entry `index` of `region` starts, checked to lie whole inside the memory `region` resolves to.
+    // Throws std::out_of_range for an index the region does not declare, a region that resolves nowhere,
+    // or an entry that runs past its memory's end.
+    [[nodiscard]] std::pair<Memory, std::size_t> entryAt(const MemoryRegion& region,
+                                                         std::uint32_t index) const;
+    [[nodiscard]] std::uint8_t readByte(Memory memory, std::size_t offset) const;
+    void writeByte(Memory memory, std::size_t offset, std::uint8_t value);
+
     // FrameObserver / SaveObserver — the machine reports its picture and its save through these; the
     // backend is both, so it is its own observer and needs no back-pointer.
     void frame(const snaggletooth::VideoFrame& frame) override;
@@ -127,6 +149,7 @@ private:
     std::optional<snaggletooth::Snes> snes_;             // the live machine; empty until a ROM is hosted
     std::vector<std::uint8_t>         rom_;              // the hosted image, kept for save reads and rebuilds
     snaggletooth::Region              region_ = snaggletooth::Region::Ntsc;  // the cartridge's, from its header
+    snaggletooth::CartridgeMap        map_ = snaggletooth::CartridgeMap::LoRom;  // the map the machine reads the image by
     bool                              romHosted_    = false;  // loadRom has run
     bool                              videoEnabled_ = false;  // remembered so a rebuild re-attaches the frame observer
     bool                              saveChanged_  = false;  // the guest changed the save since it was last taken

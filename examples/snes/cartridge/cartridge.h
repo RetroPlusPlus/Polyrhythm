@@ -242,19 +242,31 @@ wait:   LDA !$4212              ; HVBJOY
         STA $12
         AND #$01
         BEQ noR
-        INC $10                 ; Right
+        LDA $10                 ; Right: X moves on by the step
+        CLC
+        ADC !step
+        STA $10
 noR:    LDA $12
         AND #$02
         BEQ noL
-        DEC $10                 ; Left
+        LDA $10                 ; Left: X moves back by the step
+        SEC
+        SBC !step
+        STA $10
 noL:    LDA $12
         AND #$04
         BEQ noD
-        INC $11                 ; Down
+        LDA $11                 ; Down: Y moves on by the step
+        CLC
+        ADC !step
+        STA $11
 noD:    LDA $12
         AND #$08
         BEQ noU
-        DEC $11                 ; Up
+        LDA $11                 ; Up: Y moves back by the step
+        SEC
+        SBC !step
+        STA $11
 noU:    LDA !$4218              ; JOY1 low byte: A in bit 7
         AND #$80
         BEQ noA
@@ -311,6 +323,9 @@ noY:    LDA $12
         LDA #$30                ; priority 3, palette 0
         STA !$2104
         RTI
+
+        ORG $00:8300
+step:   DB $01                  ; how far a held direction moves the sprite each frame, read from the image
 )asm";
 
 // The assembled cartridge for `region`, over a one-bank LoROM image whose header declares an 8 KB

@@ -1,21 +1,17 @@
 #pragma once
 
-// SNES / 65816 controller vocabulary — the platform-specific half of the VM host surface.
+// The SNES's vocabulary — the platform-specific half of the VM host surface.
 //
-// vm.h is system-agnostic; this header supplies the SNES's controller vocabulary as the value a game
-// hands vm.buttons(). The console has two controller ports, so this header names both. A game binds its
-// input to the Button actions below and reads them each tick with held(), exactly as it does for the Game
-// Boy family (gb.h).
-//
-// The SNES's routine and register vocabulary — the 65816 register set, the memory map — is not here: a
-// hosted cartridge runs its own code, and naming the places inside it is a later capability. What this
-// header ships is the pad.
+// vm.h is system-agnostic; this header supplies what a declaration or an ActionMap names on this
+// console: the pad and its two ports, the machine's memories as MemoryRegion constants, and the helpers
+// that name a memory the bus cannot reach. `retropp/gb.h` is the Game Boy family's.
 
 #include <cstdint>
 #include <optional>
 
 #include "retropp/guest_buttons.h"  // GuestButtons — the opaque word vm.buttons() takes
 #include "retropp/input.h"          // ActionId + InputState — the Button vocabulary is an Actions enum
+#include "retropp/memory_region.h"  // MemoryRegion — the machine's memories are constants of it
 
 namespace retropp::snes {
 
@@ -114,5 +110,57 @@ struct Ports {
         .r      = down(Button::R),
     };
 }
+
+// ── The machine's memories ──────────────────────────────────────────────────────────────────────
+
+// Where a value lives on this console, as the 32-bit address a MemoryRegion, a Location or a routine's
+// entry carries. A plain 24-bit bus address names work RAM, the cartridge image or its save the way the
+// console's own map reaches them; a memory the bus cannot name is reached by name through one of the
+// helpers below, which folds which memory into the top byte. The backend decodes it. Every alias of a
+// byte names that byte: `0x000010`, `0x7E0010` and `0xBF0010` are one cell of work RAM.
+enum class Space : std::uint8_t {
+    Bus      = 0x00,  // the 65816's own bus: work RAM, the cartridge, its save
+    VideoRam = 0x01,  // the picture chip's 64 KB, a byte address
+    Palette  = 0x02,  // CGRAM, 512 bytes
+    Sprites  = 0x03,  // OAM, 544 bytes
+    AudioRam = 0x04,  // the audio unit's 64 KB
+};
+
+// Byte `at` of `space`: the space in the top byte, the offset in the 24 bits below it.
+[[nodiscard]] constexpr std::uint32_t inSpace(Space space, std::uint32_t at) noexcept {
+    return (static_cast<std::uint32_t>(space) << 24) | (at & 0x00FFFFFFu);
+}
+
+// Byte `at` of each memory the bus cannot name — the `.at` of a place inside one:
+//
+//   MemoryRegion{.at = snes::videoRam(0x2000), .size = 32}  // one 4 bpp tile, 0x2000 bytes in
+//
+// Each is written the way the chip reads it: no port address steps and no latch moves.
+[[nodiscard]] constexpr std::uint32_t videoRam(std::uint16_t at) noexcept { return inSpace(Space::VideoRam, at); }
+[[nodiscard]] constexpr std::uint32_t palette(std::uint16_t at)  noexcept { return inSpace(Space::Palette, at); }
+[[nodiscard]] constexpr std::uint32_t sprites(std::uint16_t at)  noexcept { return inSpace(Space::Sprites, at); }
+[[nodiscard]] constexpr std::uint32_t audioRam(std::uint16_t at) noexcept { return inSpace(Space::AudioRam, at); }
+
+// Each memory as a MemoryRegion: the same value a game fills in for its own content, filled in here for
+// the hardware. Read or write one straight away —
+//
+//   const std::vector<std::uint8_t> colors = vm.read(snes::Palette);
+//
+// — or name a piece of one by building a MemoryRegion at that address instead.
+//
+// These are the memories that are the same size in every console, so they can be constants. The
+// cartridge and its save are not among them: their sizes are the image's, so a place inside either is a
+// plain bus address (0x008000, 0x700000).
+//
+// `count` is 1 on all of them — a whole memory is the degenerate case of an array with one entry — so
+// read(…) with no index hands back the entire memory.
+//
+// Registers are not places. Reading one on this console can change it (a read of $4210 clears the NMI
+// flag), so a place never names one.
+inline constexpr MemoryRegion WorkRam  = {.at = 0x7E0000, .size = 0x20000};  // 128 KB, banks $7E-$7F
+inline constexpr MemoryRegion VideoRam = {.at = videoRam(0), .size = 0x10000};  // tiles and maps, by byte
+inline constexpr MemoryRegion Palette  = {.at = palette(0), .size = 0x200};  // the 256 palette words
+inline constexpr MemoryRegion Sprites  = {.at = sprites(0), .size = 0x220};  // 128 entries + their high bits
+inline constexpr MemoryRegion AudioRam = {.at = audioRam(0), .size = 0x10000};  // the audio unit's 64 KB
 
 }  // namespace retropp::snes

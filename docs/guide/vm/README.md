@@ -135,8 +135,8 @@ that owns it; a console page adds only what its hardware makes different.
 
 Three capabilities depend on what a core offers rather than on the surface: escapes need a
 per-instruction hook, watches a per-access one, and a routine surface an arena to place code in and a
-register file to bind. A core without one refuses at the declaration rather than accepting it, and the
-exception names what the core does instead.
+register file to bind. A core without one refuses at the verb that would need it, and the exception
+names what the core does instead.
 
 | Capability | Game Boy / Game Boy Color | SNES |
 |---|---|---|
@@ -146,7 +146,7 @@ exception names what the core does instead.
 | battery-backed save data | `.sav` | `.srm` |
 | a routine registered from bytes or `.asm` and called for a value | answers | refuses |
 | `advanceClock` — the free-running clock between calls | answers | refuses |
-| naming places, `read` / `write` by address | answers | refuses |
+| naming places, `read` / `write` by address | answers | answers |
 | escapes, watches, `bindRoutine` | answers | refuses |
 | hosting a resident sound driver | answers | refuses |
 

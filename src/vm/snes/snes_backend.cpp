@@ -3,10 +3,13 @@
 #include <algorithm>
 #include <memory>
 #include <stdexcept>
+#include <string>
 #include <utility>
 
+#include "retropp/snes.h"                 // snes::Space — the top byte of a place's address
 #include "retropp/vm.h"                   // VMPlatform + detail::snesCore's declaration
 #include "snaggletooth/snes/cartridge.h"  // parseCartridgeHeader — the region the machine is built at
+#include "src/vm/snes/snes_address.h"     // decode, busAddressOf — a place resolved to its byte
 
 namespace retropp::vm {
 
@@ -84,6 +87,7 @@ void SnesBackend::loadRom(std::span<const std::uint8_t> rom) {
     }
     rom_.assign(rom.begin(), rom.end());  // kept for save reads and machine rebuilds
     region_ = regionOf(rom_);             // the cartridge's own region, from its header
+    map_    = snaggletooth::detectCartridgeMap(rom_);  // the map the machine reads it by, found the same way
     emplaceMachine();                     // construction is power-on: work RAM cleared, PC at the reset vector
     romHosted_ = true;
 }
@@ -197,6 +201,172 @@ bool SnesBackend::takeSaveDataChanged() {
     return true;
 }
 
+// ── Places ──────────────────────────────────────────────────────────────────────────────────────
+// A place on the bus resolves through the machine's own classification, so every alias of a byte lands
+// on that byte and a run strides through the memory it starts in, never through the addresses after
+// its base. A place in a memory the bus cannot name is an offset into that memory. Reads come straight
+// from the memory; writes go through the verbs that write it by name, so no register is driven and no
+// cycle is spent.
+
+std::optional<SnesBackend::Resolved> SnesBackend::resolve(std::uint32_t address) const {
+    if (!snes_) {
+        return std::nullopt;  // nothing hosted: this machine has no memory yet
+    }
+    const std::optional<snes_address::Decoded> decoded = snes_address::decode(address);
+    if (!decoded) {
+        return std::nullopt;
+    }
+    const std::size_t at = decoded->at24;
+    const auto within = [at](Memory memory, std::size_t size) -> std::optional<Resolved> {
+        if (at >= size) {
+            return std::nullopt;
+        }
+        return Resolved{.memory = memory, .base = at, .size = size};
+    };
+    switch (decoded->space) {
+        case snes::Space::VideoRam: return within(Memory::VideoRam, snes_->vram().size());
+        case snes::Space::Palette:  return within(Memory::Palette, snes_->cgram().size());
+        case snes::Space::Sprites:  return within(Memory::Sprites, snes_->oam().size());
+        case snes::Space::AudioRam: return within(Memory::AudioRam, 0x10000u);
+        case snes::Space::Bus:      break;
+    }
+    const snaggletooth::Snes::Physical place = snes_->physical(decoded->at24);
+    switch (place.space) {
+        case snaggletooth::Snes::Space::WorkRam:
+            return Resolved{.memory = Memory::WorkRam, .base = place.index, .size = snes_->state().wram.size()};
+        case snaggletooth::Snes::Space::CartridgeRom:
+            return Resolved{.memory = Memory::Cartridge, .base = place.index, .size = rom_.size()};
+        case snaggletooth::Snes::Space::SaveRam:
+            return Resolved{.memory = Memory::Save, .base = place.index, .size = snes_->state().sram.size()};
+        case snaggletooth::Snes::Space::Register:  // reading one can change it: a register is not a place
+        case snaggletooth::Snes::Space::OpenBus:   // no memory answers here
+            return std::nullopt;
+    }
+    return std::nullopt;
+}
+
+bool SnesBackend::regionIsAddressable(const MemoryRegion& region) const {
+    const std::uint64_t total = region.totalBytes();
+    if (total == 0) {
+        return false;  // a place spanning no bytes names nothing
+    }
+    const std::optional<Resolved> resolved = resolve(region.at);
+    return resolved && resolved->base + total <= resolved->size;
+}
+
+std::pair<SnesBackend::Memory, std::size_t> SnesBackend::entryAt(const MemoryRegion& region,
+                                                                 std::uint32_t index) const {
+    if (!region.contains(index)) {
+        throw std::out_of_range("entry " + std::to_string(index) + " is past the " +
+                                std::to_string(region.count) + " this place declares");
+    }
+    const std::optional<Resolved> resolved = resolve(region.at);
+    if (!resolved) {
+        throw std::out_of_range("SNES address " + std::to_string(region.at) +
+                                " names no memory on this machine");
+    }
+    // The stride is applied in the memory, not to the address: past the end of a bank's window the
+    // addresses after the base reach something else, and the memory's next byte is what the run means.
+    const std::size_t offset = resolved->base + static_cast<std::size_t>(region.size) * index;
+    if (offset + region.size > resolved->size) {
+        throw std::out_of_range("this place runs past the end of the memory it starts in");
+    }
+    return {resolved->memory, offset};
+}
+
+std::uint8_t SnesBackend::readByte(Memory memory, std::size_t offset) const {
+    switch (memory) {
+        case Memory::WorkRam:   return snes_->state().wram[offset];
+        case Memory::Cartridge: return rom_[offset];
+        case Memory::Save:      return snes_->state().sram[offset];
+        case Memory::VideoRam:  return snes_->vram()[offset];
+        case Memory::Palette:   return snes_->cgram()[offset];
+        case Memory::Sprites:   return snes_->oam()[offset];
+        case Memory::AudioRam:  return snes_->peekApu(static_cast<std::uint16_t>(offset));
+    }
+    return 0;
+}
+
+void SnesBackend::writeByte(Memory memory, std::size_t offset, std::uint8_t value) {
+    const auto pokeAt = [&](snaggletooth::Snes::Space space) {
+        const std::optional<std::uint32_t> address = snes_address::busAddressOf(
+            map_, snaggletooth::Snes::Physical{.space = space, .index = static_cast<std::uint32_t>(offset)});
+        if (!address || !snes_->poke(*address, value)) {
+            throw std::out_of_range("no bus address reaches byte " + std::to_string(offset) +
+                                    " of this memory");
+        }
+    };
+    switch (memory) {
+        case Memory::WorkRam:
+            pokeAt(snaggletooth::Snes::Space::WorkRam);
+            return;
+        case Memory::Cartridge:
+            // The machine's copy and the image a rebuild starts from are written together, so a patch
+            // survives reset() and a fresh boot as the image itself would.
+            pokeAt(snaggletooth::Snes::Space::CartridgeRom);
+            rom_[offset] = value;
+            return;
+        case Memory::Save:
+            pokeAt(snaggletooth::Snes::Space::SaveRam);
+            return;
+        case Memory::VideoRam:
+            snes_->writeVram(static_cast<std::uint16_t>(offset), value);
+            return;
+        case Memory::Palette:
+            snes_->writeCgram(static_cast<std::uint16_t>(offset), value);
+            return;
+        case Memory::Sprites:
+            snes_->writeOam(static_cast<std::uint16_t>(offset), value);
+            return;
+        case Memory::AudioRam:
+            snes_->writeApuRam(static_cast<std::uint16_t>(offset), value);
+            return;
+    }
+}
+
+void SnesBackend::readRegion(const MemoryRegion& region, std::uint32_t index, std::span<std::uint8_t> out) {
+    if (out.size() != region.size) {
+        throw std::invalid_argument("a region read takes exactly one entry's worth of bytes");
+    }
+    const auto [memory, offset] = entryAt(region, index);
+    for (std::size_t i = 0; i < out.size(); ++i) {
+        out[i] = readByte(memory, offset + i);
+    }
+}
+
+void SnesBackend::writeRegion(const MemoryRegion& region, std::uint32_t index,
+                              std::span<const std::uint8_t> bytes) {
+    if (bytes.size() != region.size) {
+        throw std::invalid_argument("a region write takes exactly one entry's worth of bytes");
+    }
+    const auto [memory, offset] = entryAt(region, index);
+    for (std::size_t i = 0; i < bytes.size(); ++i) {
+        writeByte(memory, offset + i, bytes[i]);
+    }
+}
+
+void SnesBackend::writeMemory(std::uint32_t address, std::uint64_t value, int width) {
+    // Through the same resolver a region write uses, so a word and a range cannot disagree about where an
+    // address is. Little-endian, as the 65816 stores a word.
+    const auto [memory, offset] =
+        entryAt(MemoryRegion{.at = address, .size = static_cast<std::uint32_t>(width)}, 0);
+    for (int i = 0; i < width; ++i) {
+        writeByte(memory, offset + static_cast<std::size_t>(i),
+                  static_cast<std::uint8_t>((value >> (8 * i)) & 0xFF));
+    }
+}
+
+std::uint64_t SnesBackend::readMemory(std::uint32_t address, int width) {
+    // Through the same resolver a region read uses — see writeMemory.
+    const auto [memory, offset] =
+        entryAt(MemoryRegion{.at = address, .size = static_cast<std::uint32_t>(width)}, 0);
+    std::uint64_t value = 0;
+    for (int i = 0; i < width; ++i) {
+        value |= static_cast<std::uint64_t>(readByte(memory, offset + static_cast<std::size_t>(i))) << (8 * i);
+    }
+    return value;
+}
+
 // ── The verbs this core does not realize. Each throws std::logic_error naming what the core does now.
 //    setEscapeSink / setWatchSink store the sink; installing one is not arming.
 void SnesBackend::advanceClock(std::uint64_t) {
@@ -209,28 +379,15 @@ AssembledRoutine SnesBackend::assemble(std::string_view) const {
     throw std::logic_error("assemble: the SNES core assembles no routine source");
 }
 int SnesBackend::registerWidthBytes(std::uint16_t) const { return 0; }
-bool SnesBackend::regionIsAddressable(const MemoryRegion&) const { return false; }
-void SnesBackend::readRegion(const MemoryRegion&, std::uint32_t, std::span<std::uint8_t>) {
-    throw std::logic_error("readRegion: the SNES core names no places in guest memory");
-}
-void SnesBackend::writeRegion(const MemoryRegion&, std::uint32_t, std::span<const std::uint8_t>) {
-    throw std::logic_error("writeRegion: the SNES core names no places in guest memory");
-}
 void SnesBackend::beginCall(std::uint32_t) {
     throw std::logic_error("beginCall: the SNES core makes no routine calls");
 }
 void SnesBackend::writeRegister(std::uint16_t, std::uint64_t, int) {
     throw std::logic_error("writeRegister: the SNES core makes no routine calls");
 }
-void SnesBackend::writeMemory(std::uint32_t, std::uint64_t, int) {
-    throw std::logic_error("writeMemory: the SNES core names no places in guest memory");
-}
 void SnesBackend::run() { throw std::logic_error("run: the SNES core makes no routine calls"); }
 std::uint64_t SnesBackend::readRegister(std::uint16_t) {
     throw std::logic_error("readRegister: the SNES core makes no routine calls");
-}
-std::uint64_t SnesBackend::readMemory(std::uint32_t, int) {
-    throw std::logic_error("readMemory: the SNES core names no places in guest memory");
 }
 void SnesBackend::beginContinuous(std::uint32_t) {
     throw std::logic_error("beginContinuous: the SNES core hosts no driver");

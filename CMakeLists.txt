@@ -1571,6 +1571,8 @@ if(RETROPP_BUILD_TESTS)
         tests/snes_backend_frame_test.cpp
         tests/snes_backend_input_test.cpp
         tests/snes_backend_save_test.cpp
+        tests/snes_backend_places_test.cpp
+        tests/snes_regions_test.cpp
         tests/snes_vm_test.cpp
         tests/snes_backend_audio_test.cpp
         tests/net_socket_test.cpp
@@ -2154,6 +2156,15 @@ if(RETROPP_BUILD_EXAMPLES)
     target_include_directories(retropp-snes_player-demo PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}
         ${CMAKE_CURRENT_SOURCE_DIR}/third_party/snaggletooth/tools)
+    # ── SNES co-execution — the demo cartridge running on its own thread beside a panel that reads and
+    # writes the places inside it: the palette, video RAM's tiles, the sprite's work-RAM bytes and a byte
+    # of the image the cartridge reads every frame. It hosts the same shared cartridge the player does, so
+    # it links and includes the same. CI runs its --verify (registered below).
+    retropp_add_example(snes_coexecution DIRECTORY snes/coexecution)
+    target_link_libraries(retropp-snes_coexecution-demo PRIVATE snaggletooth_cpu65816 snaggletooth_spc700)
+    target_include_directories(retropp-snes_coexecution-demo PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/snaggletooth/tools)
 
     # ── Curve demo — plots a Catmull-Rom curve through waypoints, a constant-speed atDistance walker, and
     # a Hermite curve, using a tiny in-memory marker atlas (no committed asset). Dev-run only; the live
@@ -2456,6 +2467,13 @@ if(RETROPP_BUILD_EXAMPLES)
 
     add_test(NAME SnesPlayerExample.HoldsHardwareCadenceLive
              COMMAND retropp-snes_player-demo --verify)
+
+    # The SNES co-execution demo, headless: it declares its four places on the demo cartridge, advances
+    # it a tick at a time, round-trips a palette word and the sprite's X, and checks that a step patched
+    # into the image moves the sprite that far a frame; it exits nonzero on any miss. Deterministic
+    # coverage of the same verbs is snes_backend_places_test's and snes_regions_test's.
+    add_test(NAME SnesCoexecutionExample.Verify
+             COMMAND retropp-snes_coexecution-demo --verify)
 
     # ── Guest-escape demo — a running cartridge hands control to native code and carries on.
     # Authors a cartridge whose loop calls its own routine every frame, hosts it and run()s it, then
