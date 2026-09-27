@@ -5,9 +5,10 @@
 // 32'000 Hz frames on their way to a sink at the sink's rate, the 65816 register file behind the
 // register ids snes.h fixes, and the image the core writes for the routines it places. The generic Vm
 // (vm.cpp) drives it only through VmBackend, so it knows none of it. It names places: a place is a byte
-// of work RAM, the cartridge image or its save named by any bus address that reaches it, or a byte of
-// one of the four memories the bus cannot name, named through the space snes.h folds into the top byte
-// (snes_address.h decodes both); every region verb reads and writes wherever a place resolves. It runs
+// of work RAM, the cartridge image or its save named by any bus address that reaches it, a register
+// read as it stands, or a byte of one of the four memories the bus cannot name, named through the space
+// snes.h folds into the top byte (snes_address.h decodes both); every region verb reads and writes
+// wherever a place resolves, and a register takes no write. It runs
 // routines: bytes placed into an image of its own (snes_image.h), each at the address its source named
 // or wherever the arena has room, called in a frame of the engine's own; and a routine the cartridge
 // already holds, called in the guest's own context on the guest's own stack. Escapes, watches, driver
@@ -112,8 +113,9 @@ public:
                                std::uint64_t maxCpuCycles) override;
     // A call into code the machine already holds, on the guest's own stack or the engine's scratch top,
     // the file put back afterwards. A machine parked by a cycle budget is usually part-way through an
-    // instruction; that instruction is finished first, so the call lands at an instruction boundary. The
-    // entry's top bit (snes::rtl) picks the landing a JSL pushes over the one a JSR pushes.
+    // instruction; that instruction is finished first, before the presets go over the file, so the
+    // instruction completes under the guest's own registers and the call lands at an instruction
+    // boundary. The entry's top bit (snes::rtl) picks the landing a JSL pushes over the one a JSR pushes.
     void callInContext(std::uint32_t entry, std::span<const ResidentRegister> presets,
                        CallStack stack, std::size_t maxInstructions,
                        const std::function<void()>& readOutputs) override;
@@ -157,13 +159,15 @@ private:
     // the image keeps its size, a fresh machine when it grew.
     void rebuildRoutineImage();
     // The machine at an instruction boundary: an instruction a cycle budget stopped part-way through, or
-    // an interrupt sequence in flight, is finished first.
+    // an interrupt sequence in flight, is finished first — under the guest's own registers, before a
+    // call's presets go over them.
     void finishInstruction();
 
     // The memory a place is in, the offset of its first byte there, and that memory's size. Nothing when
-    // no cartridge is hosted, or when the address names no memory: a register, open bus, a space this
-    // console does not have, or an offset past the end of the memory it names.
-    enum class Memory : std::uint8_t { WorkRam, Cartridge, Save, VideoRam, Palette, Sprites, AudioRam };
+    // no cartridge is hosted, or when the address names no memory: open bus, a space this console does
+    // not have, or an offset past the end of the memory it names. A register is a memory here — its
+    // value read as it stands, at its offset in the system banks' low half — that takes no write.
+    enum class Memory : std::uint8_t { WorkRam, Cartridge, Save, Register, VideoRam, Palette, Sprites, AudioRam };
     struct Resolved {
         Memory      memory;
         std::size_t base;

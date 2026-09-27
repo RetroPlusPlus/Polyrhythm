@@ -161,9 +161,14 @@ next address mirrors — the index is a parameter for that reason, as on every c
 A write into the cartridge patches the machine's copy of the image and the image a `reset()` or a
 `run()` rebuilds it from, so a patch survives both; the file the bytes came from is untouched.
 
-**Registers are not places.** Reading one on this console can change it — a read of `$4210` clears the
-NMI flag — so a place at a register address, like one at an address no memory answers, does not
-resolve, and a batch naming one reports it as not reachable on this machine.
+**A register reads as it stands.** A place at a register's bus address — `0x004210`, or the same offset
+in any system bank — answers the byte the program's own read would answer, with nothing moved: the NMI
+flag a read of `$4210` clears stays set, the port a read of `$2140` takes keeps its byte, the video
+address a read of `$2139` steps stands. A run over registers is a run over the register windows, which
+have open bus between them, so every byte of it has to be a register. A register takes no write through
+a place (`std::logic_error`): writing one is a program's own store, with the effects a store has, and
+goes through a routine. An address no memory answers — open bus — does not resolve, and a batch naming
+one reports it as not reachable on this machine.
 
 ### Memories the bus cannot name
 
@@ -279,7 +284,10 @@ here is what they are on this hardware.
 - **A call spends the machine's own time.** The cycles a routine runs are the machine's — the beam moves,
   the sound chip is paced — and `advanceClock(cycles)` on a routine machine idles it for `cycles` more
   from where its clock stands, the register file put back afterwards.
-- **A register is not a place.** Reading one on this console can change it — above, under
+- **A register's value is answered as the machine stands.** A program's read ticks the beam through
+  its own cycle before it answers and a place's read spends no cycle, so a bit the beam decides —
+  `$4212`'s blank flags, `$213F`'s field bit — is answered at the position the machine is parked at,
+  and the program's own read an instruction later can see it otherwise. The place itself is under
   [The machine's memories](#the-machines-memories).
 
 ## The assembler's dialect

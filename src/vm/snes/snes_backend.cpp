@@ -219,8 +219,8 @@ bool SnesBackend::takeSaveDataChanged() {
 // A place on the bus resolves through the machine's own classification, so every alias of a byte lands
 // on that byte and a run strides through the memory it starts in, never through the addresses after
 // its base. A place in a memory the bus cannot name is an offset into that memory. Reads come straight
-// from the memory; writes go through the verbs that write it by name, so no register is driven and no
-// cycle is spent.
+// from the memory — a register's from the value a read would answer, with nothing moved; writes go
+// through the verbs that write it by name, so no register is driven and no cycle is spent.
 
 std::optional<SnesBackend::Resolved> SnesBackend::resolve(std::uint32_t address) const {
     if (!snes_) {
@@ -252,8 +252,11 @@ std::optional<SnesBackend::Resolved> SnesBackend::resolve(std::uint32_t address)
             return Resolved{.memory = Memory::Cartridge, .base = place.index, .size = rom_.size()};
         case snaggletooth::Snes::Space::SaveRam:
             return Resolved{.memory = Memory::Save, .base = place.index, .size = snes_->state().sram.size()};
-        case snaggletooth::Snes::Space::Register:  // reading one can change it: a register is not a place
-        case snaggletooth::Snes::Space::OpenBus:   // no memory answers here
+        case snaggletooth::Snes::Space::Register:
+            // The registers' offsets in the system banks' low half; whether each byte of a run is a
+            // register is answered byte by byte (regionIsAddressable), since the windows have gaps.
+            return Resolved{.memory = Memory::Register, .base = place.index, .size = 0x10000};
+        case snaggletooth::Snes::Space::OpenBus:  // no memory answers here
             return std::nullopt;
     }
     return std::nullopt;
@@ -265,7 +268,18 @@ bool SnesBackend::regionIsAddressable(const MemoryRegion& region) const {
         return false;  // a place spanning no bytes names nothing
     }
     const std::optional<Resolved> resolved = resolve(region.at);
-    return resolved && resolved->base + total <= resolved->size;
+    if (!resolved || resolved->base + total > resolved->size) {
+        return false;
+    }
+    if (resolved->memory == Memory::Register) {
+        // Every byte of the run is a register: the windows have open bus between them.
+        for (std::uint64_t i = 0; i < total; ++i) {
+            if (!snes_->peekRegister(static_cast<std::uint32_t>(resolved->base + i))) {
+                return false;
+            }
+        }
+    }
+    return true;
 }
 
 std::pair<SnesBackend::Memory, std::size_t> SnesBackend::entryAt(const MemoryRegion& region,
@@ -293,6 +307,15 @@ std::uint8_t SnesBackend::readByte(Memory memory, std::size_t offset) const {
         case Memory::WorkRam:   return snes_->state().wram[offset];
         case Memory::Cartridge: return rom_[offset];
         case Memory::Save:      return snes_->state().sram[offset];
+        case Memory::Register: {
+            // The byte a read would answer, with nothing moved: no flag cleared, no port clocked, no
+            // address stepped. Bank $00 is one of the system banks every register answers in.
+            const std::optional<std::uint8_t> value = snes_->peekRegister(static_cast<std::uint32_t>(offset));
+            if (!value) {
+                throw std::out_of_range("no register is at offset " + std::to_string(offset));
+            }
+            return *value;
+        }
         case Memory::VideoRam:  return snes_->vram()[offset];
         case Memory::Palette:   return snes_->cgram()[offset];
         case Memory::Sprites:   return snes_->oam()[offset];
@@ -323,6 +346,10 @@ void SnesBackend::writeByte(Memory memory, std::size_t offset, std::uint8_t valu
         case Memory::Save:
             pokeAt(snaggletooth::Snes::Space::SaveRam);
             return;
+        case Memory::Register:
+            // A register's value is read as it stands; writing one is a program's own store, with the
+            // effects a store has, and goes through a routine.
+            throw std::logic_error("a register takes no write through a place; a routine writes it");
         case Memory::VideoRam:
             snes_->writeVram(static_cast<std::uint16_t>(offset), value);
             return;
@@ -628,7 +655,8 @@ void SnesBackend::callInContext(std::uint32_t entry, std::span<const ResidentReg
                                     busAddress(decoded->at24));
     }
     // A cycle budget stops the machine wherever the cycle fell; the instruction it was inside finishes
-    // first, so the routine runs between two of the guest's instructions.
+    // first, under the guest's own registers, so the presets below go over the file at the boundary
+    // and the routine runs between two of the guest's instructions.
     finishInstruction();
 
     const snaggletooth::Cpu65816State saved = snes_->cpuState();
@@ -645,9 +673,11 @@ void SnesBackend::callInContext(std::uint32_t entry, std::span<const ResidentReg
     const std::uint64_t before = snes_->state().master;
     const bool returned = snes_->callOnStack(decoded->at24, top, returns, maxInstructions);
     if (!returned && snes_->state().master == before) {
-        // Refused with nothing done: the only cause left is the stack the landing would land on.
+        // Refused with nothing done: the machine is inside a cycle — an access watcher's or an
+        // observer's call — or the stack the landing would land on is not memory.
         snes_->setCpuState(saved);
-        throw std::logic_error("callInContext: the stack at " + busAddress(top) +
+        throw std::logic_error("callInContext: the machine refused the call — it is inside an access "
+                               "watcher's or an observer's call, or the stack at " + busAddress(top) +
                                " is not memory the landing can be pushed to");
     }
     // The output is read while the routine's answer is still in the registers it left it in, and the

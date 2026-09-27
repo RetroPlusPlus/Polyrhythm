@@ -136,7 +136,7 @@ TEST(SnesRegions, APlaceAndABindingAgreeAboutEveryAddress) {
                                         std::uint32_t{0x001FFF},          // work ram, a low-page alias
                                         std::uint32_t{0x7FFFFF},          // work ram, the last byte
                                         std::uint32_t{0x700000},          // the save
-                                        std::uint32_t{0x002100},          // a register: served by neither
+                                        std::uint32_t{0x002100},          // a register: read as it stands
                                         std::uint32_t{0x004000},          // open bus: served by neither
                                         snes::videoRam(0xFFFF),           // video ram, the last byte
                                         snes::palette(0x1FF),             // the palette, the last byte

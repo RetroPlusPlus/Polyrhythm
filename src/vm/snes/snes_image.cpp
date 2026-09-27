@@ -24,7 +24,9 @@ constexpr std::size_t kAddressSpaceBytes = 0x400000;
 }  // namespace
 
 std::optional<std::size_t> imageOffset(snaggletooth::CartridgeMap map, std::uint32_t address) noexcept {
-    return snaggletooth::romOffset(map, address, kAddressSpaceBytes);
+    // The engine's image is on a plain board with no save: no chip beside the ROM, and a LoROM save
+    // window reading the image as every other lower half does.
+    return snaggletooth::romOffset(snaggletooth::CartridgeBoard{.map = map}, address, kAddressSpaceBytes);
 }
 
 bool overlapsReserved(std::size_t at, std::size_t bytes) noexcept {

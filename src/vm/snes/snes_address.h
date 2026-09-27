@@ -1,14 +1,14 @@
 // Internal: the SNES core's addresses, decoded.
 //
 // A place on this console is a byte, not an address. The bus reaches one byte through many addresses —
-// the low 8 KB of work RAM at $7E:0000-$1FFF and at $0000-$1FFF of every system bank, the image and the
-// save across every bank the cartridge's map repeats them in — and Snaggletooth's `Snes::physical`
-// classifies each of them to the one {memory, offset} it reaches. The backend resolves a place there and
-// strides through it there, so a run that crosses a bank boundary reads the memory's next bytes and not
-// whatever the next address happens to mirror.
+// the low 8 KB of work RAM at $7E:0000-$1FFF and at $0000-$1FFF of every system bank, a register at its
+// offset in every system bank, the image and the save across every bank the cartridge's map repeats
+// them in — and Snaggletooth's `Snes::physical` classifies each of them to the one {memory, offset} it
+// reaches. The backend resolves a place there and strides through it there, so a run that crosses a
+// bank boundary reads the memory's next bytes and not whatever the next address happens to mirror.
 //
 // busAddressOf is the way back: one address that reaches a given byte, for the verbs that take an
-// address (poke). It answers one alias of the byte, never all of them.
+// address (poke, peekRegister). It answers one alias of the byte, never all of them.
 //
 // INTERNAL — under src/vm/, never include/retropp/.
 #ifndef RETROPP_SRC_VM_SNES_SNES_ADDRESS_H
@@ -43,11 +43,11 @@ struct Decoded {
     return Decoded{.space = static_cast<snes::Space>(tag), .at24 = address & 0x00FFFFFFu, .rtl = rtl};
 }
 
-// One bus address that reaches `place` under `map`, or nothing when no address does: a register or open
-// bus (neither is a memory), or an image offset past what the map can address. Work RAM answers through
-// bank $7E; the image through the banks that carry it without a gap (snaggletooth::romAddress); the save
-// through the first bank of its window — LoROM $70-$7D at $0000-$7FFF, HiROM $20-$3F and ExHiROM $80-$BF
-// at $6000-$7FFF.
+// One bus address that reaches `place` under `map`, or nothing when no address does: open bus (no
+// memory), or an image offset past what the map can address. Work RAM answers through bank $7E; the
+// image through the banks that carry it without a gap (snaggletooth::romAddress); the save through the
+// first bank of its window — LoROM $70-$7D at $0000-$7FFF, HiROM $20-$3F and ExHiROM $80-$BF at
+// $6000-$7FFF; a register through bank $00, one of the system banks it answers in.
 [[nodiscard]] inline std::optional<std::uint32_t> busAddressOf(snaggletooth::CartridgeMap           map,
                                                                snaggletooth::Snes::Physical place) noexcept {
     using Space = snaggletooth::Snes::Space;
@@ -66,6 +66,7 @@ struct Decoded {
             }
             return std::nullopt;
         case Space::Register:
+            return i;
         case Space::OpenBus:
             return std::nullopt;
     }

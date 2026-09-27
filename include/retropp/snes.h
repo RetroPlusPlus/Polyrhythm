@@ -192,8 +192,9 @@ enum class Space : std::uint8_t {
 // `count` is 1 on all of them — a whole memory is the degenerate case of an array with one entry — so
 // read(…) with no index hands back the entire memory.
 //
-// Registers are not places. Reading one on this console can change it (a read of $4210 clears the NMI
-// flag), so a place never names one.
+// A register is a place too, at its bus address ($004210, or the same offset in any system bank): a
+// read answers the byte the program's own read would, with nothing moved — the NMI flag a read of $4210
+// clears stays set. A register takes no write through a place; a program writes one through a routine.
 inline constexpr MemoryRegion WorkRam  = {.at = 0x7E0000, .size = 0x20000};  // 128 KB, banks $7E-$7F
 inline constexpr MemoryRegion VideoRam = {.at = videoRam(0), .size = 0x10000};  // tiles and maps, by byte
 inline constexpr MemoryRegion Palette  = {.at = palette(0), .size = 0x200};  // the 256 palette words

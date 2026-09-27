@@ -5,7 +5,8 @@
 // What a place has to get right on this console, and the cases below pin one at a time: every alias of a
 // byte is the byte; a run strides through the memory it starts in, not through the addresses after its
 // base; a write to the image patches both the machine and the image a rebuild starts from; the save
-// window is where each map puts it; a register and open bus are not places; a memory ends where it ends.
+// window is where each map puts it; a register reads as it stands and takes no write; open bus is not a
+// place; a memory ends where it ends.
 
 #include <algorithm>
 #include <array>
@@ -222,18 +223,27 @@ TEST(SnesBackendPlaces, BusAddressOfAnswersAnAddressThatReachesTheByte) {
         roundTrips(Space::CartridgeRom, 0x10000u);
         roundTrips(Space::SaveRam, 0x2000u);
         roundTrips(Space::WorkRam, 0x20000u);
-        EXPECT_FALSE(vm::snes_address::busAddressOf(c.map, {.space = Space::Register, .index = 0x2100u}));
+        EXPECT_EQ(vm::snes_address::busAddressOf(c.map, {.space = Space::Register, .index = 0x2100u}), 0x002100u);
         EXPECT_FALSE(vm::snes_address::busAddressOf(c.map, {.space = Space::OpenBus, .index = 0x4000u}));
     }
 }
 
-TEST(SnesBackendPlaces, ARegisterIsNotAPlace) {
+TEST(SnesBackendPlaces, ARegisterReadsAsItStandsAndTakesNoWrite) {
     SnesBackend backend;
     backend.loadRom(loRomWithSave());
     for (const std::uint32_t reg : {0x002100u, 0x002140u, 0x004210u, 0x804218u}) {
-        EXPECT_FALSE(backend.regionIsAddressable(MemoryRegion{.at = reg, .size = 1})) << reg;
-        EXPECT_THROW((void)backend.readMemory(reg, 1), std::out_of_range) << reg;
+        EXPECT_TRUE(backend.regionIsAddressable(MemoryRegion{.at = reg, .size = 1})) << reg;
     }
+    // The values a read answers, read twice with nothing moved: RDNMI's low nibble is the CPU's version
+    // and STAT77's the picture chip's, and a register answers at its offset in every system bank.
+    EXPECT_EQ(backend.readMemory(0x004210, 1) & 0x0F, 2u);
+    EXPECT_EQ(backend.readMemory(0x004210, 1), backend.readMemory(0x804210, 1));
+    EXPECT_EQ(backend.readMemory(0x00213E, 1) & 0x0F, 1u);
+    // A run over the register windows is every byte a register; one that reaches the open bus between
+    // them is not a place.
+    EXPECT_TRUE(backend.regionIsAddressable(MemoryRegion{.at = 0x004200, .size = 0x20}));
+    EXPECT_FALSE(backend.regionIsAddressable(MemoryRegion{.at = 0x004210, .size = 0x1000}));
+    EXPECT_THROW(backend.writeMemory(0x004200, 0x81, 1), std::logic_error);
 }
 
 TEST(SnesBackendPlaces, OpenBusIsNotAPlace) {
