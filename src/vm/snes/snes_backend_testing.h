@@ -4,6 +4,9 @@
 #ifndef RETROPP_SRC_VM_SNES_SNES_BACKEND_TESTING_H
 #define RETROPP_SRC_VM_SNES_SNES_BACKEND_TESTING_H
 
+#include <cstdint>
+#include <optional>
+
 #include "snaggletooth/snes/snes.h"
 #include "src/vm/snes/snes_backend.h"
 
@@ -26,6 +29,18 @@ struct SnesBackendTestAccess {
     // installed or without — the step drains them either way; the read itself takes them.
     [[nodiscard]] static std::size_t pendingAudioFrames(SnesBackend& backend) {
         return backend.snes_->takeFrames().size();
+    }
+    // Whether the machine tells the backend about an armed instruction, and about an armed access: set only
+    // while something is armed and a sink is there to ask.
+    [[nodiscard]] static bool instructionWatcherInstalled(const SnesBackend& backend) noexcept {
+        return backend.snes_ && backend.snes_->instructionWatcher() != nullptr;
+    }
+    [[nodiscard]] static bool accessWatcherInstalled(const SnesBackend& backend) noexcept {
+        return backend.snes_ && backend.snes_->accessWatcher() != nullptr;
+    }
+    // The byte the machine's own copy of the image holds at a bus address, read without a fetch.
+    [[nodiscard]] static std::optional<std::uint8_t> peek(const SnesBackend& backend, std::uint32_t address) {
+        return backend.snes_->peek(address);
     }
 };
 

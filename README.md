@@ -74,10 +74,9 @@ Active development. The core is in place and exercised end to end by a real cons
   cartridge already has can be bound where it sits and called like a typed C++ function, in the
   guest's own context and to any depth, so a native replacement can build its answer out of the
   cartridge's own routines — or a parked machine's own decoders can be run to reach content the
-  game never played its way to. The image itself is never modified. A hosted SNES cartridge boots,
-  runs on either clock, draws, sounds, takes both controller ports, keeps its battery save, names the
-  places inside it and calls the routines it holds through the same verbs; the escape and watch verbs
-  are the Game Boy family's.
+  game never played its way to. The image itself is never modified. Every one of these verbs runs on
+  the Game Boy family and on the SNES alike, and a hosted SNES cartridge draws, sounds, takes both
+  controller ports and keeps its battery save through the same verbs a Game Boy cartridge does.
 - **A hosted machine's video** — ask a machine for video and the frames it finishes become a
   layer's content, composited by z among native tile and sprite layers like anything else on
   screen: a game's own art over a running cartridge's picture, a transform or a screen-space

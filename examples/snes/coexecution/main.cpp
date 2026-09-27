@@ -34,15 +34,29 @@
 // cartridge's own registers before the routine's arguments go in, so the answer is exact wherever the
 // machine was parked. The panel counts the calls 8 made and how many answered exactly.
 //
+// And native code woven into the cartridge while it runs, through two escapes and two watches the program
+// declares before it starts. The frame handler steps the sprite for every held direction by calling its own
+// `pace` with the coordinate in A and the direction in X, and calls an empty `report` as it finishes; `pace`
+// reads the step byte, and the handler stores the sprite's Y:
+//
+//   P      answer `pace` natively: the sprite moves by the step averaged with 8 — 4 a frame for a step of
+//          1 — the average computed by calling the cartridge's own `mix` from inside the escape
+//   X      switch the escape at `report` on and off; the panel counts the frames it hears
+//   H      the watch on the sprite's Y: free, every store vetoed, or every store held between 64 and 160
+//   L      answer every read of the step byte with 3, while the image still holds what 5 and 6 wrote
+//
 // Modes:
 //   (no args)   the window
 //   --verify    headless: declares the six places, round-trips a palette word and the sprite's X, checks
 //               a patched step moves the sprite that far a frame, reads the pad registers with Right held
-//               and released, calls both routines for a value, and calls the cartridge's own routine
-//               parked at 240 different points of its frame; exits nonzero on any miss (CI runs this on
+//               and released, calls both routines for a value, calls the cartridge's own routine parked
+//               at 240 different points of its frame, and switches each escape and watch on in turn and
+//               checks what it does to the running cartridge; exits nonzero on any miss (CI runs this on
 //               every platform)
 
+#include <algorithm>
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
@@ -57,6 +71,8 @@
 #include "retropp/draw_state.h"
 #include "retropp/engine_config.h"
 #include "retropp/geometry.h"
+#include "retropp/guest_escape.h"   // GuestEscape — where control leaves the cartridge's code
+#include "retropp/guest_watch.h"    // GuestWatch, AccessVerdict — the cartridge's own accesses, decided here
 #include "retropp/input.h"
 #include "retropp/input_actions.h"
 #include "retropp/memory_region.h"  // MemoryRegion — where a place is
@@ -90,6 +106,7 @@ constexpr int kHeadCol  = 33;  // a heading
 constexpr int kNameCol  = 34;  // a row's label, indented under its heading
 constexpr int kValueCol = 42;  // a row's value
 constexpr int kKeyCol   = 48;  // the keys that change a heading's rows
+constexpr int kHookCol  = 43;  // the escapes and watches, beside the swatches
 
 constexpr int kSwatchPx = 8;                        // one palette word
 constexpr int kSwatchX = 32, kSwatchY = 5 * kGlyphPx;
@@ -101,10 +118,15 @@ constexpr int kStripX = 32, kStripY = 15 * kGlyphPx;
 constexpr std::uint32_t kSpriteXY  = 0x7E0010;  // sprite 0's X, then its Y, in work RAM
 constexpr std::uint32_t kStepByte  = 0x008300;  // the step, in the cartridge image
 constexpr std::uint32_t kMixEntry  = 0x008400;  // the cartridge's own `mix`, where it sits in the image
+constexpr std::uint32_t kPace      = 0x008380;  // `pace`: a coordinate in A, a direction in X, the stepped coordinate back in A
+constexpr std::uint32_t kReport    = 0x0083A0;  // `report`: an empty routine the frame handler calls as it ends
 constexpr std::uint32_t kJoy1      = 0x004218;  // JOY1: the pad the console read at vertical blank, low byte first
 constexpr std::uint32_t kRdnmi     = 0x004210;  // RDNMI: the NMI flag in bit 7, the CPU's version in bits 0-3
 constexpr std::size_t   kColorWord = 129;       // object palette 0, color 1: the sprite's color
 constexpr std::uint32_t kTileCount = 16;
+constexpr std::uint8_t  kPaceWith = 8;                   // what the native `pace` averages the step with
+constexpr std::uint8_t  kCorralTop = 64, kCorralBottom = 160;  // the band a corralled Y is held in
+constexpr std::uint8_t  kStepAnswer = 3;                 // what a read of the step byte answers while L is on
 
 // The routine's source, as the panel shows it; the file the machine assembles is routines/mix.asm.
 constexpr std::array<std::string_view, 2> kMixSource{"STA $00  TXA  CLC  ADC $00", "ROR A  RTS"};
@@ -161,6 +183,60 @@ RegionMapId<Places> declarePlaces(Vm& machine) {
         region(&Places::nmi, MemoryRegion{.at = kRdnmi, .size = 1}, "nmi")));
 }
 
+// What the escapes and watches have done — counted on the machine's own thread, where their code runs, and
+// read on the game's. `yMode` is how the watch on the sprite's Y answers while it is on: 1 vetoes every
+// store, 2 holds every store inside the band; 0 is the watch switched off.
+struct Hooks {
+    std::atomic<int> paced{0};         // `pace` answered natively
+    std::atomic<int> reports{0};       // `report` reached
+    std::atomic<int> yDecided{0};      // stores to the sprite's Y the watch decided
+    std::atomic<int> stepAnswered{0};  // reads of the step byte answered
+    std::atomic<int> yMode{0};
+};
+
+// How far the native `pace` moves the sprite a frame: the step byte averaged with 8 by the cartridge's own
+// `mix` — 4 for the image's step of 1, 8 for a step of 8.
+std::uint8_t paceStride(const Mix& mix, std::uint8_t step) { return mix(step, kPaceWith); }
+
+// The two escapes and two watches, declared before the machine runs, every one but `report` switched off.
+// The native `pace` answers in the routine's own convention — the coordinate in A, the direction in X —
+// and reads the step byte from the image as a third input. It calls the cartridge's own `mix` from inside
+// the escape: the cartridge is between two instructions there, so the call is the same call a parked
+// machine takes.
+void declareHooks(Vm& machine, const Mix& mix, Hooks& hooks) {
+    machine.registerEscapes(escapes(
+        GuestEscape{.key      = "pace",
+                    .at       = kPace,
+                    .replaces = routine(RoutineBinding{.inputs = {snes::A, snes::X, Location::memory(kStepByte)},
+                                                       .output = snes::A,
+                                                       .isa    = Isa::Wdc65816},
+                                        [mix, &hooks](std::uint8_t coordinate, std::uint16_t direction,
+                                                      std::uint8_t step) -> std::uint8_t {
+                                            ++hooks.paced;
+                                            const std::uint8_t stride = paceStride(mix, step);
+                                            return static_cast<std::uint8_t>(direction == 0x01 ? coordinate + stride
+                                                                                               : coordinate - stride);
+                                        }),
+                    .armed    = false},
+        GuestEscape{.key = "report", .at = kReport, .handler = [&hooks](Vm&, std::uint32_t) { ++hooks.reports; }}));
+    machine.registerWatches(watches(
+        GuestWatch{.key     = "y",
+                   .at      = MemoryRegion{.at = kSpriteXY + 1, .size = 1},
+                   .onWrite = [&hooks](Vm&, std::uint32_t, std::uint8_t y) {
+                       ++hooks.yDecided;
+                       return hooks.yMode == 1 ? AccessVerdict::veto()
+                                               : AccessVerdict::instead(std::clamp(y, kCorralTop, kCorralBottom));
+                   },
+                   .armed = false},
+        GuestWatch{.key    = "step",
+                   .at     = MemoryRegion{.at = kStepByte, .size = 1},
+                   .onRead = [&hooks](Vm&, std::uint32_t, std::uint8_t) {
+                       ++hooks.stepAnswered;
+                       return AccessVerdict::instead(kStepAnswer);
+                   },
+                   .armed = false}));
+}
+
 // A palette word as the console stores it — five bits each of red, green and blue, red lowest.
 [[nodiscard]] std::uint16_t wordAt(std::span<const std::uint8_t> palette, std::size_t word) {
     return static_cast<std::uint16_t>(palette[word * 2] | (palette[word * 2 + 1] << 8));
@@ -182,9 +258,12 @@ int runVerify() {
     };
     std::printf("snes_coexecution --verify: the places inside a running SNES cartridge read and write\n\n");
 
+    Hooks    hooks;
     Vm::SNES machine{VmConfig{.video = true}};
     machine.hostRom(examples::snes::demoCartridge());
     const auto places = declarePlaces(machine);
+    const Mix  bound  = machine.bindRoutine<std::uint8_t(std::uint8_t, std::uint16_t)>(kMixEntry, kMixBinding);
+    declareHooks(machine, bound, hooks);
     machine.run(Vm::Advance::OnTick);
     const auto ticks = [&machine](int n) {
         for (int i = 0; i < n; ++i) machine.advanceTick();
@@ -239,7 +318,6 @@ int runVerify() {
     check(placed(255, 255) == 255, "and 255 and 255 to 255, the carry rotated back in");
     const std::uint8_t parkedX = machine.read(places, &Places::sprite).at(0);
     machine.stop();
-    const Mix bound = machine.bindRoutine<std::uint8_t(std::uint8_t, std::uint16_t)>(kMixEntry, kMixBinding);
     check(bound(3, 5) == 4, "the cartridge's own mix answers the same, called parked");
     check(machine.read(places, &Places::sprite).at(0) == parkedX, "and the cartridge stands where it was parked");
 
@@ -273,13 +351,74 @@ int runVerify() {
     }
     check(refused, "a binding for the SM83 is refused on this machine");
 
+    // The escapes and watches, each switched on the running cartridge. A switch lands at the next step,
+    // so each one is given a tick before what it does is measured. Right is still held.
+    const auto spriteX = [&] { return machine.read(places, &Places::sprite).at(0); };
+    const auto spriteY = [&] { return machine.read(places, &Places::sprite).at(1); };
+    const int  heard   = hooks.reports;
+    ticks(3);
+    check(hooks.reports - heard == 3, "the escape at report hears one frame a tick");
+    machine.escapes()["report"].armed(false);
+    ticks(1);
+    const int silenced = hooks.reports;
+    ticks(3);
+    check(hooks.reports == silenced, "and nothing once it is switched off");
+
+    // The native pace moves the sprite mix(4, 8) = 6 a frame, whichever way the cartridge asked.
+    const std::uint8_t stride = mixOf(4, kPaceWith);
+    machine.escapes()["pace"].armed(true);
+    ticks(1);
+    std::uint8_t x1 = spriteX();
+    ticks(1);
+    std::uint8_t x2 = spriteX();
+    std::printf("  pace answered natively: X went %u -> %u in one tick with Right held\n",
+                static_cast<unsigned>(x1), static_cast<unsigned>(x2));
+    check(static_cast<std::uint8_t>(x2 - x1) == stride,
+          "pace answered by the cartridge's own mix, called inside the escape: 6 a frame to the right");
+    machine.buttons(snes::Ports{.one = snes::Buttons{.left = true}, .two = std::nullopt});
+    ticks(2);  // the pad is read at the frame's vertical blank
+    x1 = spriteX();
+    ticks(1);
+    x2 = spriteX();
+    check(static_cast<std::uint8_t>(x1 - x2) == stride, "and 6 a frame to the left");
+    check(hooks.paced > 0, "and the escape answered instead of the routine");
+    machine.escapes()["pace"].armed(false);
+    machine.buttons(snes::Ports{.one = snes::Buttons{.right = true}, .two = std::nullopt});
+    ticks(2);
+
+    machine.watches()["step"].armed(true);
+    ticks(1);
+    x1 = spriteX();
+    ticks(1);
+    x2 = spriteX();
+    check(static_cast<std::uint8_t>(x2 - x1) == kStepAnswer, "a read of the step byte answered 3 moves the sprite 3");
+    check(machine.read(places, &Places::step).at(0) == 4, "while the image still holds 4");
+    machine.watches()["step"].armed(false);
+
+    machine.buttons(snes::Ports{.one = snes::Buttons{.down = true}, .two = std::nullopt});
+    hooks.yMode = 1;
+    machine.watches()["y"].armed(true);
+    ticks(1);
+    const std::uint8_t heldY = spriteY();
+    ticks(3);
+    check(spriteY() == heldY && hooks.yDecided > 0, "the sprite's Y holds with Down held while every store is vetoed");
+    hooks.yMode = 2;
+    ticks(60);
+    std::printf("  corralled: Y %u after 60 ticks of Down\n", static_cast<unsigned>(spriteY()));
+    check(spriteY() == kCorralBottom, "and stops at 160 while every store is held inside the band");
+    machine.watches()["y"].armed(false);
+    machine.buttons(snes::Ports{.one = snes::Buttons{}, .two = std::nullopt});
+
     std::printf("\ndone%s\n", failures == 0 ? "" : " — with failures");
     return failures == 0 ? 0 : 1;
 }
 
 // ── The panel ───────────────────────────────────────────────────────────────────────────────────
 
-enum class Action : ActionId { ColorOne = 20, ColorTwo, Left32, Right32, StepDown, StepUp, Park, MixPlaced, MixBound };
+enum class Action : ActionId {
+    ColorOne = 20, ColorTwo, Left32, Right32, StepDown, StepUp, Park, MixPlaced, MixBound,
+    PaceNative, ReportEscape, WatchY, WatchStep,
+};
 
 // The font sheet carries digits, then letters, then a blank. Anything else lands on the blank.
 [[nodiscard]] std::size_t glyphCell(char ch) {
@@ -349,6 +488,10 @@ int main(int argc, char** argv) {
         {Action::Park, {SDL_SCANCODE_SPACE, PadButton::FaceSouth}},
         {Action::MixPlaced, {SDL_SCANCODE_7}},
         {Action::MixBound, {SDL_SCANCODE_8}},
+        {Action::PaceNative, {SDL_SCANCODE_P}},  // not A: the directional preset binds WASD to the pad
+        {Action::ReportEscape, {SDL_SCANCODE_X}},
+        {Action::WatchY, {SDL_SCANCODE_H}},
+        {Action::WatchStep, {SDL_SCANCODE_L}},
     };
     map.add(presets::directional(snes::Button::Up, snes::Button::Down, snes::Button::Left,
                                  snes::Button::Right));
@@ -396,14 +539,17 @@ int main(int argc, char** argv) {
     // ── The machine ──────────────────────────────────────────────────────────────────────────────
     // Host the image and name the places before it runs; from run() on, the declared places are what
     // this program reads and writes, each read answered by the machine's latest completed step.
+    Hooks    hooks;
     Vm::SNES machine{VmConfig{.video = true}};
     machine.hostRom(examples::snes::demoCartridge());
     machine.video(true);
     const auto places = declarePlaces(machine);
     // The cartridge's own `mix`, bound where it sits — declared before the machine runs, called while
-    // it is parked.
+    // it is parked, and from inside the escape at `pace` while it runs.
     const Mix bound = machine.bindRoutine<std::uint8_t(std::uint8_t, std::uint16_t)>(kMixEntry, kMixBinding);
+    declareHooks(machine, bound, hooks);
     machine.run(Vm::Advance::Continuously);
+    bool paceNative = false, reportOn = true, stepAnswered = false;
     bool running = true;
 
     // The second machine: no cartridge, one routine placed from source.
@@ -483,6 +629,29 @@ int main(int argc, char** argv) {
             }
         }
 
+        // The escapes and watches: a switch crosses to the machine's thread and lands at its next step.
+        if (in.justPressed(Action::PaceNative)) {
+            paceNative = !paceNative;
+            machine.escapes()["pace"].armed(paceNative);
+            status = paceNative ? "PACE ANSWERED BY MIX" : "PACE IS THE CARTRIDGES OWN";
+        }
+        if (in.justPressed(Action::ReportEscape)) {
+            reportOn = !reportOn;
+            machine.escapes()["report"].armed(reportOn);
+            status = reportOn ? "THE ESCAPE AT REPORT IS ON" : "THE ESCAPE AT REPORT IS OFF";
+        }
+        if (in.justPressed(Action::WatchY)) {
+            const int mode = (hooks.yMode + 1) % 3;
+            hooks.yMode    = mode;
+            machine.watches()["y"].armed(mode != 0);
+            status = mode == 0 ? "ITS Y IS FREE" : mode == 1 ? "EVERY STORE TO ITS Y VETOED" : "ITS Y HELD FROM 64 TO 160";
+        }
+        if (in.justPressed(Action::WatchStep)) {
+            stepAnswered = !stepAnswered;
+            machine.watches()["step"].armed(stepAnswered);
+            status = stepAnswered ? "EVERY READ OF THE STEP IS 3" : "THE STEP READS THE IMAGE";
+        }
+
         palette = machine.read(places, &Places::palette);
         for (std::uint32_t t = 0; t < kTileCount; ++t) {
             tiles[t] = machine.read(places, &Places::tiles, t);
@@ -550,6 +719,21 @@ int main(int argc, char** argv) {
         put(kHeadCol, 1, "SNES COEXECUTION", palText);
         put(kHeadCol, 2, "ITS MEMORY READ AS IT RUNS", palDim);
         heading(4, "PALETTE", "1 2 WORD 129");
+
+        // Beside the swatches: the escapes and watches, each with its key, what it is doing, and a count.
+        const auto hook = [&](int at, std::string_view key, std::string_view name, std::string_view state, int count) {
+            put(kHookCol, at, key, palLive);
+            put(kHookCol + 2, at, name, palDim);
+            put(kHookCol + 9, at, state, palText);
+            put(kHookCol + 16, at, std::to_string(count % 100'000), palText);
+        };
+        put(kHookCol, 6, "ESCAPES", palText);
+        hook(7, "P", "PACE", paceNative ? "MIX" : "OWN", hooks.paced);
+        hook(8, "X", "REPORT", reportOn ? "ON" : "OFF", hooks.reports);
+        put(kHookCol, 10, "WATCHES", palText);
+        const int yMode = hooks.yMode;
+        hook(11, "H", "Y", yMode == 0 ? "FREE" : yMode == 1 ? "VETO" : "64 160", hooks.yDecided);
+        hook(12, "L", "STEP", stepAnswered ? "AS 3" : "IMAGE", hooks.stepAnswered);
         heading(14, "VIDEO RAM TILES 0 TO 15", "");
         heading(17, "THE SPRITE", "ARROWS 3 4");
         row(18, "AT", "X " + std::to_string(spriteX) + "  Y " + std::to_string(spriteY));
@@ -611,7 +795,9 @@ int main(int argc, char** argv) {
         "The pad registers are read the same way, as they stand. 7 calls a routine placed from source on a\n"
         "machine of its own; 8 calls the cartridge's own copy, bound where it sits, while the cartridge is\n"
         "parked, and the panel counts how many of those calls answered exactly. Either call writes its\n"
-        "answer to the sprite's color.\n\n");
+        "answer to the sprite's color. P answers the cartridge's own pace routine natively, with its mix\n"
+        "called from inside the escape; X switches the escape at report; H cycles the watch on the\n"
+        "sprite's Y through free, vetoed and held; L answers every read of the step byte with 3.\n\n");
 
     WindowedHost host{loop, platform};
     host.run();

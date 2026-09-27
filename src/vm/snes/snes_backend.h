@@ -11,9 +11,12 @@
 // wherever a place resolves, and a register takes no write. It runs
 // routines: bytes placed into an image of its own (snes_image.h), each at the address its source named
 // or wherever the arena has room, called in a frame of the engine's own; and a routine the cartridge
-// already holds, called in the guest's own context on the guest's own stack. Escapes, watches, driver
-// hosting and the audio unit as a machine of its own are not among this core's verbs: each such verb
-// throws, in the seam's posture, so no capability is faked.
+// already holds, called in the guest's own context on the guest's own stack. It answers escapes and
+// watches through the machine's own instruction and access watchers: a place is the byte an address
+// reaches, so an escape or a watch armed through one alias fires through every other, and a replaced
+// routine is answered by a return the machine stands in for its first fetch, the image left as it is.
+// Driver hosting and the audio unit as a machine of its own are not among this core's verbs: each such
+// verb throws, in the seam's posture, so no capability is faked.
 //
 // INTERNAL — under src/vm/, never include/retropp/. It pulls Snaggletooth's public snes.h (the Snes
 // machine and the SnesState the tests observe); no snaggletooth:: type reaches include/retropp/.
@@ -38,7 +41,9 @@ namespace retropp::vm {
 
 class SnesBackend final : public VmBackend,
                           private snaggletooth::FrameObserver,
-                          private snaggletooth::SaveObserver {
+                          private snaggletooth::SaveObserver,
+                          private snaggletooth::InstructionWatcher,
+                          private snaggletooth::AccessWatcher {
 public:
     SnesBackend() = default;
 
@@ -116,15 +121,29 @@ public:
     // instruction; that instruction is finished first, before the presets go over the file, so the
     // instruction completes under the guest's own registers and the call lands at an instruction
     // boundary. The entry's top bit (snes::rtl) picks the landing a JSL pushes over the one a JSR pushes.
+    // From inside an escape the call is the same call; from inside a watch it throws std::logic_error —
+    // the machine is part-way through the access the watch is deciding.
     void callInContext(std::uint32_t entry, std::span<const ResidentRegister> presets,
                        CallStack stack, std::size_t maxInstructions,
                        const std::function<void()>& readOutputs) override;
 
+    // Escapes: an instruction watch on the byte the address reaches, in work RAM, the cartridge image or
+    // its save. A replacing escape stands a return in for the fetch that begins the routine — an RTS, or
+    // an RTL for an address snes::rtl wraps — so the routine's body never runs and nothing is written.
+    // Every armed escape whose byte the fetch reaches is reported, in the order they were armed; two
+    // escapes on one byte that would stand different returns there are refused. A register, open bus or
+    // a memory the bus cannot name throws std::invalid_argument.
     void setEscapeSink(EscapeSink sink) override;
     void armEscape(std::uint32_t address, bool replacesRoutine) override;
     void disarmEscape(std::uint32_t address) override;
+    // The live register file, inside an escape: what the guest's next instruction runs under.
     void writeLiveRegister(std::uint16_t registerId, std::uint64_t value, int width) override;
 
+    // Watches: an access watch on every byte the place spans — work RAM, the cartridge image, its save,
+    // or a register — armed byte by byte through an address that reaches it, per direction. Every source
+    // fires one: the CPU, both transfer engines and the work-RAM port. The sink is told the declared base
+    // and the 24-bit address the access drove, and the machine realizes the answer itself. A memory the
+    // bus cannot name, or open bus, throws std::invalid_argument.
     void setWatchSink(WatchSink sink) override;
     void armWatch(const MemoryRegion& where, bool onRead, bool onWrite) override;
     void disarmWatch(const MemoryRegion& where, bool onRead, bool onWrite) override;
@@ -187,6 +206,46 @@ private:
     void frame(const snaggletooth::VideoFrame& frame) override;
     void changed(std::span<const std::uint8_t> save) override;
 
+    // InstructionWatcher / AccessWatcher — the machine tells an armed instruction and an armed access
+    // through these, and the backend asks the host layer's sinks.
+    void reached(std::uint32_t address) override;
+    snaggletooth::AccessAnswer read(std::uint32_t address, std::uint8_t value,
+                                    snaggletooth::AccessSource source, snaggletooth::CycleKind kind,
+                                    std::uint8_t cycle) override;
+    snaggletooth::AccessAnswer write(std::uint32_t address, std::uint8_t value,
+                                     snaggletooth::AccessSource source, snaggletooth::CycleKind kind,
+                                     std::uint8_t cycle) override;
+    // Ask the watch sink about one access and answer the machine with its verdict.
+    snaggletooth::AccessAnswer askWatch(std::uint32_t address, AccessKind kind, std::uint8_t value);
+
+    // An armed escape: the address as the host layer armed it, the byte it reaches, and what stands there.
+    struct ArmedEscape {
+        std::uint32_t                encoded;
+        snaggletooth::Snes::Physical place;
+        snaggletooth::Standin        standin;
+    };
+    // An armed watch: the declared base, the memory its first byte is in and how many bytes it spans, and
+    // the directions it asks about.
+    struct ArmedWatch {
+        std::uint32_t                encoded;
+        std::uint64_t                span;
+        snaggletooth::Snes::Physical first;
+        bool                         onRead;
+        bool                         onWrite;
+        [[nodiscard]] bool covers(snaggletooth::Snes::Physical p) const noexcept {
+            return p.space == first.space && p.index >= first.index && p.index - first.index < span;
+        }
+    };
+    // Put every armed escape and watch into the live machine — the watches Snaggletooth keeps are not part
+    // of its state, so a fresh machine carries none — and install each watcher only while there is both
+    // something armed and a sink to ask.
+    void rearm();
+    void installWatchers();
+    // Arm every byte `w` covers, in the directions it asks about.
+    void armWatchBytes(const ArmedWatch& w);
+    // Release the bytes `gone` covered, in the directions named, that no remaining watch still covers.
+    void releaseWatchBytes(const ArmedWatch& gone, bool onRead, bool onWrite);
+
     std::optional<snaggletooth::Snes> snes_;             // the live machine; empty until an image is held
     std::vector<std::uint8_t>         rom_;              // the held image, kept for save reads and rebuilds
     snaggletooth::Region              region_ = snaggletooth::Region::Ntsc;  // the cartridge's, from its header
@@ -199,8 +258,11 @@ private:
     bool                              videoEnabled_ = false;  // remembered so a rebuild re-attaches the frame observer
     bool                              saveChanged_  = false;  // the guest changed the save since it was last taken
     FrameSink                         frameSink_;     // where a finished frame is forwarded
-    EscapeSink                        escapeSink_;    // stored; this core answers no escapes
-    WatchSink                         watchSink_;     // stored; this core answers no watches
+    EscapeSink                        escapeSink_;    // told each armed instruction the machine reaches
+    WatchSink                         watchSink_;     // asked about each armed access
+    std::vector<ArmedEscape>          armedEscapes_;  // in the order they were armed
+    std::vector<ArmedWatch>           armedWatches_;  // in the order they were armed
+    int                               insideWatch_ = 0;  // how deep the access watcher's calls are nested
     AudioSampleSink                   audioSink_;     // where each converted frame goes; empty until enableAudio
     std::optional<RationalResampler>  resampler_;     // 32'000 Hz to the sink's rate; built by enableAudio
 };

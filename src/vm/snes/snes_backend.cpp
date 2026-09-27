@@ -62,6 +62,7 @@ void SnesBackend::emplaceMachine() {
     snes_.emplace(snaggletooth::SnesConfig{.rom = rom_, .region = region_, .map = map_});
     snes_->setSaveObserver(this);
     snes_->setFrameObserver(videoEnabled_ ? this : nullptr);
+    rearm();               // escapes and watches are the host's, not the machine's state
     saveChanged_ = false;  // a fresh machine has changed nothing since it was last taken
     if (resampler_) {
         resampler_->reset();  // a fresh machine's sound starts from silence, as its picture does
@@ -654,6 +655,13 @@ void SnesBackend::callInContext(std::uint32_t entry, std::span<const ResidentReg
         throw std::invalid_argument("callInContext: no byte of the image is at " +
                                     busAddress(decoded->at24));
     }
+    if (insideWatch_ != 0) {
+        // Asked before anything moves: the machine is inside the access the watch is deciding, and
+        // stepping it to a boundary from here would run the rest of that access under the call.
+        throw std::logic_error("callInContext: a routine cannot be called from inside a watch — the "
+                               "machine is part-way through the access the watch is deciding; call it "
+                               "from an escape");
+    }
     // A cycle budget stops the machine wherever the cycle fell; the instruction it was inside finishes
     // first, under the guest's own registers, so the presets below go over the file at the boundary
     // and the routine runs between two of the guest's instructions.
@@ -692,8 +700,250 @@ void SnesBackend::callInContext(std::uint32_t entry, std::span<const ResidentReg
     snes_->setCpuState(after);
 }
 
+// ── Escapes and watches ─────────────────────────────────────────────────────────────────────────
+// Both are the machine's own: an instruction watch told before an armed instruction runs, an access
+// watch told before an armed access takes effect. Either is on the byte an address reaches, so the
+// armed sets here are keyed on that byte — every alias of it fires, and a byte is released only when the
+// last entry covering it goes. Neither is part of the machine's state, so a fresh machine is re-armed.
+
+namespace {
+
+// The memories an escape may name: where code can be. A register or open bus holds none.
+bool holdsCode(snaggletooth::Snes::Space space) {
+    return space == snaggletooth::Snes::Space::WorkRam || space == snaggletooth::Snes::Space::CartridgeRom ||
+           space == snaggletooth::Snes::Space::SaveRam;
+}
+
+}  // namespace
+
+void SnesBackend::installWatchers() {
+    if (!snes_) {
+        return;
+    }
+    snes_->setInstructionWatcher(escapeSink_ && !armedEscapes_.empty() ? this : nullptr);
+    snes_->setAccessWatcher(watchSink_ && !armedWatches_.empty() ? this : nullptr);
+}
+
+void SnesBackend::rearm() {
+    for (const ArmedEscape& e : armedEscapes_) {
+        snes_->watchInstruction(*snes_address::busAddressOf(map_, e.place), e.standin);
+    }
+    for (const ArmedWatch& w : armedWatches_) {
+        armWatchBytes(w);
+    }
+    installWatchers();
+}
+
+void SnesBackend::setEscapeSink(EscapeSink sink) {
+    escapeSink_ = std::move(sink);
+    installWatchers();
+}
+
+void SnesBackend::armEscape(std::uint32_t address, bool replacesRoutine) {
+    const std::optional<snes_address::Decoded> decoded = snes_address::decode(address);
+    if (!snes_ || !decoded || decoded->space != snes::Space::Bus) {
+        throw std::invalid_argument("an escape is on the console's bus; address " + std::to_string(address) +
+                                    " names a memory the CPU does not run code from");
+    }
+    const snaggletooth::Snes::Physical place = snes_->physical(decoded->at24);
+    if (!holdsCode(place.space)) {
+        throw std::invalid_argument("an escape names code in work RAM, the cartridge image or its save; " +
+                                    busAddress(decoded->at24) + " is " +
+                                    (place.space == snaggletooth::Snes::Space::Register ? "a register"
+                                                                                        : "open bus"));
+    }
+    const snaggletooth::Standin standin = !replacesRoutine ? snaggletooth::Standin::None
+                                          : decoded->rtl   ? snaggletooth::Standin::Long
+                                                           : snaggletooth::Standin::Near;
+    for (const ArmedEscape& e : armedEscapes_) {
+        if (e.encoded == address) {
+            return;  // already watched
+        }
+        if (e.place == place && e.standin != standin) {
+            // One byte, one thing standing at it: the machine answers its fetch one way.
+            throw std::invalid_argument("the escape at " + busAddress(decoded->at24) +
+                                        " names the same byte as the one at " + busAddress(e.encoded) +
+                                        ", which stands a different answer there");
+        }
+    }
+    armedEscapes_.push_back(ArmedEscape{.encoded = address, .place = place, .standin = standin});
+    snes_->watchInstruction(decoded->at24, standin);
+    installWatchers();
+}
+
+void SnesBackend::disarmEscape(std::uint32_t address) {
+    const auto at = std::find_if(armedEscapes_.begin(), armedEscapes_.end(),
+                                 [address](const ArmedEscape& e) { return e.encoded == address; });
+    if (at == armedEscapes_.end()) {
+        return;
+    }
+    const snaggletooth::Snes::Physical place = at->place;
+    armedEscapes_.erase(at);
+    const bool stillWatched = std::any_of(armedEscapes_.begin(), armedEscapes_.end(),
+                                          [&place](const ArmedEscape& e) { return e.place == place; });
+    if (!stillWatched && snes_) {
+        snes_->unwatchInstruction(*snes_address::busAddressOf(map_, place));
+    }
+    installWatchers();
+}
+
+void SnesBackend::reached(std::uint32_t address) {
+    if (!escapeSink_) {
+        return;
+    }
+    const snaggletooth::Snes::Physical place = snes_->physical(address);
+    // Taken before reporting: a handler may declare or drop escapes, moving the list.
+    std::vector<std::uint32_t> fired;
+    for (const ArmedEscape& e : armedEscapes_) {
+        if (e.place == place) {
+            fired.push_back(e.encoded);
+        }
+    }
+    for (const std::uint32_t encoded : fired) {
+        escapeSink_(encoded);
+    }
+}
+
+void SnesBackend::writeLiveRegister(std::uint16_t registerId, std::uint64_t value, int /*width*/) {
+    snaggletooth::Cpu65816State file = snes_->cpuState();
+    writeRegisterField(file, static_cast<snes::Reg>(registerId), value);
+    snes_->setCpuState(file);
+}
+
+void SnesBackend::setWatchSink(WatchSink sink) {
+    watchSink_ = std::move(sink);
+    installWatchers();
+}
+
+void SnesBackend::armWatch(const MemoryRegion& where, bool onRead, bool onWrite) {
+    if (!onRead && !onWrite) {
+        return;  // nothing asked for
+    }
+    // The memory the place's first byte is in, as the machine classifies it. A register is one — its read
+    // is told after its side effect, which the answer cannot undo; open bus resolves to nothing.
+    const std::optional<Resolved>            resolved = resolve(where.at);
+    std::optional<snaggletooth::Snes::Space> space;
+    if (resolved) {
+        switch (resolved->memory) {
+            case Memory::WorkRam:   space = snaggletooth::Snes::Space::WorkRam; break;
+            case Memory::Cartridge: space = snaggletooth::Snes::Space::CartridgeRom; break;
+            case Memory::Save:      space = snaggletooth::Snes::Space::SaveRam; break;
+            case Memory::Register:  space = snaggletooth::Snes::Space::Register; break;
+            default:                break;  // a memory the bus cannot name
+        }
+    }
+    if (!space) {
+        throw std::invalid_argument(
+            "a watch is on the console's bus; the picture chip's memories and the audio unit's are reached "
+            "through their ports and are not watchable, and open bus reaches nothing (address " +
+            std::to_string(where.at) + ")");
+    }
+    const std::uint64_t span = where.totalBytes();
+    for (const ArmedWatch& w : armedWatches_) {
+        if (w.encoded == where.at && w.span == span) {
+            return;  // already watched
+        }
+    }
+    armedWatches_.push_back(ArmedWatch{
+        .encoded = where.at,
+        .span    = span,
+        .first   = snaggletooth::Snes::Physical{.space = *space, .index = static_cast<std::uint32_t>(resolved->base)},
+        .onRead  = onRead,
+        .onWrite = onWrite});
+    armWatchBytes(armedWatches_.back());
+    installWatchers();
+}
+
+void SnesBackend::armWatchBytes(const ArmedWatch& w) {
+    // Byte by byte through an address that reaches each one, so a place that runs past the end of a
+    // bank's window is armed on the memory's next bytes rather than on whatever the next address mirrors.
+    for (std::uint64_t i = 0; i < w.span; ++i) {
+        const snaggletooth::Snes::Physical byte{.space = w.first.space,
+                                                .index = w.first.index + static_cast<std::uint32_t>(i)};
+        snes_->watchAccess(*snes_address::busAddressOf(map_, byte), 1, w.onRead, w.onWrite);
+    }
+}
+
+void SnesBackend::disarmWatch(const MemoryRegion& where, bool onRead, bool onWrite) {
+    const std::uint64_t span = where.totalBytes();
+    const auto at = std::find_if(armedWatches_.begin(), armedWatches_.end(), [&where, span](const ArmedWatch& w) {
+        return w.encoded == where.at && w.span == span;
+    });
+    if (at == armedWatches_.end()) {
+        return;
+    }
+    const ArmedWatch gone = *at;
+    armedWatches_.erase(at);
+    releaseWatchBytes(gone, onRead, onWrite);
+    installWatchers();
+}
+
+void SnesBackend::releaseWatchBytes(const ArmedWatch& gone, bool onRead, bool onWrite) {
+    if (!snes_) {
+        return;
+    }
+    for (std::uint64_t i = 0; i < gone.span; ++i) {
+        const snaggletooth::Snes::Physical byte{.space = gone.first.space,
+                                                .index = gone.first.index + static_cast<std::uint32_t>(i)};
+        bool stillRead  = false;
+        bool stillWrite = false;
+        for (const ArmedWatch& w : armedWatches_) {
+            if (w.covers(byte)) {
+                stillRead  = stillRead || w.onRead;
+                stillWrite = stillWrite || w.onWrite;
+            }
+        }
+        const bool dropRead  = onRead && gone.onRead && !stillRead;
+        const bool dropWrite = onWrite && gone.onWrite && !stillWrite;
+        if (dropRead || dropWrite) {
+            snes_->unwatchAccess(*snes_address::busAddressOf(map_, byte), 1, dropRead, dropWrite);
+        }
+    }
+}
+
+snaggletooth::AccessAnswer SnesBackend::askWatch(std::uint32_t address, AccessKind kind, std::uint8_t value) {
+    if (!watchSink_) {
+        return snaggletooth::AccessAnswer::proceed();
+    }
+    const snaggletooth::Snes::Physical place = snes_->physical(address);
+    for (const ArmedWatch& w : armedWatches_) {
+        if (!w.covers(place) || (kind == AccessKind::Read ? !w.onRead : !w.onWrite)) {
+            continue;
+        }
+        // Copied before asking: the handler may declare or drop watches, moving the list.
+        const std::uint32_t base = w.encoded;
+        ++insideWatch_;
+        struct Leave {
+            int& depth;
+            ~Leave() { --depth; }
+        } leave{insideWatch_};
+        const AccessVerdict verdict = watchSink_(base, address, kind, value);
+        switch (verdict.kind()) {
+            case AccessVerdict::Kind::Proceed: return snaggletooth::AccessAnswer::proceed();
+            // A read cannot be prevented: veto() on a read delivers the machine's own byte.
+            case AccessVerdict::Kind::Veto:
+                return kind == AccessKind::Read ? snaggletooth::AccessAnswer::proceed()
+                                                : snaggletooth::AccessAnswer::veto();
+            case AccessVerdict::Kind::Instead: return snaggletooth::AccessAnswer::instead(verdict.value());
+        }
+        return snaggletooth::AccessAnswer::proceed();
+    }
+    return snaggletooth::AccessAnswer::proceed();
+}
+
+snaggletooth::AccessAnswer SnesBackend::read(std::uint32_t address, std::uint8_t value,
+                                             snaggletooth::AccessSource, snaggletooth::CycleKind,
+                                             std::uint8_t) {
+    return askWatch(address, AccessKind::Read, value);
+}
+
+snaggletooth::AccessAnswer SnesBackend::write(std::uint32_t address, std::uint8_t value,
+                                              snaggletooth::AccessSource, snaggletooth::CycleKind,
+                                              std::uint8_t) {
+    return askWatch(address, AccessKind::Write, value);
+}
+
 // ── The verbs this core does not realize. Each throws std::logic_error naming what the core does now.
-//    setEscapeSink / setWatchSink store the sink; installing one is not arming.
 void SnesBackend::beginContinuous(std::uint32_t) {
     throw std::logic_error("beginContinuous: the SNES core hosts no driver");
 }
@@ -702,23 +952,6 @@ void SnesBackend::configureResidentImage(std::span<const DriverImage>, Mapper, s
 }
 std::uint64_t SnesBackend::callResident(std::uint32_t, std::span<const ResidentRegister>, std::uint64_t) {
     throw std::logic_error("callResident: the SNES core hosts no resident driver");
-}
-void SnesBackend::setEscapeSink(EscapeSink sink) { escapeSink_ = std::move(sink); }
-void SnesBackend::armEscape(std::uint32_t, bool) {
-    throw std::logic_error("armEscape: the SNES core answers no escapes");
-}
-void SnesBackend::disarmEscape(std::uint32_t) {
-    throw std::logic_error("disarmEscape: the SNES core answers no escapes");
-}
-void SnesBackend::writeLiveRegister(std::uint16_t, std::uint64_t, int) {
-    throw std::logic_error("writeLiveRegister: the SNES core answers no escapes");
-}
-void SnesBackend::setWatchSink(WatchSink sink) { watchSink_ = std::move(sink); }
-void SnesBackend::armWatch(const MemoryRegion&, bool, bool) {
-    throw std::logic_error("armWatch: the SNES core answers no watches");
-}
-void SnesBackend::disarmWatch(const MemoryRegion&, bool, bool) {
-    throw std::logic_error("disarmWatch: the SNES core answers no watches");
 }
 
 }  // namespace retropp::vm

@@ -21,6 +21,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <stdexcept>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -90,8 +91,11 @@ hi:     DB $03,$04,$05,$07
 // The program. Reset (in forced blank) sets the screen mode, uploads the sprite tiles and their color,
 // hides every sprite, turns the object screen on, uploads the sound driver to the audio unit and starts
 // it, and enables the vertical-blank NMI + the auto-joypad read, then loops reading the sprite's X; the
-// NMI reads the pad, drives sprite 0 and applies the two switches. A routine of the cartridge's own at $00:8400, `mix`, averages A and X —
-// the one a program binds where it sits and calls.
+// NMI reads the pad, drives sprite 0 and applies the two switches. Three routines of the cartridge's own
+// are there for a program to reach: `pace` at $00:8380, which the NMI calls for every held direction with
+// the sprite's X or Y in A and the direction in X — $01 on, $FF back — and which answers the coordinate
+// one step that way in A; `report` at $00:83A0, an empty routine the NMI calls once a frame as it
+// finishes; and `mix` at $00:8400, which averages A and X.
 inline constexpr std::string_view kDemoCartridgeSource = R"asm(
         ORG $00:8000
         EMULATION
@@ -244,30 +248,30 @@ wait:   LDA !$4212              ; HVBJOY
         STA $12
         AND #$01
         BEQ noR
-        LDA $10                 ; Right: X moves on by the step
-        CLC
-        ADC !step
+        LDA $10                 ; Right: X moves on, by what `pace` answers
+        LDX #$01
+        JSR !pace
         STA $10
 noR:    LDA $12
         AND #$02
         BEQ noL
-        LDA $10                 ; Left: X moves back by the step
-        SEC
-        SBC !step
+        LDA $10                 ; Left: X moves back
+        LDX #$FF
+        JSR !pace
         STA $10
 noL:    LDA $12
         AND #$04
         BEQ noD
-        LDA $11                 ; Down: Y moves on by the step
-        CLC
-        ADC !step
+        LDA $11                 ; Down: Y moves on
+        LDX #$01
+        JSR !pace
         STA $11
 noD:    LDA $12
         AND #$08
         BEQ noU
-        LDA $11                 ; Up: Y moves back by the step
-        SEC
-        SBC !step
+        LDA $11                 ; Up: Y moves back
+        LDX #$FF
+        JSR !pace
         STA $11
 noU:    LDA !$4218              ; JOY1 low byte: A in bit 7
         AND #$80
@@ -324,10 +328,26 @@ noY:    LDA $12
         STZ !$2104              ; tile 0
         LDA #$30                ; priority 3, palette 0
         STA !$2104
+        JSR !report             ; the frame is done
         RTI
 
         ORG $00:8300
 step:   DB $01                  ; how far a held direction moves the sprite each frame, read from the image
+
+        ORG $00:8380
+        A8
+        X8
+pace:   CPX #$01                ; a coordinate in A and a direction in X, $01 on or $FF back; the
+        BEQ on                  ; coordinate one step that way comes back in A
+        SEC
+        SBC !step
+        RTS
+on:     CLC
+        ADC !step
+        RTS
+
+        ORG $00:83A0
+report: RTS                     ; called once a frame, at the end of the frame handler; does nothing
 
         ORG $00:8400
         A8
@@ -349,6 +369,14 @@ inline std::vector<std::uint8_t> demoCartridge(snaggletooth::Region region = sna
         snaggletooth::assembler::assembleCpu65816(kDemoCartridgeSource, "snes_demo.asm");
     const snaggletooth::assembler::Assembly sound =
         snaggletooth::assembler::assembleSpc700(kDemoSoundSource, "snes_demo_sound.asm");
+    // An error in either source drops the bytes it names, so the cartridge is refused rather than built.
+    for (const snaggletooth::assembler::Assembly* assembly : {&program, &sound}) {
+        if (!assembly->ok()) {
+            const snaggletooth::assembler::Diagnostic& first = assembly->errors.front();
+            throw std::runtime_error("the demo cartridge does not assemble: line " + std::to_string(first.line) +
+                                     ": " + first.message);
+        }
+    }
     std::vector<std::uint8_t> rom = snaggletooth::examples::loRomImage(1);
     for (const auto& range : program.ranges) {
         const std::size_t at = range.start - 0x8000u;

@@ -148,7 +148,7 @@ names what the core does instead.
 | `advanceClock` — the free-running clock between calls | answers | answers, on a routine machine |
 | naming places, `read` / `write` by address | answers | answers |
 | `bindRoutine` — a routine the cartridge holds, called in its context | answers | answers |
-| escapes, watches | answers | refuses |
+| escapes, watches | answers | answers, on a byte whichever address reaches it |
 | hosting a resident sound driver | answers | refuses |
 
 The exception each refusal throws, and the message, is on the console's page:
