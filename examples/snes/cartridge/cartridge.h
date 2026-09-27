@@ -89,8 +89,8 @@ hi:     DB $03,$04,$05,$07
 
 // The program. Reset (in forced blank) sets the screen mode, uploads the sprite tiles and their color,
 // hides every sprite, turns the object screen on, uploads the sound driver to the audio unit and starts
-// it, and enables the vertical-blank NMI + the auto-joypad read; the NMI reads the pad, drives sprite 0
-// and applies the two switches. A routine of the cartridge's own at $00:8400, `mix`, averages A and X —
+// it, and enables the vertical-blank NMI + the auto-joypad read, then loops reading the sprite's X; the
+// NMI reads the pad, drives sprite 0 and applies the two switches. A routine of the cartridge's own at $00:8400, `mix`, averages A and X —
 // the one a program binds where it sits and calls.
 inline constexpr std::string_view kDemoCartridgeSource = R"asm(
         ORG $00:8000
@@ -230,7 +230,8 @@ acks:   CMP !$2140
 
         LDA #$81
         STA !$4200              ; NMITIMEN: vertical-blank NMI + auto-joypad read
-idle:   BRA idle
+idle:   LDA $10                 ; the main loop reads the sprite's X between frames, so a machine parked
+        BRA idle                ; here is often part-way through an instruction that writes A
 
         ORG $00:8200
         A8

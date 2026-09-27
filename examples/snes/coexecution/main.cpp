@@ -10,6 +10,9 @@
 //   the sprite's X and Y       two bytes of work RAM at $7E:0010, where the cartridge keeps them
 //   the step                   one byte of the cartridge IMAGE at $00:8300, which its frame handler
 //                              reads to decide how far a held direction moves the sprite
+//   the pad registers          JOY1 at $4218-$4219, the buttons the console latched at vertical blank,
+//                              and RDNMI at $4210 — registers, read as they stand: a read here clears
+//                              no flag the cartridge's own read of $4210 would clear
 //
 // Every key writes one of those places, and the cartridge carries on with what it finds:
 //
@@ -26,13 +29,21 @@
 //   7      call the placed routine with the next argument, and write the result to the sprite's color
 //   8      call the cartridge's own copy the same way — park the machine first, with SPACE
 //
+// A parked machine stands wherever its clock stopped, usually part-way through an instruction. A call
+// into it lands at the next instruction boundary: the instruction in flight finishes under the
+// cartridge's own registers before the routine's arguments go in, so the answer is exact wherever the
+// machine was parked. The panel counts the calls 8 made and how many answered exactly.
+//
 // Modes:
 //   (no args)   the window
-//   --verify    headless: declares the four places, round-trips a palette word and the sprite's X, checks
-//               a patched step moves the sprite that far a frame, and calls both routines for a value;
-//               exits nonzero on any miss (CI runs this on every platform)
+//   --verify    headless: declares the six places, round-trips a palette word and the sprite's X, checks
+//               a patched step moves the sprite that far a frame, reads the pad registers with Right held
+//               and released, calls both routines for a value, and calls the cartridge's own routine
+//               parked at 240 different points of its frame; exits nonzero on any miss (CI runs this on
+//               every platform)
 
 #include <array>
+#include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -90,6 +101,8 @@ constexpr int kStripX = 32, kStripY = 15 * kGlyphPx;
 constexpr std::uint32_t kSpriteXY  = 0x7E0010;  // sprite 0's X, then its Y, in work RAM
 constexpr std::uint32_t kStepByte  = 0x008300;  // the step, in the cartridge image
 constexpr std::uint32_t kMixEntry  = 0x008400;  // the cartridge's own `mix`, where it sits in the image
+constexpr std::uint32_t kJoy1      = 0x004218;  // JOY1: the pad the console read at vertical blank, low byte first
+constexpr std::uint32_t kRdnmi     = 0x004210;  // RDNMI: the NMI flag in bit 7, the CPU's version in bits 0-3
 constexpr std::size_t   kColorWord = 129;       // object palette 0, color 1: the sprite's color
 constexpr std::uint32_t kTileCount = 16;
 
@@ -110,6 +123,16 @@ Mix placeMix(Vm& machine) {
         {.inputs = {snes::A, snes::X}, .output = snes::A, .isa = Isa::Wdc65816});
 }
 
+// What `mix` answers for A and X, computed here: the nine-bit sum halved, the carry back in bit 7.
+[[nodiscard]] std::uint8_t mixOf(std::uint8_t a, std::uint8_t x) {
+    return static_cast<std::uint8_t>((a + x) >> 1);
+}
+
+// JOY1 as one word, the high byte ($4219) on top: B Y Select Start Up Down Left Right, then A X L R.
+[[nodiscard]] std::uint16_t joyWord(std::span<const std::uint8_t> joy) {
+    return static_cast<std::uint16_t>(joy[0] | (joy[1] << 8));
+}
+
 // A byte as a gray palette word: the same five bits in red, green and blue.
 [[nodiscard]] std::uint16_t grayWord(std::uint8_t value) {
     const std::uint16_t five = value >> 3;
@@ -123,6 +146,8 @@ struct Places {
     MemoryRegion tiles;    // the first sixteen 4 bpp tiles of video RAM, one entry each
     MemoryRegion sprite;   // the sprite's X and Y
     MemoryRegion step;     // one byte inside the cartridge image
+    MemoryRegion pad;      // JOY1, two registers
+    MemoryRegion nmi;      // RDNMI, one register
 };
 
 RegionMapId<Places> declarePlaces(Vm& machine) {
@@ -131,7 +156,9 @@ RegionMapId<Places> declarePlaces(Vm& machine) {
         region(&Places::tiles, MemoryRegion{.at = snes::videoRam(0), .size = 32, .count = kTileCount},
                "tiles"),
         region(&Places::sprite, MemoryRegion{.at = kSpriteXY, .size = 2}, "sprite"),
-        region(&Places::step, MemoryRegion{.at = kStepByte, .size = 1}, "step")));
+        region(&Places::step, MemoryRegion{.at = kStepByte, .size = 1}, "step"),
+        region(&Places::pad, MemoryRegion{.at = kJoy1, .size = 2}, "pad"),
+        region(&Places::nmi, MemoryRegion{.at = kRdnmi, .size = 1}, "nmi")));
 }
 
 // A palette word as the console stores it — five bits each of red, green and blue, red lowest.
@@ -192,16 +219,51 @@ int runVerify() {
                 static_cast<unsigned>(before), static_cast<unsigned>(after));
     check(static_cast<std::uint8_t>(after - before) == 4, "the sprite moves by the patched step");
 
+    // Registers read as they stand: JOY1 holds what the console latched at vertical blank, and RDNMI
+    // answers the CPU's version in its low bits.
+    const std::uint16_t held = joyWord(machine.read(places, &Places::pad));
+    const std::uint8_t  nmi  = machine.read(places, &Places::nmi).at(0);
+    std::printf("  JOY1 with Right held: %04X; RDNMI: %02X\n", static_cast<unsigned>(held),
+                static_cast<unsigned>(nmi));
+    check(held == 0x0100, "JOY1 reads Right held, and nothing else");
+    check((nmi & 0x0F) == 2, "RDNMI reads the CPU's version, 2");
+    machine.buttons(snes::Ports{.one = snes::Buttons{}, .two = std::nullopt});
+    ticks(2);
+    check(joyWord(machine.read(places, &Places::pad)) == 0x0000, "JOY1 reads the pad released");
+
     // A routine placed from source on a machine of its own, and the cartridge's own copy called where it
     // sits, once the cartridge is parked. A binding for another CPU is refused.
     Vm::SNES routines;
     const Mix placed = placeMix(routines);
     check(placed(3, 5) == 4, "the placed routine averages 3 and 5 to 4");
     check(placed(255, 255) == 255, "and 255 and 255 to 255, the carry rotated back in");
+    const std::uint8_t parkedX = machine.read(places, &Places::sprite).at(0);
     machine.stop();
     const Mix bound = machine.bindRoutine<std::uint8_t(std::uint8_t, std::uint16_t)>(kMixEntry, kMixBinding);
     check(bound(3, 5) == 4, "the cartridge's own mix answers the same, called parked");
-    check(machine.read(places, &Places::sprite).at(0) == after, "and the cartridge stands where it was parked");
+    check(machine.read(places, &Places::sprite).at(0) == parkedX, "and the cartridge stands where it was parked");
+
+    // Parked wherever a tick of an uneven length leaves it — inside the frame handler or the idle loop,
+    // often part-way through an instruction — the cartridge's own mix answers exactly every time, and
+    // the cartridge carries on afterwards as if it had never been called.
+    constexpr int kParkedCalls = 240;
+    int           exact        = 0;
+    for (int i = 0; i < kParkedCalls; ++i) {
+        machine.run(Vm::Advance::OnTick);
+        machine.advanceTick(std::chrono::nanoseconds{500'000 + (i * 1'234'567) % 16'000'000});
+        machine.stop();
+        const auto a = static_cast<std::uint8_t>(i * 37);
+        if (bound(a, 200) == mixOf(a, 200)) ++exact;
+    }
+    std::printf("  parked at %d points of the frame: %d answered exactly\n", kParkedCalls, exact);
+    check(exact == kParkedCalls, "the cartridge's own mix answers exactly wherever it was parked");
+    machine.run(Vm::Advance::OnTick);
+    machine.buttons(snes::Ports{.one = snes::Buttons{.right = true}, .two = std::nullopt});
+    ticks(2);
+    const std::uint8_t resumed = machine.read(places, &Places::sprite).at(0);
+    ticks(1);
+    check(static_cast<std::uint8_t>(machine.read(places, &Places::sprite).at(0) - resumed) == 4,
+          "and the cartridge still moves the sprite by the step a frame");
     bool refused = false;
     try {
         const std::vector<std::uint8_t> ret{0x60};
@@ -224,6 +286,28 @@ enum class Action : ActionId { ColorOne = 20, ColorTwo, Left32, Right32, StepDow
     if (ch >= '0' && ch <= '9') return static_cast<std::size_t>(ch - '0');
     if (ch >= 'A' && ch <= 'Z') return static_cast<std::size_t>(10 + (ch - 'A'));
     return 36;
+}
+
+// A byte or a word in hexadecimal, as many digits as asked for.
+[[nodiscard]] std::string hex(unsigned value, int digits) {
+    std::string s(static_cast<std::size_t>(digits), '0');
+    for (int i = digits - 1; i >= 0; --i, value >>= 4) {
+        s[static_cast<std::size_t>(i)] = "0123456789ABCDEF"[value & 0xF];
+    }
+    return s;
+}
+
+// The buttons a JOY1 word holds, by name, in the word's own order from the top bit.
+[[nodiscard]] std::string heldNames(std::uint16_t joy) {
+    constexpr std::array<std::string_view, 12> kNames{"B", "Y", "SELECT", "START", "UP", "DOWN",
+                                                      "LEFT", "RIGHT", "A", "X", "L", "R"};
+    std::string said;
+    for (std::size_t i = 0; i < kNames.size(); ++i) {
+        if (joy & (0x8000u >> i)) {
+            said += (said.empty() ? "" : " ") + std::string{kNames[i]};
+        }
+    }
+    return said.empty() ? "NOTHING HELD" : said;
 }
 
 // A palette word as 8-bit red, green and blue: each five-bit channel widened by repeating its top bits.
@@ -330,8 +414,11 @@ int main(int argc, char** argv) {
     std::vector<std::uint8_t>              palette(snes::Palette.size, 0);
     std::array<std::vector<std::uint8_t>, kTileCount> tiles;
     std::uint8_t spriteX = 0, spriteY = 0, step = 1;
+    std::uint16_t joy = 0;                   // JOY1, as the console latched it
+    std::uint8_t  rdnmi = 0;                 // RDNMI, as it stands
     std::uint8_t mixA = 32;                  // the argument the next call takes; X is fixed at 200
     std::string  mixSaid = "";               // the last call, as the panel shows it
+    int          boundCalls = 0, boundExact = 0;  // the cartridge's own mix, called parked
     std::string  status = "THE PANEL IS ITS OWN MEMORY";
 
     loop.simTick([&](const InputState& in) {
@@ -381,14 +468,18 @@ int main(int argc, char** argv) {
             const std::uint8_t result = mix(mixA, 200);
             writeColor(grayWord(result), said);
             mixSaid = "MIX " + std::to_string(mixA) + " 200 = " + std::to_string(result) + "  " + which;
+            const bool isExact = result == mixOf(mixA, 200);
             mixA = static_cast<std::uint8_t>(mixA + 32);
+            return isExact;
         };
         if (in.justPressed(Action::MixPlaced)) callMix(placed, "PLACED", "THE PLACED ROUTINE SET THE COLOR");
         if (in.justPressed(Action::MixBound)) {
             if (running) {
                 status = "PARK IT FIRST  SPACE";
             } else {
-                callMix(bound, "BOUND", "THE CARTRIDGES OWN MIX SET THE COLOR");
+                // Parked wherever its clock stopped; the call lands at the next instruction boundary.
+                ++boundCalls;
+                if (callMix(bound, "BOUND", "THE CARTRIDGES OWN MIX SET THE COLOR")) ++boundExact;
             }
         }
 
@@ -400,6 +491,8 @@ int main(int argc, char** argv) {
         spriteX = xy[0];
         spriteY = xy[1];
         step    = machine.read(places, &Places::step).at(0);
+        joy     = joyWord(machine.read(places, &Places::pad));
+        rdnmi   = machine.read(places, &Places::nmi).at(0);
     });
 
     // The panel's pictures — the swatches and the decoded tiles — are this program's own raster, painted
@@ -458,19 +551,21 @@ int main(int argc, char** argv) {
         put(kHeadCol, 2, "ITS MEMORY READ AS IT RUNS", palDim);
         heading(4, "PALETTE", "1 2 WORD 129");
         heading(14, "VIDEO RAM TILES 0 TO 15", "");
-        heading(17, "THE SPRITE", "3 4 X 32");
-        row(18, "X", std::to_string(spriteX));
-        row(19, "Y", std::to_string(spriteY));
-        heading(20, "THE STEP", "5 6");
-        row(21, "STEP", std::to_string(step) + " A FRAME IN THE IMAGE");
-        heading(22, "THE MACHINE", "SPACE");
-        row(23, "IT IS", running ? "RUNNING" : "PARKED");
-        heading(24, "MIX A X", "7 PLACED 8 BOUND");
-        put(kNameCol, 25, kMixSource[0], palDim);
-        put(kNameCol, 26, kMixSource[1], palDim);
-        put(kNameCol, 27, mixSaid, palText);
-        put(kNameCol, 28, "ARROWS MOVE THE SPRITE", palDim);
-        put(kHeadCol, 30, status, palLive);
+        heading(17, "THE SPRITE", "ARROWS 3 4");
+        row(18, "AT", "X " + std::to_string(spriteX) + "  Y " + std::to_string(spriteY));
+        heading(19, "THE STEP", "5 6");
+        row(20, "STEP", std::to_string(step) + " A FRAME IN THE IMAGE");
+        heading(21, "PAD REGISTERS", "ARROWS");
+        row(22, "4218", hex(joy, 4) + "  " + heldNames(joy));
+        row(23, "4210", hex(rdnmi, 2) + (rdnmi & 0x80 ? "  NMI FLAG SET" : "  NMI FLAG CLEAR"));
+        heading(24, "THE MACHINE", "SPACE");
+        row(25, "IT IS", running ? "RUNNING" : "PARKED");
+        heading(26, "MIX A X", "7 PLACED 8 BOUND");
+        put(kNameCol, 27, kMixSource[0], palDim);
+        put(kNameCol, 28, kMixSource[1], palDim);
+        put(kNameCol, 29, mixSaid, palText);
+        row(30, "BOUND", std::to_string(boundCalls) + " CALLS  " + std::to_string(boundExact) + " EXACT");
+        put(kHeadCol, 31, status, palLive);
 
         paintPanel();
 
@@ -513,8 +608,10 @@ int main(int argc, char** argv) {
         "SNES co-execution — the demo cartridge on the left, its own memory on the right, read every tick\n"
         "through declared places. Arrows move the sprite. 1 and 2 write its palette word, 3 and 4 write its\n"
         "X in work RAM, 5 and 6 patch the step byte in the image while it runs, SPACE parks and resumes.\n"
-        "7 calls a routine placed from source on a machine of its own; 8 calls the cartridge's own copy,\n"
-        "bound where it sits, while the cartridge is parked. Either writes its answer to the sprite's color.\n\n");
+        "The pad registers are read the same way, as they stand. 7 calls a routine placed from source on a\n"
+        "machine of its own; 8 calls the cartridge's own copy, bound where it sits, while the cartridge is\n"
+        "parked, and the panel counts how many of those calls answered exactly. Either call writes its\n"
+        "answer to the sprite's color.\n\n");
 
     WindowedHost host{loop, platform};
     host.run();
