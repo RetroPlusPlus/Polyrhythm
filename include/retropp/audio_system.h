@@ -19,8 +19,8 @@
 // its own AudioSink output stream; the OS mixes the streams. This is the same generalized, no-ceiling
 // posture as VMPlatform / ViewportResolution everywhere in the platform.
 //
-// SYSTEM-AGNOSTIC: the console is a VMPlatform (GameBoy / GameBoyColor in v1; SNES / Genesis as
-// backends land). The console picked at construction decides EVERYTHING console-specific, including the
+// SYSTEM-AGNOSTIC: the console is a VMPlatform (GameBoy / GameBoyColor / Snes). The console picked at
+// construction decides EVERYTHING console-specific, including the
 // ISA a registered .asm is assembled in — SM83 for the Game Boy family (the platform's own assembler),
 // the per-console assembler for others. The game writes audio source in its console's assembly; it
 // never selects an assembler.
@@ -91,7 +91,7 @@ public:
     // and streams an audio file (its VM never runs). A system is ONE kind for its whole life; play()
     // rejects an id of the other kind.
 
-    // BORROW a sink. Create a `kind` audio system for `platform` (GameBoy / GameBoyColor in v1),
+    // BORROW a sink. Create a `kind` audio system for `platform` (GameBoy / GameBoyColor / Snes),
     // draining produced PCM to `sink`, which the system does NOT own — `sink` must outlive the
     // AudioSystem. A Chiptune system owns the VM that hosts the game's sound driver (the game never sees
     // it); a Pcm system has no VM (it decodes a file instead). `timing` supplies the per-tick CPU cycle
@@ -182,12 +182,13 @@ public:
     HostedDriver<SlotsStruct> host(DriverId<SlotsStruct> driver);
 
     // Nested platform-bound instantiation types — the all-caps hardware spelling (the driver-hosting design
-    // decision), symmetric with Vm::{GB,GBC}. Each fixes the console (VMPlatform + TimingProfile) so a game
-    // names the hardware once at the type and never repeats it at construction: `AudioSystem::GBC music{
-    // AudioKind::Chiptune};`. Platform namespaces (gb::, …) stay HARDWARE vocabulary only — a system type
-    // never lives in one. Defined below the class; they ARE AudioSystems (they add no state).
+    // decision), symmetric with Vm::{GB,GBC,SNES}. Each fixes the console (VMPlatform + TimingProfile) so a
+    // game names the hardware once at the type and never repeats it at construction: `AudioSystem::GBC
+    // music{AudioKind::Chiptune};`. Platform namespaces (gb::, snes::) stay HARDWARE vocabulary only — a
+    // system type never lives in one. Defined below the class; they ARE AudioSystems (they add no state).
     class GB;
     class GBC;
+    class SNES;
 
     // ── Diagnostics (tests / dev) ────────────────────────────────────────────────────────────────
     [[nodiscard]] bool       isPlaying() const noexcept;   // a cued audio is currently being stepped
@@ -242,9 +243,10 @@ private:
     friend class HostedDriver;
 };
 
-// The nested platform-bound AudioSystem types (declared above): a Game Boy and a Game Boy Color audio
-// system with their console + timing pre-bound. Each forwards AudioSystem's three sink forms (make-own /
-// borrow / own) with only the platform + timing fixed; they add no state, so they ARE AudioSystems.
+// The nested platform-bound AudioSystem types (declared above): a Game Boy, a Game Boy Color and an SNES
+// audio system with their console + timing pre-bound. Each forwards AudioSystem's three sink forms
+// (make-own / borrow / own) with only the platform + timing fixed; they add no state, so they ARE
+// AudioSystems.
 class AudioSystem::GB : public AudioSystem {
 public:
     explicit GB(AudioKind kind, unsigned sampleRate = kAudioSampleRate)
@@ -268,6 +270,19 @@ public:
     GBC(AudioKind kind, std::unique_ptr<AudioSink> sink, unsigned sampleRate = kAudioSampleRate)
         : AudioSystem(&detail::gameBoyCore, kind, std::move(sink), VMPlatform::GameBoyColor,
                       TimingProfile::GameBoyColor, sampleRate) {}
+};
+
+// A hosted driver here runs on the SNES core: its binding says `.isa = Isa::Wdc65816` and names an
+// snes:: mapper, and each step of the production thread is one frame of the console's own clock.
+class AudioSystem::SNES : public AudioSystem {
+public:
+    explicit SNES(AudioKind kind, unsigned sampleRate = kAudioSampleRate)
+        : AudioSystem(&detail::snesCore, kind, VMPlatform::Snes, TimingProfile::Snes, sampleRate) {}
+    SNES(AudioKind kind, AudioSink& sink, unsigned sampleRate = kAudioSampleRate)
+        : AudioSystem(&detail::snesCore, kind, sink, VMPlatform::Snes, TimingProfile::Snes, sampleRate) {}
+    SNES(AudioKind kind, std::unique_ptr<AudioSink> sink, unsigned sampleRate = kAudioSampleRate)
+        : AudioSystem(&detail::snesCore, kind, std::move(sink), VMPlatform::Snes, TimingProfile::Snes,
+                      sampleRate) {}
 };
 
 // ── HostedDriver<SlotsStruct> — the durable typed handle ───────────────────────────────────────────

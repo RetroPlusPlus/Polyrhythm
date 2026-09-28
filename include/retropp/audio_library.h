@@ -244,11 +244,15 @@ struct DriverVerbs {
 // `.asm` path assembles in the driver's ISA at host(); any other extension is read as raw image bytes.
 // `policy` selects Embed (baked) or LoadFromPath (ships beside the binary, read at runtime — the posture
 // for copyright-derived driver content, which is never embedded). Unset defaults to Embed (a small image),
-// overridden per image by naming a policy.
+// overridden per image by naming a policy. `isa` is the same shape for the instruction set: unset, the
+// image is written in the binding's own `isa`; named, it is written in that one — the SPC700 program a
+// 65816 driver uploads to the SNES's audio unit, beside the 65816 code that uploads it — and the build
+// bakes an Embed image with that instruction set's assembler.
 struct DriverImagePath {
     std::uint32_t              base = 0;
     LiteralPath                path;
     std::optional<AssetPolicy> policy{};
+    std::optional<Isa>         isa{};
 };
 
 // One image of a hosted-driver registration, given either way: a per-image PATH (above — the build resolves

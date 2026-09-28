@@ -14,9 +14,10 @@
 // already holds, called in the guest's own context on the guest's own stack. It answers escapes and
 // watches through the machine's own instruction and access watchers: a place is the byte an address
 // reaches, so an escape or a watch armed through one alias fires through every other, and a replaced
-// routine is answered by a return the machine stands in for its first fetch, the image left as it is.
-// Driver hosting and the audio unit as a machine of its own are not among this core's verbs: each such
-// verb throws, in the seam's posture, so no capability is faked.
+// routine is answered by a return the machine stands in for its first fetch, the image left as it is. It
+// hosts a resident driver: the driver's images placed in that same image of its own, under the LoROM or
+// HiROM map the driver's mapper names, its entries called in the engine's frame on the driver's stack, and
+// the machine idling on the image's own loop between them while the sound chip plays.
 //
 // INTERNAL — under src/vm/, never include/retropp/. It pulls Snaggletooth's public snes.h (the Snes
 // machine and the SnesState the tests observe); no snaggletooth:: type reaches include/retropp/.
@@ -50,8 +51,9 @@ public:
     // A hosted cartridge returns to power-on with its save kept; a routine machine is rebuilt on the
     // image it wrote, every placed routine intact.
     void reset() override;
-    // On a routine machine: park the CPU on the image's idle loop, run `cycles`, and put the register
-    // file back, so the machine's own time passes between calls and nothing a call marshals moves. A
+    // On a machine holding the image this core writes — for its routines or a driver — park the CPU on
+    // the image's idle loop, run `cycles`, and put the register file back, so the machine's own time
+    // passes between calls, the sound chip plays through it, and nothing a call marshals moves. A
     // machine hosting a game's cartridge throws — its image has no spot the engine owns, and running it
     // would run the game.
     void advanceClock(std::uint64_t cycles) override;
@@ -103,6 +105,8 @@ public:
     // way to `sink` (resampler.h). Each frame reaches the sink from inside runForCycles, on the thread
     // that steps the machine. A second call replaces both; a zero rate throws std::invalid_argument.
     void enableAudio(unsigned sampleRate, AudioSampleSink sink) override;
+    // The engine's frame with the program counter at `entry` and nothing pushed — on the driver's stack
+    // when one is hosted — for runForCycles to run from.
     void beginContinuous(std::uint32_t entry) override;
     // Runs `cpuCycles` master cycles a quarter of a frame at a time, draining the DSP after each slice:
     // its frames reach the sink four times a frame, and a machine with no sink drops them as it goes.
@@ -112,8 +116,17 @@ public:
     [[nodiscard]] bool takesButtons() const override { return true; }
     void setButtons(std::uint64_t held) override;
 
+    // Host a driver: each image at its bus address under the map `mapper` names — snes::LoRom or
+    // snes::HiRom, the none mapper one LoROM bank — in the image this core writes, beside every routine
+    // already placed, and a fresh machine on it. Refuses an image no byte of the map is at, one crossing
+    // the idle loop, the header or another image or routine, a stack top outside $0000-$1FFF, and any
+    // placement on a machine hosting a game's cartridge. `stackTop` 0 is $1FFF.
     void configureResidentImage(std::span<const DriverImage> images, Mapper mapper,
                                 std::uint32_t stackTop) override;
+    // One entry of the hosted driver, called in the engine's frame on the driver's stack with `presets`
+    // over it, to its return; answers the master cycles it spent, exactly. `maxCpuCycles` bounds a routine
+    // that never returns: the machine's guard is set to a twelfth of it in instructions, the fewest master
+    // cycles an instruction takes.
     std::uint64_t callResident(std::uint32_t entry, std::span<const ResidentRegister> presets,
                                std::uint64_t maxCpuCycles) override;
     // A call into code the machine already holds, on the guest's own stack or the engine's scratch top,
@@ -177,6 +190,11 @@ private:
     // Write the image that holds every placed routine and put it in the machine: patched in place when
     // the image keeps its size, a fresh machine when it grew.
     void rebuildRoutineImage();
+    // Every run of bytes the engine's image carries: the placed routines, then the driver's images.
+    [[nodiscard]] std::vector<snes_image::Placement> everything() const;
+    // Seat the program counter of `file` on the image's idle loop, where a call lands and the machine
+    // parks between calls.
+    void seatOnIdleLoop(snaggletooth::Cpu65816State& file) const;
     // The machine at an instruction boundary: an instruction a cycle budget stopped part-way through, or
     // an interrupt sequence in flight, is finished first — under the guest's own registers, before a
     // call's presets go over them.
@@ -253,6 +271,9 @@ private:
     bool                              romHosted_    = false;  // loadRom has run: the image is the game's
     bool                              imageBuilt_   = false;  // the image is the engine's own (snes_image.h)
     std::vector<snes_image::Placement> placed_;             // every routine in the engine's image
+    std::vector<snes_image::Placement> resident_;           // the hosted driver's images in it
+    bool                              residentHosted_   = false;   // configureResidentImage has run
+    std::uint16_t                     residentStackTop_ = 0x1FFF;  // where the driver's entries push
     snaggletooth::Cpu65816State       pending_{};     // the frame beginCall stages for run()
     std::uint32_t                     pendingEntry_ = 0;  // the entry run() calls
     bool                              videoEnabled_ = false;  // remembered so a rebuild re-attaches the frame observer

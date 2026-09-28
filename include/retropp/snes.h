@@ -4,12 +4,13 @@
 //
 // vm.h is system-agnostic; this header supplies what a binding, a declaration or an ActionMap names on
 // this console: the pad and its two ports, the 65816 register file as Location constants, the machine's
-// memories as MemoryRegion constants, and the helpers that name a memory the bus cannot reach.
-// `retropp/gb.h` is the Game Boy family's.
+// memories as MemoryRegion constants, the helpers that name a memory the bus cannot reach, a routine's
+// return, and the cartridge mappers. `retropp/gb.h` is the Game Boy family's.
 
 #include <cstdint>
 #include <optional>
 
+#include "retropp/driver_binding.h"  // Mapper — the cartridge mappers are constants of it
 #include "retropp/guest_buttons.h"  // GuestButtons — the opaque word vm.buttons() takes
 #include "retropp/input.h"          // ActionId + InputState — the Button vocabulary is an Actions enum
 #include "retropp/location.h"       // Location — a register a binding names
@@ -200,5 +201,21 @@ inline constexpr MemoryRegion VideoRam = {.at = videoRam(0), .size = 0x10000};  
 inline constexpr MemoryRegion Palette  = {.at = palette(0), .size = 0x200};  // the 256 palette words
 inline constexpr MemoryRegion Sprites  = {.at = sprites(0), .size = 0x220};  // 128 entries + their high bits
 inline constexpr MemoryRegion AudioRam = {.at = audioRam(0), .size = 0x10000};  // the audio unit's 64 KB
+
+// ── The mappers ─────────────────────────────────────────────────────────────────────────────────
+
+// How the image a hosted driver runs in is mapped onto the bus, as the header's own map-mode byte names
+// it. Declare one in a binding's `.mapper`; each image's `.base` is then a bus address under that map, and
+// the core writes the header at the map's own site and sizes the image to hold the highest placed byte:
+//
+//   HostedDriverBinding{.images = {DriverImagePath{.base = 0xC10000, .path = "…/samples.bin"}, …},
+//                       .mapper = snes::HiRom, …, .isa = Isa::Wdc65816}
+//
+// LoRom reads each bank's upper 32 KB ($8000-$FFFF) and puts the header at $00:FFC0 (image offset
+// $7FC0); HiRom reads whole 64 KB banks at $C0-$FF, their upper halves mirrored in $00-$3F, and puts the
+// header at image offset $FFC0. A driver that fits one LoROM bank ($00:8000-$00:FFAF) leaves `.mapper` at
+// its default, none.
+inline constexpr Mapper LoRom = Mapper::fromId(0x20);
+inline constexpr Mapper HiRom = Mapper::fromId(0x21);
 
 }  // namespace retropp::snes

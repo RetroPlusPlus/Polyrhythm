@@ -873,6 +873,40 @@ function(retropp_scan_driver_images _text _out_embed _out_copy)
     set(${_out_copy} "${_copy}" PARENT_SCOPE)
 endfunction()
 
+# The instruction set each `.asm` driver image is written in, for the routine bake: set as
+# `_isa_of_<the logical path as a C identifier>` in the caller's scope. An image's own `.isa` when it names
+# one; otherwise the `.isa` of the HostedDriverBinding statement it is declared in — read with the images
+# taken out, so an image's token never stands for the binding's; otherwise SM83, the binding's default. As
+# with the policy, only a literal `Isa::…` token is seen.
+function(retropp_scan_driver_image_isas _text)
+    string(REGEX MATCHALL "HostedDriverBinding[^;]*;" _bindings "${_text}")
+    foreach(_binding IN LISTS _bindings)
+        string(REGEX REPLACE "DriverImagePath[ \t\r\n]*\\{[^{}]*\\}" "" _root "${_binding}")
+        if(_root MATCHES "Isa::Wdc65816")
+            set(_root_isa "Wdc65816")
+        elseif(_root MATCHES "Isa::Spc700")
+            set(_root_isa "Spc700")
+        else()
+            set(_root_isa "Sm83")
+        endif()
+        string(REGEX MATCHALL "DriverImagePath[ \t\r\n]*\\{[^{}]*\\}" _images "${_binding}")
+        foreach(_image IN LISTS _images)
+            string(REGEX MATCH "\\.path[ \t\r\n]*=[ \t\r\n]*\"([^\"]*)\"" _matched "${_image}")
+            if(NOT _matched)
+                continue()
+            endif()
+            set(_logical "${CMAKE_MATCH_1}")
+            if(_image MATCHES "\\.isa[ \t\r\n]*=[ \t\r\n]*Isa::(Sm83|Wdc65816|Spc700)")
+                set(_isa "${CMAKE_MATCH_1}")
+            else()
+                set(_isa "${_root_isa}")
+            endif()
+            string(MAKE_C_IDENTIFIER "${_logical}" _key)
+            set(_isa_of_${_key} "${_isa}" PARENT_SCOPE)
+        endforeach()
+    endforeach()
+endfunction()
+
 function(retropp_autoembed_assets _target)
     get_target_property(_srcs ${_target} SOURCES)
     if(NOT _srcs)
@@ -1041,10 +1075,11 @@ endfunction()
 #   * Embed        → assemble the .asm to BYTECODE AT COMPILE TIME and register the bytes in the routine
 #                    registry; ONLY the bytecode ships, the .asm never does. This is the producer for
 #                    retropp::detail::findEmbeddedRoutine. Which assembler is the call's own ISA token
-#                    (`Isa::Wdc65816` in a RoutineBinding, a registerAudio's Isa argument, a
-#                    DriverBinding's `.isa`), read from the call text exactly as the policy token is: a
-#                    call naming none is SM83, assembled by the engine's constexpr assembler in the
-#                    generated header; a call naming Snaggletooth's ISA runs its assembler CLI at build
+#                    (`Isa::Wdc65816` in a RoutineBinding, a registerAudio's Isa argument; for a driver
+#                    image, its own `.isa` or its HostedDriverBinding's), read from the source text
+#                    exactly as the policy token is: a call naming none is SM83, assembled by the
+#                    engine's constexpr assembler in the generated header; a call naming
+#                    Snaggletooth's ISA runs its assembler CLI at build
 #                    time (cmake/bake_snaggletooth_routine.cmake), which also records where the bytes go.
 # Only `.asm` paths are routines; a PCM container path (.wav/.ogg) is left to the asset side / its future
 # arm. Conservative like the asset scan: a missing file is skipped (Embed → runtime disk read;
@@ -1110,10 +1145,12 @@ function(retropp_autoembed_routines _target)
             endforeach()
         endforeach()
         # Driver images (registerDriver): an `.asm` image assembles to bytecode, so it belongs here beside
-        # the other routines. Any other extension is raw bytes and is the asset scan's.
+        # the other routines, in the instruction set it is written in. Any other extension is raw bytes and
+        # is the asset scan's.
         set(_drv_embed "")
         set(_drv_copy "")
         retropp_scan_driver_images("${_t}" _drv_embed _drv_copy)
+        retropp_scan_driver_image_isas("${_t}")
         foreach(_logical IN LISTS _drv_embed)
             if(_logical MATCHES "\\.asm$")
                 list(APPEND _embed_paths "${_logical}")
@@ -1172,7 +1209,7 @@ function(retropp_autoembed_routines _target)
         string(MAKE_C_IDENTIFIER "${_logical}" _key)
         set(_isa "${_isa_of_${_key}}")
         if(NOT _isa)
-            set(_isa "Sm83")  # a driver's image: its binding's ISA is verified when it is hosted
+            set(_isa "Sm83")  # a driver image declared outside a HostedDriverBinding statement names none
         endif()
         if(NOT _isa STREQUAL "Sm83")
             # Snaggletooth's assembler, at build time: the CLI assembles the source, and the bake script
@@ -1650,6 +1687,7 @@ if(RETROPP_BUILD_TESTS)
         tests/snes_backend_escape_test.cpp
         tests/snes_backend_watch_test.cpp
         tests/snes_backend_nesting_test.cpp
+        tests/snes_backend_driver_test.cpp
         tests/snes_vm_test.cpp
         tests/snes_backend_audio_test.cpp
         tests/net_socket_test.cpp
@@ -2242,6 +2280,11 @@ if(RETROPP_BUILD_EXAMPLES)
     target_include_directories(retropp-snes_coexecution-demo PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}
         ${CMAKE_CURRENT_SOURCE_DIR}/third_party/snaggletooth/tools)
+    # ── SNES sound driver — a media-player faceplate for a driver hosted the way an SNES game carries one:
+    # 65816 init and tick code, and an SPC700 sound program the init uploads to the audio unit. Its three
+    # sources are registered as paths, so the build bakes each with its own instruction set's assembler.
+    # CI runs its --verify (registered below).
+    retropp_add_example(snes_driver DIRECTORY snes/driver)
 
     # ── Curve demo — plots a Catmull-Rom curve through waypoints, a constant-speed atDistance walker, and
     # a Hermite curve, using a tiny in-memory marker atlas (no committed asset). Dev-run only; the live
@@ -2551,6 +2594,12 @@ if(RETROPP_BUILD_EXAMPLES)
     # coverage of the same verbs is snes_backend_places_test's and snes_regions_test's.
     add_test(NAME SnesCoexecutionExample.Verify
              COMMAND retropp-snes_coexecution-demo --verify)
+
+    # The SNES sound driver demo, headless on a capture sink: it hosts the driver, plays a song, the effect
+    # and a fade through the handle, and checks what the driver publishes and what the output carries; it
+    # exits nonzero on any miss. Deterministic coverage of the resident verbs is snes_backend_driver_test's.
+    add_test(NAME SnesDriverExample.Verify
+             COMMAND retropp-snes_driver-demo --verify)
 
     # ── Guest-escape demo — a running cartridge hands control to native code and carries on.
     # Authors a cartridge whose loop calls its own routine every frame, hosts it and run()s it, then

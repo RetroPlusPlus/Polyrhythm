@@ -483,13 +483,13 @@ std::uint32_t SnesBackend::placeRoutine(std::span<const std::uint8_t> bytes,
             "this VM hosts a game's own cartridge, which has no arena to place a routine into; call "
             "the hosted image's existing entries instead of injecting new code");
     }
-    const std::uint32_t at = origin.value_or(snes_image::nextFreeAddress(map_, placed_, bytes.size()));
+    const std::uint32_t at = origin.value_or(snes_image::nextFreeAddress(map_, everything(), bytes.size()));
     const std::optional<std::size_t> offset = snes_image::imageOffset(map_, at);
     if (!offset) {
         throw std::invalid_argument("a routine cannot be placed at " + busAddress(at) +
                                     ": no byte of the image is at that address");
     }
-    if (snes_image::overlapsReserved(*offset, bytes.size())) {
+    if (snes_image::overlapsReserved(map_, *offset, bytes.size())) {
         throw std::invalid_argument("a routine at " + busAddress(at) +
                                     " would overlap the image's idle loop or its header");
     }
@@ -500,14 +500,27 @@ std::uint32_t SnesBackend::placeRoutine(std::span<const std::uint8_t> bytes,
                                         " would overlap the routine placed at " + busAddress(p.origin));
         }
     }
+    for (const snes_image::Placement& p : resident_) {
+        const std::size_t theirs = *snes_image::imageOffset(map_, p.origin);
+        if (*offset < theirs + p.bytes.size() && theirs < *offset + bytes.size()) {
+            throw std::invalid_argument("a routine at " + busAddress(at) +
+                                        " would overlap the driver image at " + busAddress(p.origin));
+        }
+    }
     placed_.push_back(snes_image::Placement{.origin = at,
                                             .bytes  = std::vector<std::uint8_t>(bytes.begin(), bytes.end())});
     rebuildRoutineImage();
     return at;
 }
 
+std::vector<snes_image::Placement> SnesBackend::everything() const {
+    std::vector<snes_image::Placement> all = placed_;
+    all.insert(all.end(), resident_.begin(), resident_.end());
+    return all;
+}
+
 void SnesBackend::rebuildRoutineImage() {
-    std::vector<std::uint8_t> image = snes_image::buildImage(map_, placed_);
+    std::vector<std::uint8_t> image = snes_image::buildImage(map_, everything());
     if (snes_ && image.size() == rom_.size()) {
         // The same chip: every byte that changed is written into the live machine, and the machine's
         // own state — its registers, its work RAM, its clock — stands.
@@ -530,7 +543,7 @@ AssembledRoutine SnesBackend::assemble(std::string_view source) const {
     if (assembly.ok() && !assembly.ranges.empty() && assembly.ranges.front().start == 0) {
         // No ORG: the source was assembled at $000000, which is work RAM. Assemble it again at the first
         // gap of the arena that holds it, so every label inside it resolves for where it will land.
-        const std::uint32_t at = snes_image::nextFreeAddress(map_, placed_, assembly.ranges.back().start +
+        const std::uint32_t at = snes_image::nextFreeAddress(map_, everything(), assembly.ranges.back().start +
                                                                                 assembly.ranges.back().bytes.size());
         assembly = snaggletooth::assembler::assembleCpu65816(
             "        ORG " + busAddress(at) + "\n" + std::string(source), "routine.asm");
@@ -590,8 +603,7 @@ void SnesBackend::run() {
     // is at an instruction boundary — every call ends at one and advanceClock puts the file back — so
     // the call is never refused for being mid-instruction; a refusal here is the entry's own bank not
     // mapping it.
-    pending_.pc  = static_cast<std::uint16_t>(snes_image::kIdleLoop & 0xFFFF);
-    pending_.pbr = static_cast<std::uint8_t>(snes_image::kIdleLoop >> 16);
+    seatOnIdleLoop(pending_);
     snes_->setCpuState(pending_);
     const snaggletooth::Standin returns =
         entry->rtl ? snaggletooth::Standin::Long : snaggletooth::Standin::Near;
@@ -624,13 +636,19 @@ void SnesBackend::advanceClock(std::uint64_t cycles) {
     // it stands.
     const snaggletooth::Cpu65816State saved = snes_->cpuState();
     snaggletooth::Cpu65816State idle = saved;
-    idle.pc  = static_cast<std::uint16_t>(snes_image::kIdleLoop & 0xFFFF);
-    idle.pbr = static_cast<std::uint8_t>(snes_image::kIdleLoop >> 16);
+    seatOnIdleLoop(idle);
     snes_->setCpuState(idle);
     const snaggletooth::SnesState& state = snes_->state();
     const std::uint64_t owed = state.master > state.consumed ? state.master - state.consumed : 0;
     snes_->run(cycles + owed);
     snes_->setCpuState(saved);
+    drainAudio();  // what the sound chip made while the machine idled reaches the sink
+}
+
+void SnesBackend::seatOnIdleLoop(snaggletooth::Cpu65816State& file) const {
+    const std::uint32_t idle = snes_image::idleLoop(map_);
+    file.pc  = static_cast<std::uint16_t>(idle & 0xFFFF);
+    file.pbr = static_cast<std::uint8_t>(idle >> 16);
 }
 
 void SnesBackend::finishInstruction() {
@@ -943,15 +961,160 @@ snaggletooth::AccessAnswer SnesBackend::write(std::uint32_t address, std::uint8_
     return askWatch(address, AccessKind::Write, value);
 }
 
-// ── The verbs this core does not realize. Each throws std::logic_error naming what the core does now.
-void SnesBackend::beginContinuous(std::uint32_t) {
-    throw std::logic_error("beginContinuous: the SNES core hosts no driver");
+// ── Resident driver ─────────────────────────────────────────────────────────────────────────────
+// A driver is hosted in an image the engine writes, the same image its routines are placed in: the
+// driver's images at their bus addresses under the map its mapper names, the routines already placed kept
+// where they are, the header at the map's own site. Its entries are called in the engine's frame on the
+// stack the binding names, and the machine idles on the image's own loop between them.
+
+namespace {
+
+// The map a driver's mapper names — the header's own map-mode byte — or nothing for an id this core has no
+// map for. The none mapper is one LoROM bank.
+std::optional<snaggletooth::CartridgeMap> mapFor(Mapper mapper) {
+    if (mapper.isNone() || mapper.id() == 0x20) {
+        return snaggletooth::CartridgeMap::LoRom;
+    }
+    if (mapper.id() == 0x21) {
+        return snaggletooth::CartridgeMap::HiRom;
+    }
+    return std::nullopt;
 }
-void SnesBackend::configureResidentImage(std::span<const DriverImage>, Mapper, std::uint32_t) {
-    throw std::logic_error("configureResidentImage: the SNES core hosts no resident driver");
+
+}  // namespace
+
+void SnesBackend::configureResidentImage(std::span<const DriverImage> images, Mapper mapper,
+                                         std::uint32_t stackTop) {
+    if (romHosted_) {
+        throw std::logic_error(
+            "this VM hosts a game's own cartridge; a driver is hosted in an image the engine writes — its "
+            "header and every byte in it — and cannot share the game's");
+    }
+    const std::optional<snaggletooth::CartridgeMap> map = mapFor(mapper);
+    if (!map) {
+        throw std::invalid_argument("mapper " + std::to_string(mapper.id()) +
+                                    " is not one this core maps; name snes::LoRom or snes::HiRom");
+    }
+    // The stack is in the low 8 KB of work RAM, the page every bank reaches, so the driver's own bank
+    // never hides it.
+    if (stackTop > 0x1FFF) {
+        throw std::invalid_argument("resident driver stack top " + busAddress(stackTop) +
+                                    " is not in the low 8 KB of work RAM ($00:0000-$00:1FFF)");
+    }
+
+    std::vector<snes_image::Placement> resident;
+    resident.reserve(images.size());
+    for (const DriverImage& img : images) {
+        if (img.bytes.empty()) {
+            throw std::invalid_argument("resident driver image at " + busAddress(img.base) + " has no bytes");
+        }
+        const std::optional<snes_address::Decoded> decoded = snes_address::decode(img.base);
+        if (!decoded || decoded->space != snes::Space::Bus || decoded->rtl) {
+            throw std::invalid_argument("a driver image's base is a bus address; " + std::to_string(img.base) +
+                                        " is not one");
+        }
+        const std::optional<std::size_t> offset = snes_image::imageOffset(*map, decoded->at24);
+        if (!offset) {
+            throw std::invalid_argument("a driver image cannot be placed at " + busAddress(decoded->at24) +
+                                        ": no byte of the image is at that address on this map");
+        }
+        if (mapper.isNone() && *offset + img.bytes.size() > 0x8000) {
+            throw std::invalid_argument(
+                "the driver image at " + busAddress(decoded->at24) +
+                " reaches past the first bank, which needs a mapper (snes::LoRom or snes::HiRom); the none "
+                "mapper is one 32 KB LoROM bank");
+        }
+        if (snes_image::overlapsReserved(*map, *offset, img.bytes.size())) {
+            throw std::invalid_argument("the driver image at " + busAddress(decoded->at24) +
+                                        " would overlap the image's idle loop or its header");
+        }
+        const auto overlaps = [&](const snes_image::Placement& p) {
+            const std::size_t theirs = *snes_image::imageOffset(*map, p.origin);
+            return *offset < theirs + p.bytes.size() && theirs < *offset + img.bytes.size();
+        };
+        for (const snes_image::Placement& p : resident) {
+            if (overlaps(p)) {
+                throw std::invalid_argument("the driver images at " + busAddress(decoded->at24) + " and " +
+                                            busAddress(p.origin) + " overlap");
+            }
+        }
+        for (const snes_image::Placement& p : placed_) {
+            if (!snes_image::imageOffset(*map, p.origin)) {
+                throw std::invalid_argument("the routine placed at " + busAddress(p.origin) +
+                                            " has no byte of the image on the map this driver names");
+            }
+            if (overlaps(p)) {
+                throw std::invalid_argument("the driver image at " + busAddress(decoded->at24) +
+                                            " would overlap the routine placed at " + busAddress(p.origin));
+            }
+        }
+        resident.push_back(snes_image::Placement{
+            .origin = decoded->at24, .bytes = std::vector<std::uint8_t>(img.bytes.begin(), img.bytes.end())});
+    }
+
+    // A fresh machine on the image, as a cartridge put in the slot and powered on is.
+    map_              = *map;
+    resident_         = std::move(resident);
+    rom_              = snes_image::buildImage(map_, everything());
+    imageBuilt_       = true;
+    residentStackTop_ = stackTop == 0 ? engineFrame().s : static_cast<std::uint16_t>(stackTop);
+    residentHosted_   = true;
+    emplaceMachine();
 }
-std::uint64_t SnesBackend::callResident(std::uint32_t, std::span<const ResidentRegister>, std::uint64_t) {
-    throw std::logic_error("callResident: the SNES core hosts no resident driver");
+
+std::uint64_t SnesBackend::callResident(std::uint32_t entry, std::span<const ResidentRegister> presets,
+                                        std::uint64_t maxCpuCycles) {
+    if (!residentHosted_) {
+        throw std::logic_error("callResident: no driver is hosted on this machine");
+    }
+    const std::optional<snes_address::Decoded> decoded = snes_address::decode(entry);
+    if (!decoded || decoded->space != snes::Space::Bus) {
+        throw std::invalid_argument("callResident: the entry " + std::to_string(entry) +
+                                    " is not a bus address");
+    }
+    // The engine's frame on the driver's stack, the presets over it, and the idle loop as the landing.
+    snaggletooth::Cpu65816State file = engineFrame();
+    file.s = residentStackTop_;
+    for (const ResidentRegister& p : presets) {
+        writeRegisterField(file, static_cast<snes::Reg>(p.registerId), p.value);
+    }
+    seatOnIdleLoop(file);
+    snes_->setCpuState(file);
+    // The cap is in master cycles and the machine's guard is in instructions. An instruction takes at
+    // least two CPU cycles of at least six master cycles each, so a routine that returns inside the cap
+    // runs at most a twelfth of it in instructions; the guard trips only for a routine that never returns.
+    const std::size_t guard = static_cast<std::size_t>(maxCpuCycles / 12 + 1);
+    const snaggletooth::Standin returns =
+        decoded->rtl ? snaggletooth::Standin::Long : snaggletooth::Standin::Near;
+    const std::uint64_t before   = snes_->state().master;
+    const bool          returned = snes_->callOnStack(decoded->at24, file.s, returns, guard);
+    const std::uint64_t spent    = snes_->state().master - before;
+    if (!returned && spent == 0) {
+        throw std::logic_error("callResident: the machine refused the call at " + busAddress(decoded->at24) +
+                               " — no byte of the image is at that address");
+    }
+    drainAudio();  // what the sound chip made during the call reaches the sink
+    return spent;
+}
+
+void SnesBackend::beginContinuous(std::uint32_t entry) {
+    if (!snes_) {
+        throw std::logic_error("beginContinuous: this machine holds no code to run (host a driver first)");
+    }
+    const std::optional<snes_address::Decoded> decoded = snes_address::decode(entry);
+    if (!decoded || decoded->space != snes::Space::Bus) {
+        throw std::invalid_argument("beginContinuous: the entry " + std::to_string(entry) +
+                                    " is not a bus address");
+    }
+    // The engine's frame with the program counter at the entry and nothing pushed: the program runs from
+    // there for as long as the budgets it is given last.
+    snaggletooth::Cpu65816State file = engineFrame();
+    if (residentHosted_) {
+        file.s = residentStackTop_;
+    }
+    file.pc  = static_cast<std::uint16_t>(decoded->at24 & 0xFFFF);
+    file.pbr = static_cast<std::uint8_t>(decoded->at24 >> 16);
+    snes_->setCpuState(file);
 }
 
 }  // namespace retropp::vm

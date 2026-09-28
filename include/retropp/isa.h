@@ -17,6 +17,7 @@ namespace retropp {
 enum class Isa : std::uint8_t {
     Sm83,      // Sharp SM83 — the Game Boy / Game Boy Color CPU
     Wdc65816,  // the WDC 65816 — the SNES CPU
+    Spc700,    // the Sony SPC700 — the CPU of the SNES's audio unit, which the 65816 uploads its program to
 };
 
 }  // namespace retropp

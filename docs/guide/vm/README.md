@@ -149,7 +149,7 @@ names what the core does instead.
 | naming places, `read` / `write` by address | answers | answers |
 | `bindRoutine` — a routine the cartridge holds, called in its context | answers | answers |
 | escapes, watches | answers | answers, on a byte whichever address reaches it |
-| hosting a resident sound driver | answers | refuses |
+| hosting a resident sound driver | answers, `gb::Mbc3` | answers, `snes::LoRom` / `snes::HiRom`, with the SPC700 program it uploads |
 
 The exception each refusal throws, and the message, is on the console's page:
 [gameboy.md](gameboy.md#two-models-one-core), [snes.md](snes.md#what-the-core-answers-and-what-it-refuses).

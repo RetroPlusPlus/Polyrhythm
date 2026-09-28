@@ -217,6 +217,7 @@ constexpr std::string_view isaName(Isa isa) noexcept {
     switch (isa) {
         case Isa::Sm83:     return "SM83";
         case Isa::Wdc65816: return "65816";
+        case Isa::Spc700:   return "SPC700";
     }
     return "an ISA this build does not name";
 }

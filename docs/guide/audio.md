@@ -343,6 +343,23 @@ A driver with no state is `DriverId<NoSlots>` — pass no slots batch.
   for every image; `registerDriver(binding, verbs, slots)` takes a `HostedDriverBinding`, whose images are
   named one at a time — each either a literal path under the Embed / LoadFromPath policy, or inline bytes.
   An `.asm` image is assembled in the binding's `isa`; another extension is raw bytes.
+- **An image can be written for another processor than the binding's.** `DriverImagePath::isa` is
+  optional: unset, the image is in the binding's `isa`; named, the build bakes it with that instruction
+  set's assembler. An SNES driver is the case — 65816 code, and the SPC700 program it uploads to the
+  audio unit:
+
+  ```cpp
+  HostedDriverBinding binding{
+      .images    = {DriverImagePath{.base = 0x008000, .path = "drivers/init.asm"},
+                    DriverImagePath{.base = 0x00A000, .path = "drivers/sound.asm", .isa = Isa::Spc700}},
+      .tickEntry = 0x008400,
+      .init      = Instruction::call(0x008000, snes::A, /*fixedValue=*/0),
+      .isa       = Isa::Wdc65816,
+  };
+  ```
+
+  The scan reads it the way it reads the policy: a literal `Isa::…` token in the image's own initializer,
+  or the binding's.
 - **The policy is per image, and the build honours each one separately.** `DriverImagePath::policy` is
   optional; an image that names none resolves to `Embed`. The build scan reads each `DriverImagePath`
   initializer, so a binding can mix freely — the usual shape is an `Embed` boot image beside a
@@ -353,8 +370,9 @@ A driver with no state is `DriverId<NoSlots>` — pass no slots batch.
   [assets-and-embedding.md](assets-and-embedding.md#choosing-the-policy).
 - **Placement is declared, banked when a driver needs it.** Each image names a base; `gb::banked(bank, addr)`
   places a bank-qualified image and the VM bank-switches through the driver's own placed code, with the
-  mapper (`gb::Mbc3`) declared on the binding. The Vm-layer placement mechanics are in
-  [vm-and-routines.md](vm/vm-and-routines.md#hosting-a-resident-driver).
+  mapper (`gb::Mbc3`) declared on the binding. On the SNES a base is a 24-bit bus address and the mapper
+  is `snes::LoRom` or `snes::HiRom` ([snes.md](vm/snes.md#the-mappers)). The Vm-layer placement mechanics
+  are in [vm-and-routines.md](vm/vm-and-routines.md#hosting-a-resident-driver).
 - **A hosted driver rides the `vmDriver` mixer bus** (see [Volume](#volume-the-audiomixer)) — a straight
   amplifier over the whole driver voice, unity by default. The system's `stop()` does **not** close a
   resident driver (that would discard its song position); only `HostedDriver::close()` or the system's
@@ -407,6 +425,9 @@ mix arriving late at the device — neither can say which of a dozen hosted driv
 `examples/driver_hosting/` hosts two synthetic drivers — one of each family — behind one identical panel,
 every verb under a control. Both drivers zero their state RAM in `.init`, so pressing RESET after moving
 the DRIVER VOL fader drops the readout to 0 — the restart is visible rather than asserted.
+`examples/snes/driver/` is the same faceplate for one SNES driver on `AudioSystem::SNES`: its `.init`
+uploads an SPC700 program to the audio unit, pads play its three songs, a chirp and a fade, and the
+readout shows the song and the note the program reports through the ports.
 
 ## Volume: the `AudioMixer`
 
@@ -504,11 +525,18 @@ AudioSystem(AudioKind     kind,
             unsigned      sampleRate = kAudioSampleRate /* 48 kHz */);
 ```
 
-The console is a `VMPlatform`. `GameBoy` / `GameBoyColor` are the backends available today; the defaults
-reproduce the faithful Game Boy Color baseline. Other consoles (SNES, Genesis, …) are drop-in backends —
-the same `AudioSystem` surface drives them, with that console's sound chip and assembler behind it.
-`platform` / `timing` configure the chiptune VM; a PCM system has no VM and ignores them, using only
-`sampleRate` as its decode target.
+The console is a `VMPlatform`: `GameBoy`, `GameBoyColor` or `Snes`, the same `AudioSystem` surface
+driving each with that console's sound chip and assembler behind it; the defaults are the Game Boy Color.
+The pre-bound types name the console once — `AudioSystem::GB`, `AudioSystem::GBC`, `AudioSystem::SNES`:
+
+```cpp
+AudioSystem::SNES music{AudioKind::Chiptune};   // VMPlatform::Snes, TimingProfile::Snes
+```
+
+On the SNES a hosted driver's step is one frame of the console's own clock, and its binding says
+`Isa::Wdc65816` ([Hosting your own sound driver](#hosting-your-own-sound-driver)). `platform` / `timing`
+configure the chiptune VM; a PCM system has no VM and ignores them, using only `sampleRate` as its decode
+target.
 
 ## What works today / what's planned
 
@@ -524,6 +552,7 @@ the same `AudioSystem` surface drives them, with that console's sound chip and a
 | Concurrent voices per system (`play()` never preempts; voices mix into the system's output) | available |
 | PCM audio-pack backend (register + play a `.wav` / `.ogg` / `.flac` / `.mp3` file on an `AudioKind::Pcm` system) | available |
 | `AudioMixer` volume levels (Master + Music/Sfx/Vocals, perceptual slider, default unity) | available |
+| Hosting a sound driver on the SNES (`AudioSystem::SNES`, `snes::LoRom` / `snes::HiRom`, an SPC700 image beside the 65816 code) | available |
 | Per-voice gain + pan/balance (developer-owned, the `play()` voice handle) | planned |
 | Anti-channel-stealing (splitting ONE driver's channel writes across parallel sound chips, so a driver whose own allocation steals channels stops stealing them) | planned |
 

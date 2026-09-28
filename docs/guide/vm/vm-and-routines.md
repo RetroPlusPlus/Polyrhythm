@@ -338,6 +338,20 @@ Placement is validated at `hostDriver`: overlapping images throw, and placing in
 low window throws with a clear message. A driver whose audio RAM would collide with the default scratch
 stack declares its own `stackTop` on the binding (the default is the platform scratch top).
 
+On the SNES a base is a 24-bit bus address, and the mapper names how the image is mapped — `snes::LoRom`
+or `snes::HiRom`, the header's own map-mode byte; with none, the image is one 32 KB LoROM bank:
+
+```cpp
+binding.images = {{.bytes = tickBytes, .base = 0x008400},    // LoROM bank $00
+                  {.bytes = samples,   .base = 0xC10000}};   // HiROM bank $C1
+binding.mapper = retropp::snes::HiRom;
+binding.isa    = Isa::Wdc65816;
+```
+
+The image keeps its header at the map's own site and its idle loop below it, and an image over either is
+refused; the stack is in the low 8 KB of work RAM, `$1FFF` by default. The map table, the entries' frame
+and an SPC700 program the driver uploads are on [snes.md](snes.md#the-mappers).
+
 ### The resident tick
 
 Unlike a called routine — which runs to a `ret` and hands back a value — the tick is **call-and-return
@@ -469,6 +483,9 @@ byte-reproducible in plain C++, so it is a porting job rather than a VM routine.
 - **Change where a SNES routine lands:** the image a routine machine writes — its size, header, idle
   loop and the gap search — is `src/vm/snes/snes_image.cpp`; the build-time layout of routines with no
   `ORG` of their own is `cmake/bake_snaggletooth_routine.cmake` and follows the same rule.
+- **Add a mapper for a SNES driver:** a `Mapper` constant in `include/retropp/snes.h` with the header's
+  map-mode byte, its map in `mapFor` (`src/vm/snes/snes_backend.cpp`), and its header site and idle loop
+  in `src/vm/snes/snes_image.cpp`.
 - **Add a whole new system (NES, Genesis, …):** add a `src/vm/<system>/` folder with its backend and
   its `detail::<system>Core` hook, its `VMPlatform` enumerators, its `detail::coreFor` case and its
   pre-bound `Vm::` types in `vm.h` — the public `vm.h` surface does not change. Every system's machine
@@ -486,6 +503,6 @@ free-running-divider model), the host-speed / single-instance path, the `Hardwar
 with the `MemoryRegion` / `registerRegions` / `read` / `write` surface and the `gb::` memory
 constants); and the SNES backend — `Vm::SNES`, both registration forms from 65816 source or bytes with
 the `snes::` register vocabulary and `snes::rtl`, `assemble`, `advanceClock`, `bindRoutine` into a
-hosted cartridge, and hosting a whole cartridge with its pad vocabulary in `snes.h`
-(`co-execution.md`). Declared seams: `instances > 1` (registering with more than one throws
+hosted cartridge, the resident-driver surface with `snes::LoRom` / `snes::HiRom`, and hosting a whole
+cartridge with its pad vocabulary in `snes.h` (`co-execution.md`). Declared seams: `instances > 1` (registering with more than one throws
 `std::logic_error`) and binding a location by label name.

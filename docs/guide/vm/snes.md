@@ -4,16 +4,17 @@
 for `VMPlatform::Snes`, running `Isa::Wdc65816`. It hosts and runs a whole cartridge — booted, paced on
 either clock, drawn, heard, played on both controller ports and its battery save kept — and it runs
 routines: 65816 source placed into an image of its own and called as typed C++ functions, and a routine a
-cartridge already holds, bound where it sits; and it weaves native code into a running cartridge through
-escapes and watches — through the same verbs as every console. This page is
-what the SNES is behind the surface: its clock, its vocabulary in `snes.h`, what its hardware imposes,
+cartridge already holds, bound where it sits; it weaves native code into a running cartridge through
+escapes and watches; and it hosts a game's own sound driver the way an SNES game carries one, 65816 code
+and the SPC700 program it uploads to the audio unit — through the same verbs as every console. This page
+is what the SNES is behind the surface: its clock, its vocabulary in `snes.h`, what its hardware imposes,
 its assembler's dialect, its picture and sound, its save, what its core refuses and how, and its
 examples. The verbs are on [vm-and-routines.md](vm-and-routines.md) and
-[co-execution.md](co-execution.md).
+[co-execution.md](co-execution.md); hosting a driver is on [audio.md](../audio.md#hosting-your-own-sound-driver).
 
 ```cpp
 #include "retropp/vm.h"    // Vm::SNES, VMPlatform::Snes
-#include "retropp/snes.h"  // snes::A … snes::PC, snes::rtl; snes::WorkRam … snes::AudioRam, snes::videoRam …; snes::Button … snes::Ports
+#include "retropp/snes.h"  // snes::A … snes::PC, snes::rtl; snes::WorkRam … snes::AudioRam, snes::videoRam …; snes::LoRom, snes::HiRom; snes::Button … snes::Ports
 ```
 
 ## Contents
@@ -26,6 +27,7 @@ examples. The verbs are on [vm-and-routines.md](vm-and-routines.md) and
   - [The machine's memories](#the-machines-memories)
   - [Memories the bus cannot name](#memories-the-bus-cannot-name)
   - [A routine's return: `snes::rtl`](#a-routines-return-snesrtl)
+  - [The mappers](#the-mappers)
   - [The pad, both ports](#the-pad-both-ports)
 - [What the hardware imposes](#what-the-hardware-imposes)
 - [The assembler's dialect](#the-assemblers-dialect)
@@ -52,9 +54,10 @@ through a power cycle, and `reset()` on a hosted cartridge is the same again.
 
 A machine that hosts no cartridge is a routine machine: the first routine placed on it builds an image
 of the core's own — a LoROM cartridge with a header the console accepts and an idle loop every vector
-points at — and `reset()` rebuilds that image with every placed routine intact. The two are exclusive:
-a machine holding the core's own image refuses `hostRom`, and one hosting a game's cartridge refuses
-`uploadRoutine` / `registerRoutine` (`std::logic_error` either way).
+points at — and `reset()` rebuilds that image with every placed routine intact. A driver hosted on it is
+placed in that same image, under the map its mapper names ([The mappers](#the-mappers)). The two are
+exclusive: a machine holding the core's own image refuses `hostRom`, and one hosting a game's cartridge
+refuses `uploadRoutine` / `registerRoutine` / `hostDriver` (`std::logic_error` either way).
 
 ## What the core answers, and what it refuses
 
@@ -70,7 +73,7 @@ a machine holding the core's own image refuses `hostRom`, and one hosting a game
 | `bindRoutine` | answers — a routine the cartridge holds, called in the guest's own context; [What the hardware imposes](#what-the-hardware-imposes) says where the call lands |
 | `advanceClock` | answers, on a machine holding the core's own image — the machine idles on that image's own loop; on a machine hosting a game's cartridge, **refuses, `std::logic_error`** — the cartridge advances by running |
 | `registerEscapes` · `registerWatches` | answers — [What the hardware imposes](#what-the-hardware-imposes) says what an escape and a watch are on this console |
-| `hostDriver` | **refuses, `std::logic_error`** — the core hosts no driver |
+| `hostDriver` · `tickDriver` · `readSlot` | answers, on a machine hosting no cartridge — [The mappers](#the-mappers) |
 | `reset` before any cartridge is hosted or routine placed | `std::logic_error` |
 
 Each refusal is an exception naming what the core does instead, thrown where the program asked.
@@ -105,8 +108,8 @@ A machine free-running on a thread of its own holds the cartridge's cadence what
 ## `snes.h` — the vocabulary
 
 `vm.h` is system-agnostic; `snes.h` is the console's half of the surface — the register file, the
-machine's memories, the memories the bus cannot name, a routine's return and the pad — as the typed
-constants a binding, a declaration or an `ActionMap` names.
+machine's memories, the memories the bus cannot name, a routine's return, the cartridge mappers and the
+pad — as the typed constants a binding, a declaration or an `ActionMap` names.
 
 ### Registers
 
@@ -211,6 +214,60 @@ standing in, so the caller's `JSL` gets its three bytes back.
 The bit rides the top of the 32-bit address, above the 24-bit bus; it names code, so with a memory the
 bus cannot name it resolves nothing. A routine the core places from source returns with `RTS`, always —
 the core places it and calls it, so the convention is the core's.
+
+### The mappers
+
+```cpp
+inline constexpr Mapper LoRom = Mapper::fromId(0x20);
+inline constexpr Mapper HiRom = Mapper::fromId(0x21);
+```
+
+A hosted sound driver runs in an image the core writes — the same image its routines are placed in — and
+the binding's `.mapper` says how that image is mapped onto the bus, as the header's own map-mode byte
+names it. Each image's `.base` is a bus address under that map:
+
+| `.mapper` | The bus reads the image | Its header |
+|---|---|---|
+| none, the default | one 32 KB LoROM bank, `$00:8000`–`$00:FFAF` | `$00:FFC0` |
+| `snes::LoRom` | each bank's upper 32 KB, `$8000`–`$FFFF`, as many banks as the images reach | `$00:FFC0`, image offset `$7FC0` |
+| `snes::HiRom` | whole 64 KB banks at `$C0`–`$FF`, their upper halves again at `$00`–`$3F` | `$C0:FFC0`, image offset `$FFC0` |
+
+The image is sized to a power of two holding the highest placed byte. It keeps its header and its idle
+loop, sixteen bytes below the header (`$00:FFB0` on LoROM, `$C0:FFB0` on HiROM), and a driver image over
+either is refused, `std::invalid_argument` — as is one over another image or a placed routine, one past the
+first bank with the none mapper, and one at an address no ROM is at. The driver's stack is in the low
+8 KB of work RAM, the page every bank reaches: `.stackTop` from `$0000` to `$1FFF`, `$1FFF` when unset,
+and refused anywhere else.
+
+The driver's entries — its `.init`, its tick, a verb's `Instruction::call` — are called in the frame a
+placed routine begins in ([What the hardware imposes](#what-the-hardware-imposes)), on the driver's stack,
+and return with `RTS`, or `RTL` for an entry `snes::rtl` wraps. Between them the machine idles on the
+image's loop, so the sound chip plays through the rest of the frame. A tick costs the master cycles it
+ran, exactly; an entry that never returns is stopped by a guard of a twelfth of the cycles it was given,
+in instructions — the fewest master cycles an instruction takes — so it stops near its budget.
+
+An SNES game's music is two programs: the 65816 code the binding names, and an SPC700 program that code
+uploads to the audio unit through the communication ports at `$2140`–`$2143` and then talks to. The
+second is an image like the others, placed where the upload reads it, and its `DriverImagePath` names its
+own instruction set, so the build bakes it with the SPC700 assembler:
+
+```cpp
+const HostedDriverBinding binding{
+    .images    = {DriverImagePath{.base = 0x008000, .path = "drivers/init.asm"},    // 65816: the upload
+                  DriverImagePath{.base = 0x008400, .path = "drivers/tick.asm"},    // 65816: once a frame
+                  DriverImagePath{.base = 0x00A000, .path = "drivers/sound.asm",    // what init uploads
+                                  .isa  = Isa::Spc700}},
+    .tickEntry = 0x008400,
+    .init      = Instruction::call(0x008000, snes::A, /*fixedValue=*/0),
+    .isa       = Isa::Wdc65816,
+};
+AudioSystem::SNES music{AudioKind::Chiptune};
+auto driver = music.host(AudioLibrary::instance().registerDriver(binding, verbs, slots(/* … */)));
+```
+
+The SPC700 program is the audio unit's to run: the unit boots into its own upload program, the driver's
+`.init` sends it the bytes and starts it, as a game's reset code does, and Polyrhythm calls only the
+65816 entries.
 
 ### The pad, both ports
 
@@ -399,16 +456,17 @@ cartridge (`VM/<key>/<name>.srm`); the mechanism is on
 |---|---|
 | `examples/snes/player` | windowed: one cartridge on two machines side by side — one on the tick, one free-running — each in a slot the size of the console's largest picture, so a frame of any size lands in place; the same two pads driving both, each machine's sound in a queue of its own with a key choosing which is heard, a scope of what the device took, the second port plugged and unplugged at a key, and a key cycling how an interlaced picture is shown: each field as it comes, woven straight, woven blended. Asks for a ROM through the native file picker; `--verify` asserts each clock's cadence, the sound reaching a sink, and the picture taking each size the demo cartridge draws, headless |
 | `examples/snes/coexecution` | windowed: the demo cartridge running on its own thread, its picture in a slot the size of the console's largest, beside a panel drawn from its own memory every tick through six declared places — the 256 palette words as swatches (`snes::Palette`), the first sixteen tiles of video RAM decoded from 4 bpp, the sprite's X and Y in work RAM, the step byte in the image, and two registers read as they stand: JOY1 at `$4218`, the buttons held as the console latched them, and RDNMI at `$4210`. Keys write the first four while it runs: the sprite's palette word, its X, and the step patched in the image; SPACE parks and resumes. A second machine holds no cartridge and runs `mix`, the average of two bytes, from `routines/mix.asm` placed where it fits; the cartridge carries the same routine at `$00:8400`, bound where it sits — a key calls either for a value and writes it to the sprite's color, the cartridge's own while it is parked, and the panel counts how many of those calls answered exactly. Two escapes and two watches, declared before it runs and switched at a key while it does: `pace` answered natively — the sprite moved in every direction by the step averaged with 8, the average computed by the cartridge's own `mix`, called from inside the escape — an escape at `report` hearing every frame, a watch on the sprite's Y that vetoes its stores or holds them in a band, and one answering every read of the step byte with 3; the panel counts what each did. `--verify` round-trips a palette word and the sprite's X, checks a patched step moves the sprite that far a frame, reads JOY1 with Right held and released, calls both routines, calls the cartridge's own routine parked at 240 points of its frame, each answer exact, and switches each escape and watch on in turn and checks what it does to the running cartridge, headless |
+| `examples/snes/driver` | windowed: a media-player faceplate for a sound driver hosted on `AudioSystem::SNES` the way an SNES game carries one — `drivers/init.asm` and `drivers/tick.asm` in 65816, and `drivers/sound.asm`, an SPC700 program the init uploads to the audio unit: three songs on one voice, a falling chirp on another, a fade. Pads play a song (`play(id)`), start the chirp by writing the command slot (`slots(...)`), fade (`stop()`) and close the driver; the readout is `slots()` — the song and the note the sound program reports through the ports, its master volume, the chirp's ticks left — drawn as a strip of the song's eight notes with the one playing lit and a volume meter. `--verify` hosts it on a capture sink and checks it is silent until a song plays, that frames arrive, that a song moves the published song and its notes step, that the chirp runs, that a fade takes the volume to zero and ends the song, and that a song after it plays at full volume, headless |
 | `examples/snes/cartridge/cartridge.h` | the demo cartridge every SNES example hosts — authored as 65816 and SPC700 source and assembled as the program starts: one 32×32 sprite of one-pixel stripes the d-pad moves by a step it reads from a byte of its own image each frame, A and B recolor it, Start writes the battery save, Y switches the screen mode between 1 and 5 so the frame is drawn in half-pixels, X switches the chip to interlace so it hands over fields, a four-note round on the sound chip, and three routines of its own a program reaches: `pace` at `$00:8380`, which the frame handler calls for every held direction with the coordinate in A and the direction in X, answering the coordinate one step that way; `report` at `$00:83A0`, an empty routine the frame handler calls as it finishes; and `mix` at `$00:8400`, the average of A and X |
 
 ## Where the files are
 
 | What | Where |
 |---|---|
-| The vocabulary — the registers, the machine's memories, the space helpers, `snes::rtl`, the pad, both ports | `include/retropp/snes.h` |
-| The backend — the region, places resolved to their byte, the routine frame and the calls, the escapes and watches, the two-port word, the frame and save observers, the refusals | `src/vm/snes/snes_backend.cpp`, `snes_backend.h` |
+| The vocabulary — the registers, the machine's memories, the space helpers, `snes::rtl`, the mappers, the pad, both ports | `include/retropp/snes.h` |
+| The backend — the region, places resolved to their byte, the routine frame and the calls, the escapes and watches, the resident driver, the two-port word, the frame and save observers, the refusals | `src/vm/snes/snes_backend.cpp`, `snes_backend.h` |
 | An address decoded to its space and its return kind, and a byte's bus address | `src/vm/snes/snes_address.h` |
-| The image a routine machine writes — its header, its idle loop, where a routine fits | `src/vm/snes/snes_image.cpp`, `snes_image.h` |
-| The assembler, and the build step that bakes a routine's source | `third_party/snaggletooth/tools/cpu65816/`, `cmake/bake_snaggletooth_routine.cmake` |
+| The image the core writes for its routines and a driver — its header at the map's site, its idle loop, where a routine fits | `src/vm/snes/snes_image.cpp`, `snes_image.h` |
+| The assemblers, and the build step that bakes a routine's or a driver image's source in its instruction set | `third_party/snaggletooth/tools/cpu65816/`, `third_party/snaggletooth/tools/spc700/`, `cmake/bake_snaggletooth_routine.cmake` |
 | The sound chip's rate to the sink's | `src/vm/snes/resampler.h` |
 | The core | `third_party/snaggletooth` |
