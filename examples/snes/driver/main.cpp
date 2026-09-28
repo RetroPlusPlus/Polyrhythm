@@ -36,25 +36,22 @@
 
 #include <algorithm>
 #include <array>
-#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <functional>
 #include <optional>
 #include <set>
 #include <span>
-#include <thread>
-#include <utility>
 #include <vector>
 
-#include "retropp/audio.h"          // AudioSink, AudioFrame — the capture sink --verify listens on
-#include "retropp/audio_library.h"  // HostedDriverBinding, DriverImagePath, slots / slot
+#include "retropp/audio_library.h"    // HostedDriverBinding, DriverImagePath, slots / slot
 #include "retropp/audio_mixer.h"
-#include "retropp/audio_system.h"   // AudioSystem::SNES, HostedDriver
+#include "retropp/audio_system.h"     // AudioSystem::SNES, HostedDriver
 #include "retropp/clock.h"
+#include "retropp/driver_binding.h"   // DriverBinding, DriverImage — the synchronous --verify drive
+#include "retropp/routine_registry.h"  // detail::findEmbeddedRoutine — the baked driver image bytes
 #include "retropp/draw_state.h"
 #include "retropp/engine_config.h"
 #include "retropp/geometry.h"
@@ -130,34 +127,14 @@ DriverId<SoundSlots> registerSoundDriver() {
 }
 
 // ── Verify mode ─────────────────────────────────────────────────────────────────────────────────
-// The system's own production thread runs the driver; this program is the audio device, pulling frames
-// at the rate a device would.
+// The windowed demo hosts the driver on AudioSystem::SNES, whose production thread steps it. Here the same
+// driver is driven synchronously on this thread through the Vm surface the AudioSystem uses underneath —
+// hostDriver / tickDriver / readSlot, with enableAudio catching the sound chip's output — so a check reads
+// exactly what a given number of frames produced, with no thread and no wall-clock wait. The images are
+// the same bytes the build baked for the registration above, read back from the routine registry by path.
 
-// A sink that opens no device: it keeps the pull, and the program calls it.
-class CaptureSink final : public AudioSink {
-public:
-    void start(unsigned rate, int, AudioPullFn pull) override {
-        rate_ = rate;
-        pull_ = std::move(pull);
-    }
-    void stop() override { pull_ = nullptr; }
-
-    // Pull `n` frames as a device would; answers how many came, and the loudest sample among them.
-    std::pair<std::size_t, int> drain(std::size_t n) {
-        std::vector<AudioFrame> out(n);
-        const std::size_t got = pull_ ? pull_(std::span<AudioFrame>(out)) : 0;
-        int peak = 0;
-        for (std::size_t i = 0; i < got; ++i) {
-            peak = std::max({peak, std::abs(static_cast<int>(out[i].left)), std::abs(static_cast<int>(out[i].right))});
-        }
-        return {got, peak};
-    }
-    [[nodiscard]] unsigned rate() const noexcept { return rate_; }
-
-private:
-    AudioPullFn pull_;
-    unsigned    rate_ = 0;
-};
+// One SNES frame, in the master cycles a tick pads to (NTSC).
+constexpr std::uint64_t kFrame = 357'366;
 
 int runVerify() {
     int  failures = 0;
@@ -165,91 +142,99 @@ int runVerify() {
         std::printf("  %s %s\n", ok ? "ok    " : "FAILED", what);
         if (!ok) ++failures;
     };
-    std::printf("snes_driver --verify: a sound driver hosted on the SNES core, driven through its handle\n\n");
+    std::printf("snes_driver --verify: a sound driver hosted on the SNES core, driven a frame at a time\n\n");
 
-    CaptureSink       sink;
-    AudioSystem::SNES sys{AudioKind::Chiptune, sink};
-    const HostedDriver<SoundSlots> driver = sys.host(registerSoundDriver());
-
-    // What was heard while waiting for a condition: the frames drained and the loudest sample among them.
-    struct Heard {
-        std::size_t frames = 0;
-        int         peak   = 0;
-        bool        met    = false;
+    // The driver, from the bytes the build baked for registerSoundDriver's paths — 65816 init and tick,
+    // the SPC700 sound program at the address the init uploads it from.
+    const auto baked = [](const char* path) {
+        const std::span<const std::uint8_t> bytes = detail::findEmbeddedRoutine(path);
+        return std::vector<std::uint8_t>(bytes.begin(), bytes.end());
     };
-    // A generous cap: the production thread runs on its own and this machine may be a loaded CI runner, so
-    // every wait is bounded by how much the driver has actually produced, not by wall time — a slow thread
-    // simply takes longer to satisfy `until`, and only a wiring fault leaves it unmet before the cap.
-    constexpr auto kCap = std::chrono::seconds{30};
-    const auto     byte = [](const std::optional<std::uint8_t>& v) { return v.value_or(0); };
+    const std::vector<std::uint8_t> initImg  = baked("examples/snes/driver/drivers/init.asm");
+    const std::vector<std::uint8_t> tickImg  = baked("examples/snes/driver/drivers/tick.asm");
+    const std::vector<std::uint8_t> soundImg = baked("examples/snes/driver/drivers/sound.asm");
 
-    // Drain a chunk at a time until `until(what-was-heard, the-published-slots)` holds, or the cap passes.
-    const auto listen = [&](const std::function<bool(const Heard&, const SoundSlots&)>& until) {
-        Heard      heard;
-        const auto end = std::chrono::steady_clock::now() + kCap;
-        while (std::chrono::steady_clock::now() < end) {
-            std::this_thread::sleep_for(std::chrono::milliseconds{5});
-            const auto [got, peak] = sink.drain(sink.rate() / 100);
-            heard.frames += got;
-            heard.peak = std::max(heard.peak, peak);
-            if (until(heard, driver.slots())) {
-                heard.met = true;
-                break;
-            }
-        }
-        return heard;
-    };
-    // Discard the frames produced up to now — a bounded amount, more than the queue can hold — so a
-    // following listen measures only frames produced after it. The DSP is already silent by the time this
-    // runs (the fade reached zero), so the tail it clears is the last non-silent frames still queued.
-    const auto flush = [&] {
-        for (std::size_t drained = 0; drained < sink.rate();) {
-            std::this_thread::sleep_for(std::chrono::milliseconds{5});
-            drained += sink.drain(sink.rate() / 50).first;
-        }
-    };
+    DriverBinding binding;
+    binding.images    = {DriverImage{.bytes = initImg, .base = kInit},
+                         DriverImage{.bytes = tickImg, .base = kTick},
+                         DriverImage{.bytes = soundImg, .base = kSound}};
+    binding.tickEntry = kTick;
+    binding.init      = Instruction::call(kInit, snes::A, /*fixedValue=*/0);
+    binding.isa       = Isa::Wdc65816;
+    binding.slots     = {SlotSpec{.address = kSong, .width = 1, .direction = SlotDirection::Read},
+                         SlotSpec{.address = kNote, .width = 1, .direction = SlotDirection::Read},
+                         SlotSpec{.address = kVolume, .width = 1, .direction = SlotDirection::Read},
+                         SlotSpec{.address = kEffect, .width = 1, .direction = SlotDirection::Read}};
 
-    // Before any play: the driver's init has uploaded the sound program and the tick is running it, silent.
-    // Waits for the tick to have run a few frames, so a slow init does not read as no production.
-    const Heard idle = listen([&](const Heard&, const SoundSlots& s) { return byte(s.frames) >= 4; });
-    std::printf("  before a song: %zu frames, loudest sample %d; the tick has run %u frames\n", idle.frames,
-                idle.peak, static_cast<unsigned>(byte(driver.slots().frames)));
-    check(idle.met && idle.frames > 0, "frames arrive from the hosted driver");
-    check(idle.peak == 0, "and it is silent until a song is played");
-    check(byte(driver.slots().song) == kNoSong, "the sound program reports no song");
+    int peak = 0;  // the loudest sample the sound chip has produced since it was last cleared
 
-    // A song: the published song moves to it, it sounds, and its notes step — three or more distinct notes,
-    // the sound program stepping one every eight ticks.
-    driver.play(1);
-    std::set<std::uint8_t> notes;
-    const Heard playing = listen([&](const Heard& h, const SoundSlots& s) {
-        if (s.song == 1) notes.insert(byte(s.note));
-        return s.song == 1 && h.peak > 0 && notes.size() >= 3;
+    Vm::SNES vm;
+    vm.enableAudio(48'000, [&peak](std::int16_t left, std::int16_t right) {
+        peak = std::max({peak, std::abs(static_cast<int>(left)), std::abs(static_cast<int>(right))});
     });
-    std::printf("  song 1: loudest sample %d, %zu different notes\n", playing.peak, notes.size());
-    check(driver.slots().song == 1, "play(1) moves the published song to 1");
-    check(playing.peak > 0, "and it sounds");
+    vm.hostDriver(binding);  // places the images and runs init — the init uploads the sound program
+
+    // Run `frames` frames, with `command` handed to the sound program on the first of them (255 = none),
+    // and answer the loudest sample produced across them.
+    const auto run = [&](int frames, int command) {
+        peak = 0;
+        for (int i = 0; i < frames; ++i) {
+            std::vector<Instruction> queued;
+            if (i == 0 && command >= 0) {
+                queued.push_back(Instruction::write(Location::memory(kCommand), 1,
+                                                    static_cast<std::uint64_t>(command)));
+            }
+            vm.tickDriver(std::span<const Instruction>(queued), kFrame);
+        }
+        return peak;
+    };
+    const auto song   = [&] { return static_cast<int>(vm.readSlot(0)); };
+    const auto note   = [&] { return static_cast<int>(vm.readSlot(1)); };
+    const auto volume = [&] { return static_cast<int>(vm.readSlot(2)); };
+    const auto effect = [&] { return static_cast<int>(vm.readSlot(3)); };
+
+    // The sound program acts on a command and steps its notes on its own timer — about one tick every two
+    // frames — so each command is given a run of frames before its result is read, never a single frame.
+
+    // Before any play: the init has uploaded the sound program and the tick is running it, silent.
+    const int idlePeak = run(8, /*command=*/-1);
+    std::printf("  before a song: loudest sample %d; the sound program reports song %02X\n", idlePeak,
+                static_cast<unsigned>(song()));
+    check(idlePeak == 0, "the driver is silent until a song is played");
+    check(song() == kNoSong, "the sound program reports no song");
+
+    // A song: the published song moves to it, it sounds, and its notes step — three or more distinct notes
+    // over a second, the sound program stepping one every eight ticks.
+    run(1, /*command=*/1);
+    int           songPeak = 0;
+    std::set<int> notes;
+    for (int i = 0; i < 60; ++i) {  // a second of frames — about 32 timer ticks, four notes
+        songPeak = std::max(songPeak, run(1, -1));
+        notes.insert(note());
+    }
+    std::printf("  song 1: loudest sample %d, %zu different notes over a second\n", songPeak, notes.size());
+    check(song() == 1, "play(1) moves the published song to 1");
+    check(songPeak > 0, "and it sounds");
     check(notes.size() >= 3, "and its notes step, a quarter of a second each");
 
-    // The effect: the command byte written through slots(), and the effect's ticks counted down.
-    driver.slots(SoundSlots{.command = kPlayEffect});
-    const Heard effect = listen([](const Heard&, const SoundSlots& s) { return s.effect > 0; });
-    check(effect.met, "slots(command = effect) starts the effect");
+    // The effect: the command byte handed to the sound program, and its ticks counted down. Read while it
+    // is still running — it lasts six timer ticks.
+    run(1, /*command=*/kPlayEffect);
+    run(6, -1);
+    check(effect() > 0, "slots(command = effect) starts the effect");
 
-    // The fade: the volume falls to zero, the song ends, and the output falls silent.
-    driver.stop();
-    const Heard faded =
-        listen([](const Heard&, const SoundSlots& s) { return s.volume == 0 && s.song == kNoSong; });
-    check(faded.met, "stop() fades the volume to zero and ends the song");
-    flush();  // clear the fading tail the queue still holds, so the next frames are the ones after it
-    const Heard after = listen([](const Heard& h, const SoundSlots&) { return h.frames >= 512; });
-    check(after.frames > 0 && after.peak == 0, "and the output is silent after it");
+    // The fade: the volume falls to zero, the song ends, and the output falls silent. It runs 2 a tick from
+    // full ($60), so about 48 timer ticks — well within two seconds of frames; then fresh frames are silent.
+    run(1, /*command=*/kFadeOut);
+    run(150, -1);
+    check(volume() == 0 && song() == kNoSong, "stop() fades the volume to zero and ends the song");
+    const int afterPeak = run(30, -1);
+    check(afterPeak == 0, "and the output is silent after it");
 
     // Another song after the fade plays at full volume.
-    driver.play(0);
-    const Heard again = listen(
-        [](const Heard&, const SoundSlots& s) { return s.song == 0 && s.volume == kFullVolume; });
-    check(again.met, "play(0) after the fade plays song 0 at full volume");
+    run(1, /*command=*/0);
+    run(8, -1);
+    check(song() == 0 && volume() == kFullVolume, "play(0) after the fade plays song 0 at full volume");
 
     std::printf("\ndone%s\n", failures == 0 ? "" : " — with failures");
     return failures == 0 ? 0 : 1;
