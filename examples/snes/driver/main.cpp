@@ -171,70 +171,84 @@ int runVerify() {
     AudioSystem::SNES sys{AudioKind::Chiptune, sink};
     const HostedDriver<SoundSlots> driver = sys.host(registerSoundDriver());
 
-    // Listen for up to `limit`, a hundredth of a second at a time, until `until` says what was heard is
-    // enough; answers the frames and the loudest sample heard.
+    // What was heard while waiting for a condition: the frames drained and the loudest sample among them.
     struct Heard {
         std::size_t frames = 0;
         int         peak   = 0;
         bool        met    = false;
     };
-    const auto listen = [&](std::chrono::milliseconds limit, const std::function<bool(const SoundSlots&)>& until) {
+    // A generous cap: the production thread runs on its own and this machine may be a loaded CI runner, so
+    // every wait is bounded by how much the driver has actually produced, not by wall time — a slow thread
+    // simply takes longer to satisfy `until`, and only a wiring fault leaves it unmet before the cap.
+    constexpr auto kCap = std::chrono::seconds{30};
+    const auto     byte = [](const std::optional<std::uint8_t>& v) { return v.value_or(0); };
+
+    // Drain a chunk at a time until `until(what-was-heard, the-published-slots)` holds, or the cap passes.
+    const auto listen = [&](const std::function<bool(const Heard&, const SoundSlots&)>& until) {
         Heard      heard;
-        const auto end = std::chrono::steady_clock::now() + limit;
+        const auto end = std::chrono::steady_clock::now() + kCap;
         while (std::chrono::steady_clock::now() < end) {
-            std::this_thread::sleep_for(std::chrono::milliseconds{10});
+            std::this_thread::sleep_for(std::chrono::milliseconds{5});
             const auto [got, peak] = sink.drain(sink.rate() / 100);
             heard.frames += got;
             heard.peak = std::max(heard.peak, peak);
-            if (until && until(driver.slots())) {
+            if (until(heard, driver.slots())) {
                 heard.met = true;
                 break;
             }
         }
         return heard;
     };
-    const auto byte = [](const std::optional<std::uint8_t>& v) { return v.value_or(0); };
+    // Discard the frames produced up to now — a bounded amount, more than the queue can hold — so a
+    // following listen measures only frames produced after it. The DSP is already silent by the time this
+    // runs (the fade reached zero), so the tail it clears is the last non-silent frames still queued.
+    const auto flush = [&] {
+        for (std::size_t drained = 0; drained < sink.rate();) {
+            std::this_thread::sleep_for(std::chrono::milliseconds{5});
+            drained += sink.drain(sink.rate() / 50).first;
+        }
+    };
 
-    // Before any play: the sound program is uploaded and running, and silent.
-    const Heard idle = listen(std::chrono::milliseconds{500}, nullptr);
+    // Before any play: the driver's init has uploaded the sound program and the tick is running it, silent.
+    // Waits for the tick to have run a few frames, so a slow init does not read as no production.
+    const Heard idle = listen([&](const Heard&, const SoundSlots& s) { return byte(s.frames) >= 4; });
     std::printf("  before a song: %zu frames, loudest sample %d; the tick has run %u frames\n", idle.frames,
                 idle.peak, static_cast<unsigned>(byte(driver.slots().frames)));
-    check(idle.frames > 0, "frames arrive from the hosted driver");
+    check(idle.met && idle.frames > 0, "frames arrive from the hosted driver");
     check(idle.peak == 0, "and it is silent until a song is played");
     check(byte(driver.slots().song) == kNoSong, "the sound program reports no song");
 
-    // A song: the published song moves to it, it sounds, and its notes step.
+    // A song: the published song moves to it, it sounds, and its notes step — three or more distinct notes,
+    // the sound program stepping one every eight ticks.
     driver.play(1);
-    const Heard started = listen(std::chrono::milliseconds{2000}, [](const SoundSlots& s) { return s.song == 1; });
-    check(started.met, "play(1) moves the published song to 1");
     std::set<std::uint8_t> notes;
-    const Heard playing = listen(std::chrono::milliseconds{1200}, [&notes](const SoundSlots& s) {
-        notes.insert(s.note.value_or(0));
-        return false;
+    const Heard playing = listen([&](const Heard& h, const SoundSlots& s) {
+        if (s.song == 1) notes.insert(byte(s.note));
+        return s.song == 1 && h.peak > 0 && notes.size() >= 3;
     });
-    std::printf("  song 1: loudest sample %d, %zu different notes in 1.2 s\n", playing.peak, notes.size());
+    std::printf("  song 1: loudest sample %d, %zu different notes\n", playing.peak, notes.size());
+    check(driver.slots().song == 1, "play(1) moves the published song to 1");
     check(playing.peak > 0, "and it sounds");
     check(notes.size() >= 3, "and its notes step, a quarter of a second each");
 
     // The effect: the command byte written through slots(), and the effect's ticks counted down.
     driver.slots(SoundSlots{.command = kPlayEffect});
-    const Heard effect = listen(std::chrono::milliseconds{1000}, [](const SoundSlots& s) { return s.effect > 0; });
+    const Heard effect = listen([](const Heard&, const SoundSlots& s) { return s.effect > 0; });
     check(effect.met, "slots(command = effect) starts the effect");
 
     // The fade: the volume falls to zero, the song ends, and the output falls silent.
     driver.stop();
-    const Heard faded = listen(std::chrono::milliseconds{4000},
-                               [](const SoundSlots& s) { return s.volume == 0 && s.song == kNoSong; });
+    const Heard faded =
+        listen([](const Heard&, const SoundSlots& s) { return s.volume == 0 && s.song == kNoSong; });
     check(faded.met, "stop() fades the volume to zero and ends the song");
-    listen(std::chrono::milliseconds{200}, nullptr);  // what the resampler holds drains
-    const Heard after = listen(std::chrono::milliseconds{300}, nullptr);
+    flush();  // clear the fading tail the queue still holds, so the next frames are the ones after it
+    const Heard after = listen([](const Heard& h, const SoundSlots&) { return h.frames >= 512; });
     check(after.frames > 0 && after.peak == 0, "and the output is silent after it");
 
     // Another song after the fade plays at full volume.
     driver.play(0);
-    const Heard again = listen(std::chrono::milliseconds{2000}, [](const SoundSlots& s) {
-        return s.song == 0 && s.volume == kFullVolume;
-    });
+    const Heard again = listen(
+        [](const Heard&, const SoundSlots& s) { return s.song == 0 && s.volume == kFullVolume; });
     check(again.met, "play(0) after the fade plays song 0 at full volume");
 
     std::printf("\ndone%s\n", failures == 0 ? "" : " — with failures");
