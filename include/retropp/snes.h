@@ -157,11 +157,13 @@ inline constexpr Location PC = Location::reg(static_cast<std::uint16_t>(Reg::PC)
 // helpers below, which folds which memory into the top byte. The backend decodes it. Every alias of a
 // byte names that byte: `0x000010`, `0x7E0010` and `0xBF0010` are one cell of work RAM.
 enum class Space : std::uint8_t {
-    Bus      = 0x00,  // the 65816's own bus: work RAM, the cartridge, its save
-    VideoRam = 0x01,  // the picture chip's 64 KB, a byte address
-    Palette  = 0x02,  // CGRAM, 512 bytes
-    Sprites  = 0x03,  // OAM, 544 bytes
-    AudioRam = 0x04,  // the audio unit's 64 KB
+    Bus         = 0x00,  // the 65816's own bus: work RAM, the cartridge, its save
+    VideoRam    = 0x01,  // the picture chip's 64 KB, a byte address
+    Palette     = 0x02,  // CGRAM, 512 bytes
+    Sprites     = 0x03,  // OAM, 544 bytes
+    AudioRam    = 0x04,  // the audio unit's 64 KB
+    AudioPort   = 0x05,  // the four communication ports, the console's side of the audio unit
+    DspRegister = 0x06,  // the sound chip's 128 registers, read as they stand
 };
 
 // Byte `at` of `space`: the space in the top byte, the offset in the 24 bits below it.
@@ -178,6 +180,20 @@ enum class Space : std::uint8_t {
 [[nodiscard]] constexpr std::uint32_t palette(std::uint16_t at)  noexcept { return inSpace(Space::Palette, at); }
 [[nodiscard]] constexpr std::uint32_t sprites(std::uint16_t at)  noexcept { return inSpace(Space::Sprites, at); }
 [[nodiscard]] constexpr std::uint32_t audioRam(std::uint16_t at) noexcept { return inSpace(Space::AudioRam, at); }
+
+// The console's side of the audio unit, named by index — the audio unit has no whole memory here beyond
+// its RAM, so these name one port or one register at a time:
+//
+//   MemoryRegion{.at = snes::audioPort(0), .size = 1}   // comm port zero, the console's side
+//   MemoryRegion{.at = snes::dspRegister(0x4C), .size = 1}  // KON, the sound chip's key-on register
+//
+// A comm port (0-3) is asymmetric, exactly as the console reaches it: a write to snes::audioPort(n) sends
+// a byte the sound CPU reads, and a read of it receives the byte the sound CPU last sent — two separate
+// latches, so a value written is not the value read back. A DSP register (0-127) reads as it stands, and a
+// write to it is the sound CPU's own write to the chip — key-on, volume, pitch, the echo — made by the
+// game directly.
+[[nodiscard]] constexpr std::uint32_t audioPort(std::uint8_t index)   noexcept { return inSpace(Space::AudioPort, index); }
+[[nodiscard]] constexpr std::uint32_t dspRegister(std::uint8_t index) noexcept { return inSpace(Space::DspRegister, index); }
 
 // Each memory as a MemoryRegion: the same value a game fills in for its own content, filled in here for
 // the hardware. Read or write one straight away —

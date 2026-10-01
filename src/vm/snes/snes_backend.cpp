@@ -239,11 +239,13 @@ std::optional<SnesBackend::Resolved> SnesBackend::resolve(std::uint32_t address)
         return Resolved{.memory = memory, .base = at, .size = size};
     };
     switch (decoded->space) {
-        case snes::Space::VideoRam: return within(Memory::VideoRam, snes_->vram().size());
-        case snes::Space::Palette:  return within(Memory::Palette, snes_->cgram().size());
-        case snes::Space::Sprites:  return within(Memory::Sprites, snes_->oam().size());
-        case snes::Space::AudioRam: return within(Memory::AudioRam, 0x10000u);
-        case snes::Space::Bus:      break;
+        case snes::Space::VideoRam:    return within(Memory::VideoRam, snes_->vram().size());
+        case snes::Space::Palette:     return within(Memory::Palette, snes_->cgram().size());
+        case snes::Space::Sprites:     return within(Memory::Sprites, snes_->oam().size());
+        case snes::Space::AudioRam:    return within(Memory::AudioRam, 0x10000u);
+        case snes::Space::AudioPort:   return within(Memory::AudioPort, 4u);      // the four comm ports
+        case snes::Space::DspRegister: return within(Memory::DspRegister, 128u);  // the 128 DSP registers
+        case snes::Space::Bus:         break;
     }
     const snaggletooth::Snes::Physical place = snes_->physical(decoded->at24);
     switch (place.space) {
@@ -321,6 +323,14 @@ std::uint8_t SnesBackend::readByte(Memory memory, std::size_t offset) const {
         case Memory::Palette:   return snes_->cgram()[offset];
         case Memory::Sprites:   return snes_->oam()[offset];
         case Memory::AudioRam:  return snes_->peekApu(static_cast<std::uint16_t>(offset));
+        case Memory::AudioPort:
+            // The console's side of comm port `offset`: the byte the sound CPU last sent, the value a read
+            // of the CPU-bus register $2140 + offset answers, with nothing moved. Ports 0-3 all answer, so
+            // the read is whole.
+            return *snes_->peekRegister(static_cast<std::uint32_t>(0x2140 + offset));
+        case Memory::DspRegister:
+            // The DSP register as it stands, from the audio unit's own register file — no fetch, no program.
+            return snes_->state().apu.dsp.regs[offset];
     }
     return 0;
 }
@@ -362,6 +372,19 @@ void SnesBackend::writeByte(Memory memory, std::size_t offset, std::uint8_t valu
             return;
         case Memory::AudioRam:
             snes_->writeApuRam(static_cast<std::uint16_t>(offset), value);
+            return;
+        case Memory::AudioPort:
+            // A write sends `value` to the sound CPU: it sets the input latch the sound CPU reads at
+            // $F4 + offset (writeApuPort takes the port index), and leaves the output latch the console
+            // reads as it stands — so a port place written and then read gives back what the sound CPU sent,
+            // not what the console wrote.
+            snes_->writeApuPort(static_cast<std::uint8_t>(offset), value);
+            return;
+        case Memory::DspRegister:
+            // The sound CPU's own write to the chip, made from the host: a key-on arms the voices the next
+            // poll takes, an ENDX write acknowledges the end flags, and the byte lands where the machine
+            // stands, spending no cycle.
+            snes_->writeApuDspRegister(static_cast<std::uint8_t>(offset), value);
             return;
     }
 }

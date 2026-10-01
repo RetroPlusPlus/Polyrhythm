@@ -306,7 +306,7 @@ TEST(SnesBackendPlaces, OneBytePastEachMemoryIsRefused) {
     // Past a memory's own end, and a top byte that names no memory on this console.
     EXPECT_FALSE(backend.regionIsAddressable(MemoryRegion{.at = snes::palette(0x200), .size = 1}));
     EXPECT_FALSE(backend.regionIsAddressable(MemoryRegion{.at = snes::sprites(0x220), .size = 1}));
-    EXPECT_FALSE(backend.regionIsAddressable(MemoryRegion{.at = 0x05000000u, .size = 1}));
+    EXPECT_FALSE(backend.regionIsAddressable(MemoryRegion{.at = 0x07000000u, .size = 1}));
 }
 
 }  // namespace

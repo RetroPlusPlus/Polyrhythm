@@ -204,7 +204,9 @@ private:
     // no cartridge is hosted, or when the address names no memory: open bus, a space this console does
     // not have, or an offset past the end of the memory it names. A register is a memory here — its
     // value read as it stands, at its offset in the system banks' low half — that takes no write.
-    enum class Memory : std::uint8_t { WorkRam, Cartridge, Save, Register, VideoRam, Palette, Sprites, AudioRam };
+    enum class Memory : std::uint8_t {
+        WorkRam, Cartridge, Save, Register, VideoRam, Palette, Sprites, AudioRam, AudioPort, DspRegister
+    };
     struct Resolved {
         Memory      memory;
         std::size_t base;

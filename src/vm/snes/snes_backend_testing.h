@@ -42,6 +42,25 @@ struct SnesBackendTestAccess {
     [[nodiscard]] static std::optional<std::uint8_t> peek(const SnesBackend& backend, std::uint32_t address) {
         return backend.snes_->peek(address);
     }
+    // The input latch a comm port holds — the byte the console sent, the sound CPU reads at $F4 + index.
+    // A place write to snes::audioPort(index) lands here.
+    [[nodiscard]] static std::uint8_t apuInputPort(const SnesBackend& backend, std::uint8_t index) {
+        return backend.snes_->state().apu.inputPorts[index];
+    }
+    // Seed a comm port's OUTPUT latch (the byte the sound CPU sent, the console reads at $2140 + index) so a
+    // read-path test needs no running program. TEST setup only.
+    static void setApuOutputPort(SnesBackend& backend, std::uint8_t index, std::uint8_t value) {
+        snaggletooth::SnesState state = backend.snes_->state();
+        state.apu.outputPorts[index] = value;
+        backend.snes_->restore(state);
+    }
+    // Seed a DSP register so a read-path test reads it back through a place without a running program. TEST
+    // setup only.
+    static void setDspRegister(SnesBackend& backend, std::uint8_t reg, std::uint8_t value) {
+        snaggletooth::SnesState state = backend.snes_->state();
+        state.apu.dsp.regs[reg] = value;
+        backend.snes_->restore(state);
+    }
 };
 
 }  // namespace retropp::vm

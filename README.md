@@ -76,7 +76,9 @@ Active development. The core is in place and exercised end to end by a real cons
   cartridge's own routines — or a parked machine's own decoders can be run to reach content the
   game never played its way to. The image itself is never modified. Every one of these verbs runs on
   the Game Boy family and on the SNES alike, and a hosted SNES cartridge draws, sounds, takes both
-  controller ports and keeps its battery save through the same verbs a Game Boy cartridge does.
+  controller ports and keeps its battery save through the same verbs a Game Boy cartridge does. The
+  SNES's audio unit is places too — its communication ports, its RAM and the S-DSP's registers — so a
+  game can drive it directly, the way the console's own CPU does.
 - **A hosted machine's video** — ask a machine for video and the frames it finishes become a
   layer's content, composited by z among native tile and sprite layers like anything else on
   screen: a game's own art over a running cartridge's picture, a transform or a screen-space

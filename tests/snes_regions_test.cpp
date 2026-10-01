@@ -143,7 +143,9 @@ TEST(SnesRegions, APlaceAndABindingAgreeAboutEveryAddress) {
                                         snes::palette(0x200),             // one past it: served by neither
                                         snes::sprites(0x21F),             // the sprite table, the last byte
                                         snes::audioRam(0x0000),           // the audio unit's RAM
-                                        std::uint32_t{0x05000000}}) {     // no memory: served by neither
+                                        snes::audioPort(0),               // a comm port, the console's side
+                                        snes::dspRegister(0x4C),          // a DSP register, read as it stands
+                                        std::uint32_t{0x07000000}}) {     // no memory: served by neither
         Vm::SNES placeVm = hostedVm();
         EXPECT_EQ(aPlaceMayNameIt(placeVm, address), backend.addressIsAccessible(address))
             << "the two answers disagree about address " << address;

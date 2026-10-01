@@ -842,7 +842,7 @@ struct AudioSystem::Impl {
 
             Voice* vp      = voice.get();
             Vm*    machine = &voice->runner->machine();
-            voice->runner->beforeFirstStep([this, vp, machine, bytes = std::move(bytes)] {
+            voice->runner->beforeFirstStep([this, vp, machine, isa = entry.isa, bytes = std::move(bytes)] {
                 machine->enableAudio(sampleRate, [vp](std::int16_t left, std::int16_t right) {
                     // Auto-close bookkeeping: track the run of consecutive exact-zero output frames. A
                     // finished one-shot SFX's DAC-on tail settles to exact (0,0) (verified against the
@@ -859,7 +859,11 @@ struct AudioSystem::Impl {
                     const std::uint32_t gain = AudioMixer::instance().effectiveGain(vp->type);
                     vp->lane.push(AudioFrame{applyGain(left, gain), applyGain(right, gain)});
                 });
-                vp->driver = machine->uploadRoutine<void()>(bytes, kChiptuneBinding);
+                // The chiptune binding carries the machine's own ISA: SM83 on a Game Boy (unchanged), the
+                // 65816 on the SNES. Every other field is the shared chiptune binding's.
+                RoutineBinding binding = kChiptuneBinding;
+                binding.isa            = isa;
+                vp->driver             = machine->uploadRoutine<void()>(bytes, binding);
                 machine->startDriver(*vp->driver);
             });
             startRunner(*voice);

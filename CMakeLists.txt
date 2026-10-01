@@ -1690,6 +1690,8 @@ if(RETROPP_BUILD_TESTS)
         tests/snes_backend_driver_test.cpp
         tests/snes_vm_test.cpp
         tests/snes_backend_audio_test.cpp
+        tests/snes_apu_places_test.cpp
+        tests/snes_chiptune_test.cpp
         tests/net_socket_test.cpp
         tests/net_tls_test.cpp
         tests/vm_frame_sink_test.cpp
@@ -2286,6 +2288,11 @@ if(RETROPP_BUILD_EXAMPLES)
     # CI runs its --verify (registered below).
     retropp_add_example(snes_driver DIRECTORY snes/driver)
 
+    # The SNES audio unit driven by the game the way the console's CPU drives it: the ports, audio RAM and
+    # the S-DSP's registers as places on a Vm::SNES, with no 65816 program at all — eight voices on four
+    # waves, the frames through a queue to the device, a panel of voice columns.
+    retropp_add_example(snes_apu DIRECTORY snes/apu)
+
     # ── Curve demo — plots a Catmull-Rom curve through waypoints, a constant-speed atDistance walker, and
     # a Hermite curve, using a tiny in-memory marker atlas (no committed asset). Dev-run only; the live
     # SdlPlatform/Renderer path is the CI compile signal for the curve primitive's example host.
@@ -2600,6 +2607,12 @@ if(RETROPP_BUILD_EXAMPLES)
     # exits nonzero on any miss. Deterministic coverage of the resident verbs is snes_backend_driver_test's.
     add_test(NAME SnesDriverExample.Verify
              COMMAND retropp-snes_driver-demo --verify)
+
+    # The SNES audio-unit demo, headless: the game greets the boot program on the ports, loads a sample into
+    # audio RAM, sets the S-DSP up through its registers, keys a voice on and hears it, and keys it off; it
+    # exits nonzero on any miss. Deterministic coverage of the same places is snes_apu_places_test's.
+    add_test(NAME SnesApuExample.Verify
+             COMMAND retropp-snes_apu-demo --verify)
 
     # ── Guest-escape demo — a running cartridge hands control to native code and carries on.
     # Authors a cartridge whose loop calls its own routine every frame, hosts it and run()s it, then

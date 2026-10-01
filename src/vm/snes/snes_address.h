@@ -37,7 +37,7 @@ struct Decoded {
 [[nodiscard]] constexpr std::optional<Decoded> decode(std::uint32_t address) noexcept {
     const bool          rtl = (address & 0x80000000u) != 0;
     const std::uint32_t tag = (address >> 24) & 0x7Fu;
-    if (tag > static_cast<std::uint32_t>(snes::Space::AudioRam) || (rtl && tag != 0)) {
+    if (tag > static_cast<std::uint32_t>(snes::Space::DspRegister) || (rtl && tag != 0)) {
         return std::nullopt;
     }
     return Decoded{.space = static_cast<snes::Space>(tag), .at24 = address & 0x00FFFFFFu, .rtl = rtl};
