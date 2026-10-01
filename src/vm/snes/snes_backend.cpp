@@ -11,6 +11,7 @@
 #include "retropp/snes.h"                 // snes::Space, snes::Reg — the top byte of a place's address, the register ids
 #include "retropp/vm.h"                   // VMPlatform + detail::snesCore's declaration
 #include "snaggletooth/snes/cartridge.h"  // parseCartridgeHeader — the region the machine is built at
+#include "third_party/snaggletooth/src/snes_ipl_stub.h"  // seedIplStub, enterIplStub, iplStubImage — the audio unit's boot program
 #include "src/vm/snes/snes_address.h"     // decode, busAddressOf — a place resolved to its byte
 #include "src/vm/snes/snes_image.h"       // the image a routine machine writes for what it places
 
@@ -81,7 +82,13 @@ void SnesBackend::hostAudioUnit() {
         throw std::logic_error("hostAudioUnit: this machine already holds a cartridge or an image; the "
                                "audio unit alone is a machine of its own");
     }
-    apu_.emplace();  // the seeded post-boot machine: $AA and $BB on the ports, the boot program waiting
+    // The unit comes up as the console's does: its upload stub in the boot window, the sound CPU in the
+    // stub's ready wait with $AA and $BB posted on the ports, a kick on port 0 answered. The stub is seeded
+    // into the power-on state and mapped over $FFC0, the two acts the console performs on its own unit.
+    snaggletooth::ApuState booted = snaggletooth::Apu{}.state();
+    snaggletooth::seedIplStub(booted);
+    apu_.emplace(std::move(booted));
+    apu_->mapIplRom(snaggletooth::iplStubImage());
     if (resampler_) {
         resampler_->reset();
     }
@@ -89,7 +96,12 @@ void SnesBackend::hostAudioUnit() {
 
 void SnesBackend::reset() {
     if (apu_) {
+        // The console's reset of its audio unit: the machine's own reset, then the sound CPU back into
+        // the boot image with the ports cleared, audio RAM untouched.
         apu_->reset();
+        snaggletooth::ApuState reentered = apu_->state();
+        snaggletooth::enterIplStub(reentered);
+        apu_->restore(std::move(reentered));
         if (resampler_) {
             resampler_->reset();
         }

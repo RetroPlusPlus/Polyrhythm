@@ -69,6 +69,8 @@ void VmRunner::afterEachStep(std::function<void()> hook) { afterStep_ = std::mov
 
 void VmRunner::beforeEachStep(std::function<void()> hook) { beforeStep_ = std::move(hook); }
 
+void VmRunner::onEachLook(std::function<void()> hook) { look_ = std::move(hook); }
+
 void VmRunner::beforeFirstStep(std::function<void()> work) {
     if (mode_ == Mode::Inline) {
         work();  // the calling thread is the stepping thread — placement happens here and now
@@ -93,7 +95,8 @@ bool VmRunner::finished() const noexcept { return finished_.load(std::memory_ord
 void VmRunner::wake() noexcept {
     {
         std::lock_guard<std::mutex> lock(mtx_);  // order the state the waker changed before the
-    }                                            // loop's next look at it
+        wakes_.fetch_add(1, std::memory_order_relaxed);  // loop's next look at it, and count the wake
+    }                                                    // so a park entered after it ends at once
     cv_.notify_one();
 }
 
@@ -102,8 +105,15 @@ void VmRunner::loop() {
         place_();
     }
     for (;;) {
+        // The wakes seen as of this look. A wake that lands after this point — while the look runs,
+        // while the backlog is asked, while the lock is being taken — is one the park below must not
+        // sleep through, and the predicate compares against this count to make sure of it.
+        const std::uint64_t seen = wakes_.load(std::memory_order_relaxed);
         if (stop_.load(std::memory_order_relaxed)) {
             break;
+        }
+        if (look_) {
+            look_();
         }
         if (!backlog_ || backlog_() < highWater_) {
             stepOnce();
@@ -118,7 +128,10 @@ void VmRunner::loop() {
         if (stop_.load(std::memory_order_relaxed)) {
             break;
         }
-        cv_.wait_for(lock, park);
+        cv_.wait_for(lock, park, [this, seen] {
+            return stop_.load(std::memory_order_relaxed) ||
+                   wakes_.load(std::memory_order_relaxed) != seen;
+        });
     }
     finished_.store(true, std::memory_order_release);
 }

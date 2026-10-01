@@ -27,6 +27,7 @@ examples. The verbs are on [vm-and-routines.md](vm-and-routines.md) and
   - [The machine's memories](#the-machines-memories)
   - [Memories the bus cannot name](#memories-the-bus-cannot-name)
   - [The audio unit as places](#the-audio-unit-as-places)
+    - [The audio unit alone](#the-audio-unit-alone)
   - [A routine's return: `snes::rtl`](#a-routines-return-snesrtl)
   - [The mappers](#the-mappers)
   - [The pad, both ports](#the-pad-both-ports)
@@ -196,10 +197,10 @@ refuses it, `std::invalid_argument`.
 
 ### The audio unit as places
 
-The audio unit is a sound CPU, its 64 KB of RAM, and the S-DSP, an eight-voice sample player. It makes no
-sound of its own: the console gives it samples and tells the chip to play them, and on the console the
-65816 does that through four communication ports. A game can do the same itself, with no 65816 program,
-through two more places beside `snes::audioRam`:
+The audio unit is a sound CPU, its 64 KB of RAM, and the S-DSP, an eight-voice sample player — a unit of
+its own beside the console. It makes no sound of its own: the console gives it samples and tells the chip
+to play them, and on the console the 65816 does that through four communication ports. A game can do the
+same itself, with no 65816 program, through two more places beside `snes::audioRam`:
 
 ```cpp
 MemoryRegion{.at = snes::audioPort(0), .size = 1}       // communication port 0, the console's side
@@ -215,11 +216,46 @@ resolve.
 
 A DSP register, 0 to 127, reads as it stands. Writing one is the sound CPU's own write to the chip, made
 by the game: a key-on arms the voices the chip's next poll takes, an end-flag write acknowledges the
-flags, and the byte lands where the machine stands without spending a cycle. Loading a sample into audio
-RAM and keying it through the registers is enough to hear the chip, as
-[`examples/snes/apu`](#examples) does.
+flags, and the byte lands where the machine stands without spending a cycle.
 
 Neither is on the 65816's bus, so a watch cannot name one.
+
+#### The audio unit alone
+
+Because the unit is its own machine, an SNES audio system has two ways to run. `AudioSystem::SNES` with
+`AudioKind::Chiptune` hosts a 65816 sound driver on the console ([What the hardware imposes](#what-the-hardware-imposes)).
+With `AudioKind::HostDriven` it hosts the audio unit alone — the sound CPU, its RAM and the S-DSP, with no
+console CPU and no picture chip — running on its own clock from the moment the system is built, its sound
+the system's output. The game drives it through the three places, with the system's own `read` and
+`write`:
+
+```cpp
+AudioSystem::SNES unit{AudioKind::HostDriven};   // the audio unit, running, on the device
+
+// A sample into audio RAM — `block`, one nine-byte BRR block — and the directory entry that names it
+// as source 0.
+unit.write(MemoryRegion{.at = snes::audioRam(0x0500), .size = 9}, block);
+unit.write(MemoryRegion{.at = snes::audioRam(0x0400), .size = 4}, std::vector<std::uint8_t>{0x00, 0x05, 0x00, 0x05});
+
+// The chip, through its registers: the directory page, main volume, voice 0's source, pitch, and key-on.
+unit.write(MemoryRegion{.at = snes::dspRegister(0x5D), .size = 1}, std::vector<std::uint8_t>{0x04});
+unit.write(MemoryRegion{.at = snes::dspRegister(0x0C), .size = 1}, std::vector<std::uint8_t>{0x60});
+unit.write(MemoryRegion{.at = snes::dspRegister(0x04), .size = 1}, std::vector<std::uint8_t>{0x00});
+unit.write(MemoryRegion{.at = snes::dspRegister(0x02), .size = 2}, std::vector<std::uint8_t>{0x00, 0x10});
+unit.write(MemoryRegion{.at = snes::dspRegister(0x4C), .size = 1}, std::vector<std::uint8_t>{0x01});
+
+const std::vector<std::uint8_t> ports = unit.read(MemoryRegion{.at = snes::audioPort(0), .size = 2});  // $AA $BB
+```
+
+The unit runs on a thread of its own, so each call crosses to it: a write lands as the unit stands, a
+read is answered from where it stands, and the call returns once the unit has taken it — a read after a
+write sees the write, and a place the unit does not have throws at the call. The crossing costs a thread
+wake, not a frame. `stop()` silences cued voices and leaves the unit running, as it leaves a resident
+driver; the unit's RAM holds the game's samples. A `HostDriven` system has nothing for `play()` to cue,
+and `read` / `write` on a system of any other kind throw `std::logic_error`.
+
+Loading a sample into audio RAM and keying it through the registers is enough to hear the chip, as
+[`examples/snes/apu`](#examples) does.
 
 ### A routine's return: `snes::rtl`
 
@@ -460,8 +496,7 @@ function, so the cartridge's pitch is the same at 48'000 Hz and at 44'100 Hz. A 
 
 The frames reach your function four times a frame, from inside the step, on the thread that steps the
 machine — the game's under `Advance::OnTick`, the machine's own under `Advance::Continuously`, and
-`advanceClock` on a routine machine, where the game is driving the audio unit itself. A machine
-with no function drops its frames as it runs. The hand-off to an
+`advanceClock` on a routine machine. A machine with no function drops its frames as it runs. The hand-off to an
 [`AudioSink`](../audio.md#output-the-audiosink) — a queue, the device pulling on its own thread — is the
 game's, and its shape is on [co-execution.md](co-execution.md#sound-hearing-it).
 
@@ -486,7 +521,7 @@ cartridge (`VM/<key>/<name>.srm`); the mechanism is on
 | `examples/snes/player` | windowed: one cartridge on two machines side by side — one on the tick, one free-running — each in a slot the size of the console's largest picture, so a frame of any size lands in place; the same two pads driving both, each machine's sound in a queue of its own with a key choosing which is heard, a scope of what the device took, the second port plugged and unplugged at a key, and a key cycling how an interlaced picture is shown: each field as it comes, woven straight, woven blended. Asks for a ROM through the native file picker; `--verify` asserts each clock's cadence, the sound reaching a sink, and the picture taking each size the demo cartridge draws, headless |
 | `examples/snes/coexecution` | windowed: the demo cartridge running on its own thread, its picture in a slot the size of the console's largest, beside a panel drawn from its own memory every tick through six declared places — the 256 palette words as swatches (`snes::Palette`), the first sixteen tiles of video RAM decoded from 4 bpp, the sprite's X and Y in work RAM, the step byte in the image, and two registers read as they stand: JOY1 at `$4218`, the buttons held as the console latched them, and RDNMI at `$4210`. Keys write the first four while it runs: the sprite's palette word, its X, and the step patched in the image; SPACE parks and resumes. A second machine holds no cartridge and runs `mix`, the average of two bytes, from `routines/mix.asm` placed where it fits; the cartridge carries the same routine at `$00:8400`, bound where it sits — a key calls either for a value and writes it to the sprite's color, the cartridge's own while it is parked, and the panel counts how many of those calls answered exactly. Two escapes and two watches, declared before it runs and switched at a key while it does: `pace` answered natively — the sprite moved in every direction by the step averaged with 8, the average computed by the cartridge's own `mix`, called from inside the escape — an escape at `report` hearing every frame, a watch on the sprite's Y that vetoes its stores or holds them in a band, and one answering every read of the step byte with 3; the panel counts what each did. `--verify` round-trips a palette word and the sprite's X, checks a patched step moves the sprite that far a frame, reads JOY1 with Right held and released, calls both routines, calls the cartridge's own routine parked at 240 points of its frame, each answer exact, and switches each escape and watch on in turn and checks what it does to the running cartridge, headless |
 | `examples/snes/driver` | windowed: a media-player faceplate for a sound driver hosted on `AudioSystem::SNES` the way an SNES game carries one — `drivers/init.asm` and `drivers/tick.asm` in 65816, and `drivers/sound.asm`, an SPC700 program the init uploads to the audio unit: three songs on one voice, a falling chirp on another, a fade. Pads play a song (`play(id)`), start the chirp by writing the command slot (`slots(...)`), fade (`stop()`) and close the driver; the readout is `slots()` — the song and the note the sound program reports through the ports, its master volume, the chirp's ticks left — drawn as a strip of the song's eight notes with the one playing lit and a volume meter. `--verify` hosts it on a capture sink and checks it is silent until a song plays, that frames arrive, that a song moves the published song and its notes step, that the chirp runs, that a fade takes the volume to zero and ends the song, and that a song after it plays at full volume, headless |
-| `examples/snes/apu` | windowed: the audio unit driven by the game the way the console's CPU drives it, with no 65816 program — four sixteen-sample waves, each one looping BRR block (`samples.cpp` builds the block from its samples), loaded into audio RAM with their directory entries, the S-DSP's eight voices on a C major scale, every write a place write (`audio_unit.cpp`), the chip's frames queued to the device (`queue.h`). Eight voice columns light while they sound, with their pitch and wave; 1-8 or a click keys a voice on and off, LEFT and RIGHT select one, UP and DOWN move its pitch, TAB changes its wave. `--verify` reads the boot program's ready bytes on the ports and sends it the first exchange of an upload, loads the waves, keys two voices on and hears them, keys them off and hears silence, keys one on again and hears it, headless |
+| `examples/snes/apu` | windowed: the audio unit alone on an `AudioSystem::SNES{AudioKind::HostDriven}`, driven by the game the way the console's CPU drives it, with no 65816 — four sixteen-sample waves, each one looping BRR block (`samples.cpp` builds the block from its samples), loaded into audio RAM with their directory entries, the S-DSP's eight voices on a C major scale, every write the system's place write (`audio_unit.cpp`); the unit runs on its own clock and the system plays what it makes. Eight voice columns light while they sound, with their pitch and wave; 1-8 or a click keys a voice on and off, LEFT and RIGHT select one, UP and DOWN move its pitch, TAB changes its wave. `--verify` reads the boot program's ready bytes on the ports and sends it the first exchange of an upload, loads the waves, keys two voices on and hears them, keys them off and hears silence, keys one on again and hears it, headless through a sink of its own |
 | `examples/snes/cartridge/cartridge.h` | the demo cartridge every SNES example hosts — authored as 65816 and SPC700 source and assembled as the program starts: one 32×32 sprite of one-pixel stripes the d-pad moves by a step it reads from a byte of its own image each frame, A and B recolor it, Start writes the battery save, Y switches the screen mode between 1 and 5 so the frame is drawn in half-pixels, X switches the chip to interlace so it hands over fields, a four-note round on the sound chip, and three routines of its own a program reaches: `pace` at `$00:8380`, which the frame handler calls for every held direction with the coordinate in A and the direction in X, answering the coordinate one step that way; `report` at `$00:83A0`, an empty routine the frame handler calls as it finishes; and `mix` at `$00:8400`, the average of A and X |
 
 ## Where the files are

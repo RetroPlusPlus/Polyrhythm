@@ -1,8 +1,11 @@
 #include "audio_unit.h"
 
+#include <chrono>
 #include <cstdint>
+#include <thread>
 #include <vector>
 
+#include "retropp/audio_library.h"
 #include "retropp/memory_region.h"
 #include "retropp/snes.h"
 
@@ -32,8 +35,12 @@ constexpr std::uint8_t kFlags           = 0x6C;
 constexpr std::uint16_t kDirectory = 0x0400;
 constexpr std::uint16_t kBlocks    = 0x0500;
 
-// One frame of the machine's clock, in master cycles.
-constexpr std::uint64_t kFrame = 357'366;
+// How long to give the sound CPU to post its ready bytes, and to answer a kick. It runs on its own clock
+// and reaches the ports in its own time, so each is read back rather than assumed.
+constexpr std::chrono::milliseconds kPortWait{500};
+
+// Read `port` until it holds `expected`, or the wait runs out.
+bool portBecomes(retropp::AudioSystem& system, int port, std::uint8_t expected);
 
 // A place: `size` bytes at an address a snes:: helper names.
 MemoryRegion at(std::uint32_t address, std::uint32_t size = 1) { return MemoryRegion{.at = address, .size = size}; }
@@ -42,12 +49,24 @@ std::uint8_t voiceRegister(int voice, std::uint8_t reg) {
     return static_cast<std::uint8_t>(voice * kVoiceStride + reg);
 }
 
+bool portBecomes(AudioSystem& system, int port, std::uint8_t expected) {
+    const auto deadline = std::chrono::steady_clock::now() + kPortWait;
+    while (system.read(at(snes::audioPort(port))).at(0) != expected) {
+        if (std::chrono::steady_clock::now() >= deadline) {
+            return false;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    return true;
+}
+
 }  // namespace
 
-AudioUnit::AudioUnit() {
-    // The machine still needs something to idle in between the game's moves; one return instruction
-    // is enough.
-    (void)machine_.uploadRoutine<void()>(std::vector<std::uint8_t>{0x60}, {.isa = Isa::Wdc65816});
+AudioUnit::AudioUnit() : system_{AudioKind::HostDriven} { setUpChip(); }
+
+AudioUnit::AudioUnit(AudioSink& sink) : system_{AudioKind::HostDriven, sink} { setUpChip(); }
+
+void AudioUnit::setUpChip() {
     writeDsp(kDirectoryPage, kDirectory >> 8);
     writeDsp(kMainVolumeLeft, 0x60);
     writeDsp(kMainVolumeRight, 0x60);
@@ -57,33 +76,24 @@ AudioUnit::AudioUnit() {
     }
 }
 
-void AudioUnit::onFrame(unsigned rate, std::function<void(std::int16_t, std::int16_t)> frame) {
-    machine_.enableAudio(rate, std::move(frame));
-}
-
-void AudioUnit::advance() { machine_.advanceClock(kFrame); }
-
 bool AudioUnit::bootProgramReady() {
-    advance();
-    const std::vector<std::uint8_t> ports = machine_.read(at(snes::audioPort(0), 2));
-    return ports[0] == 0xAA && ports[1] == 0xBB;
+    return portBecomes(system_, 0, 0xAA) && portBecomes(system_, 1, 0xBB);
 }
 
 bool AudioUnit::bootProgramAcknowledgesAKick() {
-    machine_.write(at(snes::audioPort(2), 2), std::vector<std::uint8_t>{0x00, 0x02});  // a destination, $0200
-    machine_.write(at(snes::audioPort(1)), std::vector<std::uint8_t>{0x01});           // a transfer, not a start
-    machine_.write(at(snes::audioPort(0)), std::vector<std::uint8_t>{0xCC});           // the kick
-    advance();
-    return machine_.read(at(snes::audioPort(0))).at(0) == 0xCC;
+    system_.write(at(snes::audioPort(2), 2), std::vector<std::uint8_t>{0x00, 0x02});  // a destination, $0200
+    system_.write(at(snes::audioPort(1)), std::vector<std::uint8_t>{0x01});           // a transfer, not a start
+    system_.write(at(snes::audioPort(0)), std::vector<std::uint8_t>{0xCC});           // the kick
+    return portBecomes(system_, 0, 0xCC);
 }
 
 void AudioUnit::loadSample(int slot, const BrrBlock& block) {
     const auto start = static_cast<std::uint16_t>(kBlocks + slot * block.size());
-    machine_.write(at(snes::audioRam(start), static_cast<std::uint32_t>(block.size())),
-                   std::vector<std::uint8_t>(block.begin(), block.end()));
+    system_.write(at(snes::audioRam(start), static_cast<std::uint32_t>(block.size())),
+                  std::vector<std::uint8_t>(block.begin(), block.end()));
     const auto low = static_cast<std::uint8_t>(start & 0xFF), high = static_cast<std::uint8_t>(start >> 8);
-    machine_.write(at(snes::audioRam(static_cast<std::uint16_t>(kDirectory + slot * 4)), 4),
-                   std::vector<std::uint8_t>{low, high, low, high});  // the start, and the loop point
+    system_.write(at(snes::audioRam(static_cast<std::uint16_t>(kDirectory + slot * 4)), 4),
+                  std::vector<std::uint8_t>{low, high, low, high});  // the start, and the loop point
 }
 
 void AudioUnit::source(int voice, int slot) { writeDsp(voiceRegister(voice, kSource), static_cast<std::uint8_t>(slot)); }
@@ -109,13 +119,13 @@ void AudioUnit::keyOff(int voice) {
     writeDsp(kKeyOff, static_cast<std::uint8_t>(dspRegister(kKeyOff) | bit));
 }
 
-std::uint8_t AudioUnit::dspRegister(std::uint8_t reg) { return machine_.read(at(snes::dspRegister(reg))).at(0); }
+std::uint8_t AudioUnit::dspRegister(std::uint8_t reg) { return system_.read(at(snes::dspRegister(reg))).at(0); }
 
-std::uint8_t AudioUnit::audioRam(std::uint16_t address) { return machine_.read(at(snes::audioRam(address))).at(0); }
+std::uint8_t AudioUnit::audioRam(std::uint16_t address) { return system_.read(at(snes::audioRam(address))).at(0); }
 
 // The sound CPU's own write to the chip, made from here.
 void AudioUnit::writeDsp(std::uint8_t reg, std::uint8_t value) {
-    machine_.write(at(snes::dspRegister(reg)), std::vector<std::uint8_t>{value});
+    system_.write(at(snes::dspRegister(reg)), std::vector<std::uint8_t>{value});
 }
 
 }  // namespace demo

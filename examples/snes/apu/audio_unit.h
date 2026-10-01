@@ -2,21 +2,23 @@
 //
 // The audio unit is a sound CPU, 64 KB of its own RAM, and the S-DSP, an eight-voice sample player. It
 // makes no sound of its own: the console gives it sample data and tells the chip to play it. On the
-// console the 65816 does that through four communication ports. Here there is no 65816 program at all —
-// the game stands in for it and reaches the audio unit directly, as places on a Vm::SNES:
+// console the 65816 does that through four communication ports. Here there is no 65816 at all: an
+// AudioSystem::SNES of the HostDriven kind holds the audio unit alone — no console CPU, no picture chip —
+// running on its own clock from the moment it is built, and the game reaches it as places:
 //
 //   snes::audioPort(n)     a communication port, from the console's side: writing sends a byte the sound
 //                          CPU reads, reading receives the byte the sound CPU last sent
 //   snes::audioRam(x)      the audio unit's RAM, where samples and their directory go
 //   snes::dspRegister(n)   an S-DSP register: writing one is the sound CPU's own write to the chip
 //
-// Everything this class does is one of those three.
+// Everything this class does is one of those three, through the system's own read and write. What the
+// chip makes is the system's output: the system plays it through the device.
 #pragma once
 
 #include <cstdint>
-#include <functional>
 
-#include "retropp/vm.h"
+#include "retropp/audio.h"
+#include "retropp/audio_system.h"
 
 #include "samples.h"
 
@@ -27,14 +29,11 @@ public:
     static constexpr int kVoices = 8;
     static constexpr int kSlots  = 4;  // sample slots in the directory this demo fills
 
-    // The machine with no cartridge — the game is the program — its main volume up and the chip unmuted.
+    // The audio unit alone, its main volume up and the chip unmuted, its sound on the device.
     AudioUnit();
 
-    // Every stereo frame the chip makes, at `rate`, from inside advance().
-    void onFrame(unsigned rate, std::function<void(std::int16_t, std::int16_t)> frame);
-
-    // One frame of the machine's clock: the chip runs, and its frames reach the function above.
-    void advance();
+    // The same, its sound to `sink` instead of the device — what --verify listens with.
+    explicit AudioUnit(retropp::AudioSink& sink);
 
     // ── The ports: the sound CPU's boot program ─────────────────────────────────────────────────
     // The sound CPU's boot program waits on the ports: $AA in port 0, $BB in port 1. Reading the ports
@@ -69,9 +68,10 @@ public:
     [[nodiscard]] std::uint8_t audioRam(std::uint16_t address);
 
 private:
+    void setUpChip();
     void writeDsp(std::uint8_t reg, std::uint8_t value);
 
-    retropp::Vm::SNES machine_;
+    retropp::AudioSystem::SNES system_;   // holds the audio unit alone and plays what it makes
 };
 
 }  // namespace demo

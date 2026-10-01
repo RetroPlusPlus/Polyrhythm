@@ -181,6 +181,23 @@ public:
     template <class SlotsStruct>
     HostedDriver<SlotsStruct> host(DriverId<SlotsStruct> driver);
 
+    // ── The console's audio unit, driven by the game ─────────────────────────────────────────────
+    // A HostDriven system hosts its console's audio unit alone — on the SNES the sound CPU, its RAM and
+    // the S-DSP, with no console CPU beside them — running from the system's first moment on its own
+    // clock, on a thread of its own, its sound this system's output. The game drives it the way the
+    // console's CPU would, through the unit's places: a communication port (snes::audioPort), a byte of
+    // audio RAM (snes::audioRam), an S-DSP register (snes::dspRegister). These are the Vm's own place
+    // verbs — a place built on the spot, `index` naming which entry of it — and they work the same way
+    // here: a write sends the bytes, a read gives the bytes back as the unit has them.
+    //
+    // The unit runs on its own thread, so each call crosses to it: a write lands as the unit stands, a
+    // read is answered from where it stands, and the call returns once the unit has taken it — a read
+    // that follows a write sees the write, and a place the unit does not have throws here, at the
+    // call. The crossing costs a thread wake, not a frame: a parked unit answers at once, a stepping
+    // one as its step ends. Every other kind of system throws std::logic_error from both.
+    [[nodiscard]] std::vector<std::uint8_t> read(const MemoryRegion& where, std::uint32_t index = 0);
+    void write(const MemoryRegion& where, std::span<const std::uint8_t> bytes, std::uint32_t index = 0);
+
     // Nested platform-bound instantiation types — the all-caps hardware spelling (the driver-hosting design
     // decision), symmetric with Vm::{GB,GBC,SNES}. Each fixes the console (VMPlatform + TimingProfile) so a
     // game names the hardware once at the type and never repeats it at construction: `AudioSystem::GBC

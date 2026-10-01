@@ -42,11 +42,13 @@ audio.play(song);
 
 ## The model
 
-- **A system is one backend — chiptune or PCM.** The first constructor argument is an `AudioKind`
-  (`Chiptune` or `Pcm`, no default), fixed for the system's life. A chiptune system runs a sound driver
-  on a small VM it owns; a PCM system decodes and streams an audio file (`.wav` / `.ogg` / `.flac` /
-  `.mp3`) and has no VM.
-  `play()` throws if you cue an id of the other kind, so a system only ever produces its own kind.
+- **A system is one kind — chiptune, PCM, or the console's audio unit.** The first constructor argument
+  is an `AudioKind` (`Chiptune`, `Pcm` or `HostDriven`, no default), fixed for the system's life. A
+  chiptune system runs a sound driver on a small VM it owns; a PCM system decodes and streams an audio
+  file (`.wav` / `.ogg` / `.flac` / `.mp3`) and has no VM; a `HostDriven` system hosts the console's audio
+  unit alone, for the game to drive through the system's `read` / `write` — on the SNES, whose sound is a
+  unit of its own ([The audio unit alone](vm/snes.md#the-audio-unit-alone)).
+  `play()` throws if you cue an id of another kind, so a system only ever produces its own kind.
 - **Register on the library, cue on a system.** Registration is program-wide and lives on the single
   `AudioLibrary` (`AudioLibrary::instance()`), not on an `AudioSystem`. `registerAudio(...)` hands the
   library a piece of audio and returns an `AudioId`; an `AudioSystem` only **cues** it (`play(id)` cues,

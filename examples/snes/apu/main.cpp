@@ -1,12 +1,12 @@
 // SNES audio unit — eight voices, driven by the game the way the console's CPU drives them.
 //
 // The pieces, one file each:
-//   audio_unit.h/.cpp   the audio: a Vm::SNES with no cartridge, reached as places — the ports, audio RAM,
-//                       the S-DSP's registers — loading samples and keying the eight voices
+//   audio_unit.h/.cpp   the audio: an AudioSystem::SNES holding the audio unit alone, reached as places —
+//                       the ports, audio RAM, the S-DSP's registers — loading samples and keying the eight
+//                       voices; the system plays what the chip makes
 //   samples.h/.cpp      the chip's sample format: a sixteen-sample wave as one looping BRR block
-//   queue.h             the hand-off: the chip's frames from the game's thread to the device's
 //   panel.h/.cpp        the UI: eight voice columns, lit while they sound, their pitch and wave shown
-//   main.cpp            this file: the keys, the loop, the device, and --verify
+//   main.cpp            this file: the keys, the loop, and --verify
 //
 // The other way to drive the audio unit — a 65816 sound driver the console runs, uploading its own SPC700
 // program and talking to it on the ports — is examples/snes/driver/.
@@ -30,14 +30,16 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <span>
+#include <thread>
 #include <vector>
 
-#include "retropp/audio.h"  // AudioFrame, kAudioChannels
+#include "retropp/audio.h"  // AudioFrame, AudioSink
 #include "retropp/clock.h"
 #include "retropp/draw_state.h"
 #include "retropp/engine_config.h"
@@ -50,15 +52,12 @@
 
 #include "audio_unit.h"
 #include "panel.h"
-#include "queue.h"
 #include "samples.h"
 
 using namespace retropp;
 using namespace demo;
 
 namespace {
-
-constexpr unsigned kDeviceRate = 48'000;
 
 // A C major scale, one note a voice, for a sixteen-sample wave: $1000 is the sample at its own rate,
 // 2'000 Hz, and a pitch is that times the note's frequency over 2'000.
@@ -97,6 +96,33 @@ void setUp(AudioUnit& unit, PanelState& state) {
 
 // ── Verify mode ─────────────────────────────────────────────────────────────────────────────────
 
+// A sink that is not a device: it keeps the pull the system hands it, and the checks pull through it
+// themselves, as the device would, to hear what the unit made.
+class ListeningSink final : public AudioSink {
+public:
+    void start(unsigned, int, AudioPullFn pull) override { pull_ = std::move(pull); }
+    void stop() override { pull_ = nullptr; }
+
+    // Listen for `span`: pull everything the system has as time passes, and return the loudest sample.
+    int listen(std::chrono::milliseconds span) {
+        int        peak     = 0;
+        const auto deadline = std::chrono::steady_clock::now() + span;
+        std::vector<AudioFrame> frames(4096);
+        do {
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+            const std::size_t got = pull_ ? pull_(std::span<AudioFrame>(frames)) : 0;
+            for (std::size_t i = 0; i < got; ++i) {
+                peak = std::max({peak, std::abs(static_cast<int>(frames[i].left)),
+                                 std::abs(static_cast<int>(frames[i].right))});
+            }
+        } while (std::chrono::steady_clock::now() < deadline);
+        return peak;
+    }
+
+private:
+    AudioPullFn pull_;
+};
+
 int runVerify() {
     int        failures = 0;
     const auto check    = [&failures](bool ok, const char* what) {
@@ -105,17 +131,11 @@ int runVerify() {
     };
     std::printf("snes_apu --verify: the game drives the SNES audio unit the way the console's CPU does\n\n");
 
-    AudioUnit  unit;
-    PanelState state;
-    int        peak = 0;  // the loudest sample since the checks last asked
-    unit.onFrame(kDeviceRate, [&peak](std::int16_t left, std::int16_t right) {
-        peak = std::max({peak, std::abs(static_cast<int>(left)), std::abs(static_cast<int>(right))});
-    });
-    const auto run = [&](int frames) {
-        peak = 0;
-        for (int i = 0; i < frames; ++i) unit.advance();
-        return peak;
-    };
+    // The unit runs on its own clock from here; the checks give each listening span real time to pass.
+    ListeningSink sink;
+    AudioUnit     unit{sink};
+    PanelState    state;
+    using namespace std::chrono_literals;
 
     check(unit.bootProgramReady(), "the boot program is ready on the ports");
     check(unit.bootProgramAcknowledgesAKick(), "the boot program acknowledges a kick");
@@ -123,19 +143,19 @@ int runVerify() {
     setUp(unit, state);
     check(unit.audioRam(0x0500) == 0xC3, "the first wave's block reads back from audio RAM");
     check(unit.dspRegister(0x0C) == 0x60, "a DSP register reads back what was written");
-    check(run(4) == 0, "nothing sounds before a key-on");
+    check(sink.listen(200ms) == 0, "nothing sounds before a key-on");
 
     unit.keyOn(0);
     unit.keyOn(4);
-    const int two = run(30);
+    const int two = sink.listen(500ms);
     std::printf("  voices 0 and 4 keyed on: loudest sample %d\n", two);
     check(two > 0, "two voices sound");
     unit.keyOff(0);
     unit.keyOff(4);
-    run(30);  // the release
-    check(run(30) == 0, "and are silent once keyed off");
+    sink.listen(500ms);  // the release, and what the output still held
+    check(sink.listen(500ms) == 0, "and are silent once keyed off");
     unit.keyOn(0);
-    check(run(30) > 0, "and a voice sounds again when keyed on again");
+    check(sink.listen(500ms) > 0, "and a voice sounds again when keyed on again");
 
     std::printf("\ndone%s\n", failures == 0 ? "" : " — with failures");
     return failures == 0 ? 0 : 1;
@@ -197,12 +217,8 @@ int main(int argc, char** argv) {
     const std::vector<TileCell>  faceCells(static_cast<std::size_t>(mapW) * mapH,
                                            TileCell{.atlas = faceAtlas, .tile = 0, .palette = facePalId});
 
-    // ── The audio: the unit, its frames queued for the device, the device pulling them ───────────
+    // ── The audio: the unit, running on its own clock, its sound on the device ───────────────────
     AudioUnit  unit;
-    FrameQueue queue;
-    unit.onFrame(kDeviceRate, [&queue](std::int16_t left, std::int16_t right) {
-        queue.push(AudioFrame{.left = left, .right = right});
-    });
     PanelState state;
     setUp(unit, state);
     std::array<int, kVoices> waveOf{};  // which of the four waves each voice plays
@@ -212,13 +228,6 @@ int main(int argc, char** argv) {
         state.wave[i] = waves()[static_cast<std::size_t>(waveOf[i])].name;
         unit.source(v, waveOf[i]);  // takes effect at the voice's next key-on
     };
-
-    SdlAudioSink sink;
-    sink.start(kDeviceRate, kAudioChannels, [&queue](std::span<AudioFrame> out) -> std::size_t {
-        const std::size_t got = queue.pop(out);
-        std::fill(out.begin() + static_cast<std::ptrdiff_t>(got), out.end(), AudioFrame{});
-        return out.size();
-    });
 
     const auto toggle = [&](int v) {
         auto& keyed = state.keyed[static_cast<std::size_t>(v)];
@@ -251,8 +260,8 @@ int main(int argc, char** argv) {
         }
     };
 
-    // Each tick is one frame of the machine's clock: the chip runs, and its frames reach the queue from
-    // inside advance(), on this thread.
+    // The tick is the game's: the keys and the mouse, each landing on the chip as it is pressed. The unit
+    // runs on its own clock beside it, and the system carries what the chip makes to the device.
     loop.simTick([&](const InputState& in) {
         if (in.justPressed(Action::Fullscreen)) platform.window().fullscreen(!platform.window().fullscreen());
         for (int v = 0; v < kVoices; ++v) {
@@ -284,7 +293,6 @@ int main(int argc, char** argv) {
         if (in.justPressed(Action::PanRight))   { state.pan[v] = std::min(state.pan[v] + 1, 8); mixed = true; }
         if (mixed) applyVolume(unit, state, state.selected);
         if (in.justPressed(Action::NextWave)) nextWave(state.selected);
-        unit.advance();
     });
 
     FrameDrawState frame;
@@ -317,6 +325,5 @@ int main(int argc, char** argv) {
 
     WindowedHost host{loop, platform};
     host.run();
-    sink.stop();
     return 0;
 }

@@ -27,6 +27,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
+#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <memory>
@@ -35,6 +36,7 @@
 #include <span>
 #include <sstream>
 #include <stdexcept>
+#include <string>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -51,6 +53,7 @@
 #include "src/audio/pcm_decode.h"      // detail::g_pcmDecode — the Pcm decode hook (installed by the no-ISA registerAudio)
 #include "src/audio/produce_step.h"    // detail::mixFrames / rampFrame — the pure mixdown + release fade
 #include "src/audio/ring_buffer.h"
+#include "src/vm/run_governor.h"     // vm::RunGovernor — the wall-clock pace the audio unit runs at
 #include "src/vm/vm_core_access.h"   // vm::VmCoreAccess — builds a voice's machine on the core the game named
 #include "src/vm/vm_runner.h"        // vm::VmRunner — the machine a voice steps through
 
@@ -280,6 +283,24 @@ struct AudioSystem::Impl {
         DriverDefinition                residentDef;             // machine facts (images/tick/slots/verbs)
         Isa                             residentIsa = Isa::Sm83; // the ISA (verified at host)
         std::shared_ptr<DriverSnapshot> snapshot;                // published read-slots (shared w/ handle)
+
+        // The audio unit, on a HostDriven system: the console's sound hardware alone, the game driving
+        // it through the system's place verbs. Sustained like a resident driver — stop() leaves it
+        // running, since its RAM holds the game's samples — and paced by its own clock, never by the mix.
+        bool audioUnit = false;
+    };
+
+    // One request the game thread makes of the audio unit — a read or a write of one place — carried
+    // to the unit's thread and answered there. The requester owns it (it lives on that thread's stack)
+    // and waits on `answered` until `done`; the unit's thread fills `result` or `error` and sets `done`
+    // under the request mutex. A write carries its bytes by copy, so the requester's span may die.
+    struct UnitRequest {
+        MemoryRegion              where;
+        std::uint32_t             index = 0;
+        bool                      isRead = false;
+        std::vector<std::uint8_t> bytes;   // a write's bytes in, a read's bytes out
+        std::exception_ptr        error;   // what the unit's verb threw, rethrown to the requester
+        bool                      done = false;
     };
 
     // `ownedSink` is null on the borrow path and holds the sink on the owning path; it is declared
@@ -290,7 +311,7 @@ struct AudioSystem::Impl {
     std::unique_ptr<AudioSink>        ownedSink;
     AudioSink&                        sink;
     unsigned                          sampleRate;
-    AudioKind                         kind_;          // the system's fixed backend — Chiptune or Pcm
+    AudioKind                         kind_;          // the system's fixed kind — Chiptune, Pcm or HostDriven
     VMPlatform                        platform_;      // the console each chiptune voice's VM is built as
     detail::CoreFactory               core_;          // the core those VMs are built on
     TimingProfile                     timing_;        // the profile each voice's Vm is constructed with; a voice is stepped by its machine's clock
@@ -305,6 +326,18 @@ struct AudioSystem::Impl {
     int                               maxStepsPerWake;  // safety cap on steps per produce pass
     std::size_t                       framesPerStep;   // audio frames one step of a machine produces
     audio::SpscRingBuffer<AudioFrame> ring;
+
+    // The audio unit of a HostDriven system (null on every other kind). Both pointers are set once, on
+    // the constructing thread, and read from the game thread for the system's life: the unit's voice is
+    // never closed (stop() and the auto-close both leave it), so they stay valid without ever reaching
+    // into the production thread's voice list. The request channel is declared BEFORE the voices so it
+    // outlives the unit's thread, which is joined as its voice is destroyed and serves requests until then.
+    Vm*                             audioUnit_  = nullptr;  // the unit's machine
+    vm::VmRunner*                   unitRunner_ = nullptr;  // the thread that steps it
+    std::optional<vm::RunGovernor>  unitGovernor_;          // its wall-clock pace (threaded systems)
+    std::mutex                      unitRequestMtx;
+    std::condition_variable         unitAnswered;
+    std::vector<UnitRequest*>       unitRequests;           // posted by the game thread, taken by the unit's
 
     // The active voices — every cued sound still sounding, mixed together each pass. Audio-thread-owned
     // (a voice is created when its cue is applied there, mixed there, and closed there); each voice's
@@ -468,31 +501,142 @@ struct AudioSystem::Impl {
             }
             return got;
         });
+    }
+
+    // A HostDriven system hosts its unit once it knows whether it has threads: on a threaded system the
+    // unit gets a thread of its own, on a manual one it is stepped by the test. Called by the threaded
+    // ctors from startProductionThread (before the production thread exists, so the voice list is
+    // still the constructing thread's to touch) and by the manual ctor directly.
+    void hostAudioUnitIfHostDriven() {
         if (kind_ == AudioKind::HostDriven) {
             hostAudioUnit();
         }
     }
 
     // A HostDriven system is its console's audio unit, alone: one machine with no console CPU in it,
-    // built here and running from the system's first step, its frames the system's output. The game
-    // drives it. It rides the music bus.
+    // built here and running from the system's first moment, its frames the system's output. The game
+    // drives it through the system's read / write. It rides the music bus.
+    //
+    // The unit is paced by ITS OWN CLOCK, not by the mix: a cued voice runs ahead until the pipeline
+    // holds the latency target and parks until the output drains it, but the unit is a chip that is
+    // always running — it steps when the wall clock owes it a frame, a fixed cushion ahead so the device
+    // never runs dry, and parks only until the next frame is due — the same governor a running cartridge
+    // paces by. A request from the game wakes the unit's thread, and the look hook serves it there — a
+    // parked unit at once, a stepping one as its step ends — so a write lands and a read is answered a
+    // thread wake after the call, never a frame after it.
     void hostAudioUnit() {
-        auto voice    = std::make_unique<Voice>(laneCapacity());
-        voice->type   = AudioType::Music;
-        voice->runner = std::make_unique<vm::VmRunner>(
+        auto voice       = std::make_unique<Voice>(laneCapacity());
+        voice->type      = AudioType::Music;
+        voice->audioUnit = true;
+        voice->runner    = std::make_unique<vm::VmRunner>(
             vm::VmCoreAccess::makeAudioUnit(core_, platform_, timing_), vm::VmRunner::StepKind::Started,
             cyclesPerFrame, runnerMode());
         Voice* vp      = voice.get();
         Vm*    machine = &voice->runner->machine();
+        audioUnit_     = machine;
+        unitRunner_    = voice->runner.get();  // the voice lives as long as the system: never closed
         voice->runner->beforeFirstStep([this, vp, machine] {
-            machine->enableAudio(sampleRate, [vp](std::int16_t left, std::int16_t right) {
+            machine->enableAudio(sampleRate, [this, vp](std::int16_t left, std::int16_t right) {
                 const std::uint32_t gain = AudioMixer::instance().effectiveGain(vp->type);
-                vp->lane.push(AudioFrame{applyGain(left, gain), applyGain(right, gain)});
+                // The unit does not wait for the mix, so a lane the mix has not drained can fill; a
+                // frame it has no room for is dropped and counted, the way a full ring drops a mixed one.
+                if (!vp->lane.push(AudioFrame{applyGain(left, gain), applyGain(right, gain)})) {
+                    framesDropped.fetch_add(1, std::memory_order_relaxed);
+                }
             });
         });
-        startRunner(*voice);
+        voice->runner->onEachLook([this, machine] { serveUnitRequests(*machine); });
+        if (threaded) {
+            // The cushion: the latency target, in the unit's own cycles — how far ahead of the wall
+            // clock the unit runs, so the frames the device asks for are already made.
+            const std::uint64_t cushion =
+                static_cast<std::uint64_t>(targetFrames) * clock_->hertzNumerator /
+                (static_cast<std::uint64_t>(clock_->hertzDivisor) * sampleRate);
+            unitGovernor_.emplace(clock_->hertzNumerator, clock_->hertzDivisor);
+            unitGovernor_->restart(std::chrono::steady_clock::now());
+            vm::VmRunner*    raw = voice->runner.get();
+            vm::RunGovernor* g   = &*unitGovernor_;
+            voice->runner->start(
+                [g, raw, cushion] {
+                    // Step while the cycles run lag what the wall clock owes plus the cushion; both
+                    // sides are read on the stepping thread, so the closure is race-free by construction.
+                    const std::uint64_t owed = g->owedThrough(std::chrono::steady_clock::now()) + cushion;
+                    const std::uint64_t ran  = raw->cyclesRun();
+                    return static_cast<std::size_t>(ran > owed ? ran - owed : 0);
+                },
+                /*highWater=*/1,
+                [g, raw, cushion] {
+                    // How long until the wall clock owes everything run so far, less the cushion —
+                    // when the next frame is due. Measured this way the step lands when it is owed.
+                    const std::uint64_t ran = raw->cyclesRun();
+                    return g->timeUntilOwed(ran > cushion ? ran - cushion : 0);
+                });
+        }
         voices.push_back(std::move(voice));
         playing.store(true, std::memory_order_relaxed);
+    }
+
+    // ── The audio unit's place verbs ───────────────────────────────────────────────────────────────
+    // The game thread's read / write of a place on the unit. The unit is reached only from its own
+    // thread, so the request is posted, the unit woken, and the call waits until the unit's look hook
+    // has served it (serveUnitRequests). On a manual system the calling thread IS the unit's thread, so
+    // the request is served inline. What the unit's verb threw is rethrown here, at the call.
+    void requireAudioUnit(const char* verb) const {
+        if (audioUnit_ == nullptr) {
+            throw std::logic_error(std::string("AudioSystem::") + verb +
+                                   ": only a HostDriven system hosts its console's audio unit — this "
+                                   "system has no unit to reach");
+        }
+    }
+
+    // Carry one request to the unit and wait for its answer.
+    void askUnit(UnitRequest& request) {
+        if (!threaded) {
+            serveOne(*audioUnit_, request);  // the calling thread steps the unit on a manual system
+        } else {
+            {
+                std::lock_guard<std::mutex> lock(unitRequestMtx);
+                unitRequests.push_back(&request);
+            }
+            unitRunner_->wake();
+            std::unique_lock<std::mutex> lock(unitRequestMtx);
+            unitAnswered.wait(lock, [&request] { return request.done; });
+        }
+        if (request.error) {
+            std::rethrow_exception(request.error);
+        }
+    }
+
+    // The unit's thread: take every request posted so far and answer each, in posting order.
+    void serveUnitRequests(Vm& unit) {
+        std::vector<UnitRequest*> taken;
+        {
+            std::lock_guard<std::mutex> lock(unitRequestMtx);
+            if (unitRequests.empty()) {
+                return;
+            }
+            taken.swap(unitRequests);
+        }
+        for (UnitRequest* request : taken) {
+            serveOne(unit, *request);
+        }
+    }
+
+    void serveOne(Vm& unit, UnitRequest& request) {
+        try {
+            if (request.isRead) {
+                request.bytes = unit.read(request.where, request.index);
+            } else {
+                unit.write(request.where, std::span<const std::uint8_t>(request.bytes), request.index);
+            }
+        } catch (...) {
+            request.error = std::current_exception();
+        }
+        {
+            std::lock_guard<std::mutex> lock(unitRequestMtx);
+            request.done = true;
+        }
+        unitAnswered.notify_all();
     }
 
     // ── Cue application (production thread, or inline in manual mode) ─────────────────────────────────
@@ -532,10 +676,12 @@ struct AudioSystem::Impl {
                 // would click) and is removed at zero within milliseconds; the ring then drains and the
                 // sink silence-fills. A HOSTED RESIDENT DRIVER is excluded — it is always-running and
                 // closes only through its handle (close) or system destruction, so stop() never destroys
-                // its mid-game driver RAM. `playing` clears when the last tail finishes, in the produce
-                // pass. Registered audio stays registered — a later Play cues it afresh.
+                // its mid-game driver RAM. THE AUDIO UNIT of a HostDriven system is excluded for the same
+                // reason — its RAM holds the game's samples, and the chip is the system. `playing` clears
+                // when the last tail finishes, in the produce pass. Registered audio stays registered — a
+                // later Play cues it afresh.
                 for (const std::unique_ptr<Voice>& v : voices) {
-                    if (!v->resident) {
+                    if (!v->resident && !v->audioUnit) {
                         beginRelease(*v);
                     }
                 }
@@ -1202,6 +1348,7 @@ struct AudioSystem::Impl {
     // thread — applyPlay/produceOnce/drainCues never run elsewhere.
     void startProductionThread() {
         threaded = true;
+        hostAudioUnitIfHostDriven();  // its thread is its own; the production thread only mixes it
         running.store(true, std::memory_order_relaxed);
         productionThread = std::thread([this] { productionLoop(); });
     }
@@ -1286,7 +1433,9 @@ AudioSystem::AudioSystem(detail::CoreFactory core, AudioKind kind, VMPlatform pl
 // false so play()/stop() apply inline and the test drives production via AudioSystemTestAccess.
 AudioSystem::AudioSystem(ManualTag, detail::CoreFactory core, AudioKind kind, AudioSink& sink,
                          VMPlatform platform, TimingProfile timing, unsigned sampleRate)
-    : impl_(std::make_unique<Impl>(core, kind, sink, platform, timing, sampleRate)) {}
+    : impl_(std::make_unique<Impl>(core, kind, sink, platform, timing, sampleRate)) {
+    impl_->hostAudioUnitIfHostDriven();  // stepped by the test, through the seam
+}
 
 AudioSystem::~AudioSystem() {
     // Stop the sink first so its audio thread stops pulling the ring, THEN join the production thread so
@@ -1307,6 +1456,22 @@ void AudioSystem::play(AudioId id, CueMode mode) {
 void AudioSystem::stop() {
     impl_->cueQueue.push(audio::AudioCommand{audio::AudioCommand::Op::Stop, AudioId{}});
     impl_->wakeOrApply();
+}
+
+std::vector<std::uint8_t> AudioSystem::read(const MemoryRegion& where, std::uint32_t index) {
+    impl_->requireAudioUnit("read");
+    Impl::UnitRequest request{.where = where, .index = index, .isRead = true};
+    impl_->askUnit(request);
+    return std::move(request.bytes);
+}
+
+void AudioSystem::write(const MemoryRegion& where, std::span<const std::uint8_t> bytes, std::uint32_t index) {
+    impl_->requireAudioUnit("write");
+    Impl::UnitRequest request{.where = where,
+                              .index = index,
+                              .isRead = false,
+                              .bytes = std::vector<std::uint8_t>(bytes.begin(), bytes.end())};
+    impl_->askUnit(request);
 }
 
 bool       AudioSystem::isPlaying() const noexcept { return impl_->playing.load(std::memory_order_relaxed); }
