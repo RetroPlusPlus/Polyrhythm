@@ -13,6 +13,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <stdexcept>
 #include <functional>
 #include <optional>
 #include <span>
@@ -104,6 +105,11 @@ public:
     // Reset the machine to its post-reset state, clearing persistent routine state (e.g. RNG seeds).
     // Placed routines stay placed (their bytes live in the code space, untouched by reset).
     virtual void reset() = 0;
+
+    // The machine as its audio unit alone: the sound CPU, its RAM and the sound chip, with no console
+    // CPU built around them. The audio unit's places, its clock and enableAudio are the surface; a verb
+    // that needs the console refuses. A core whose audio is not a unit of its own refuses here.
+    virtual void hostAudioUnit() { throw std::logic_error("this core's audio is not a unit of its own"); }
 
     // Advance the machine's free-running clock by `cycles` CPU cycles without executing a routine, so
     // time-based hardware registers (e.g. the Game Boy's rDIV divider) keep ticking between calls as

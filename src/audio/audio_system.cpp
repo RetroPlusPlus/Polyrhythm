@@ -382,7 +382,7 @@ struct AudioSystem::Impl {
           platform_(platform),
           core_(core),
           timing_(timing),
-          clock_(core != nullptr ? vm::VmCoreAccess::clockOf(core, platform) : std::nullopt),
+          clock_(clockFor(core, platform, kind)),
           targetFrames(rate / 20),
           ringFloor(rate / 40),
           autoStopSilenceFrames(rate / 4),
@@ -405,7 +405,7 @@ struct AudioSystem::Impl {
           platform_(platform),
           core_(core),
           timing_(timing),
-          clock_(core != nullptr ? vm::VmCoreAccess::clockOf(core, platform) : std::nullopt),
+          clock_(clockFor(core, platform, kind)),
           targetFrames(rate / 20),
           ringFloor(rate / 40),
           autoStopSilenceFrames(rate / 4),
@@ -415,6 +415,17 @@ struct AudioSystem::Impl {
           framesPerStep(framesPerStepFor(clock_, rate)),
           ring(rate / 4) {
         wire();
+    }
+
+    // The clock every machine of this system runs on: the console's, or — for a HostDriven system — the
+    // audio unit's own, since that is the machine it hosts. Nothing on a platform with no core.
+    static std::optional<vm::MachineClock> clockFor(detail::CoreFactory core, VMPlatform platform,
+                                                    AudioKind kind) {
+        if (core == nullptr) {
+            return std::nullopt;
+        }
+        return kind == AudioKind::HostDriven ? vm::VmCoreAccess::audioUnitClockOf(core, platform)
+                                             : vm::VmCoreAccess::clockOf(core, platform);
     }
 
     // The frame quantum: one frame of the voice machine's own clock, in its own cycles. Zero on a
@@ -457,6 +468,31 @@ struct AudioSystem::Impl {
             }
             return got;
         });
+        if (kind_ == AudioKind::HostDriven) {
+            hostAudioUnit();
+        }
+    }
+
+    // A HostDriven system is its console's audio unit, alone: one machine with no console CPU in it,
+    // built here and running from the system's first step, its frames the system's output. The game
+    // drives it. It rides the music bus.
+    void hostAudioUnit() {
+        auto voice    = std::make_unique<Voice>(laneCapacity());
+        voice->type   = AudioType::Music;
+        voice->runner = std::make_unique<vm::VmRunner>(
+            vm::VmCoreAccess::makeAudioUnit(core_, platform_, timing_), vm::VmRunner::StepKind::Started,
+            cyclesPerFrame, runnerMode());
+        Voice* vp      = voice.get();
+        Vm*    machine = &voice->runner->machine();
+        voice->runner->beforeFirstStep([this, vp, machine] {
+            machine->enableAudio(sampleRate, [vp](std::int16_t left, std::int16_t right) {
+                const std::uint32_t gain = AudioMixer::instance().effectiveGain(vp->type);
+                vp->lane.push(AudioFrame{applyGain(left, gain), applyGain(right, gain)});
+            });
+        });
+        startRunner(*voice);
+        voices.push_back(std::move(voice));
+        playing.store(true, std::memory_order_relaxed);
     }
 
     // ── Cue application (production thread, or inline in manual mode) ─────────────────────────────────
@@ -612,7 +648,8 @@ struct AudioSystem::Impl {
     // the step it is in the middle of and a step of margin. Within that, a lane cannot overflow, which is
     // why the APU callback pushes without inspecting the result. A Pcm voice has no machine and no lane.
     [[nodiscard]] std::size_t laneCapacity() const {
-        return kind_ == AudioKind::Chiptune ? targetFrames + 2 * framesPerStep : 0;
+        return kind_ == AudioKind::Chiptune || kind_ == AudioKind::HostDriven ? targetFrames + 2 * framesPerStep
+                                                                             : 0;
     }
 
     // The demand a caller passes when it takes whatever has been produced, at whatever pace it likes —

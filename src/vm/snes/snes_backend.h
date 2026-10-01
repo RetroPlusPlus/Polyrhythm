@@ -33,6 +33,7 @@
 #include <utility>
 #include <vector>
 
+#include "snaggletooth/apu/apu.h"
 #include "snaggletooth/snes/snes.h"
 #include "src/vm/vm_backend.h"
 #include "src/vm/snes/resampler.h"
@@ -51,6 +52,11 @@ public:
     // A hosted cartridge returns to power-on with its save kept; a routine machine is rebuilt on the
     // image it wrote, every placed routine intact.
     void reset() override;
+    // The audio unit alone — the seeded post-boot sound CPU, its RAM and the sound chip, with no 5A22 and
+    // no picture chip around them: what an AudioSystem::SNES of the Pcm kind hosts. The audio places land
+    // on it by the same names, advanceClock runs it on its own clock and enableAudio drains it; a
+    // cartridge, a routine, a register, an escape, a watch, a driver and the pad refuse.
+    void hostAudioUnit() override;
     // On a machine holding the image this core writes — for its routines or a driver — park the CPU on
     // the image's idle loop, run `cycles`, and put the register file back, so the machine's own time
     // passes between calls, the sound chip plays through it, and nothing a call marshals moves. A
@@ -62,6 +68,9 @@ public:
     // machine. 236'250'000 / 11 Hz and 357'366 master cycles a frame for a 60 Hz cartridge; 21'281'370 Hz
     // and 425'568 for a 50 Hz one.
     [[nodiscard]] std::optional<MachineClock> clock() const override {
+        if (apu_) {  // the audio unit's own clock: 1'024'000 Hz; a frame is 16'000 cycles, 500 DSP samples
+            return MachineClock{.hertzNumerator = 1'024'000, .hertzDivisor = 1, .cyclesPerFrame = 16'000};
+        }
         const snaggletooth::ConsoleClock c = snaggletooth::consoleClock(region_);
         return MachineClock{.hertzNumerator = static_cast<std::uint32_t>(c.hertzNumerator),
                             .hertzDivisor   = static_cast<std::uint32_t>(c.hertzDenominator),
@@ -113,7 +122,7 @@ public:
     std::uint64_t runForCycles(std::uint64_t cpuCycles) override;
 
     // Guest input: the SNES pad. The public two-port word (snes.h) packs into the seam's opaque uint64.
-    [[nodiscard]] bool takesButtons() const override { return true; }
+    [[nodiscard]] bool takesButtons() const override { return !apu_; }
     void setButtons(std::uint64_t held) override;
 
     // Host a driver: each image at its bus address under the map `mapper` names — snes::LoRom or
@@ -168,7 +177,7 @@ public:
 
     // Save data: the cartridge's battery-backed save RAM. The core has the model, so a machine can be
     // keyed; how many bytes an image keeps is the image's own answer.
-    [[nodiscard]] bool keepsSaveData() const override { return true; }
+    [[nodiscard]] bool keepsSaveData() const override { return !apu_; }
     // The name every other program that reads a SNES cartridge's save already expects.
     [[nodiscard]] std::string_view saveDataExtension() const override { return "srm"; }
     [[nodiscard]] std::size_t saveDataSize() const override;
@@ -267,6 +276,7 @@ private:
     void releaseWatchBytes(const ArmedWatch& gone, bool onRead, bool onWrite);
 
     std::optional<snaggletooth::Snes> snes_;             // the live machine; empty until an image is held
+    std::optional<snaggletooth::Apu>  apu_;              // the audio unit alone, when the machine is that
     std::vector<std::uint8_t>         rom_;              // the held image, kept for save reads and rebuilds
     snaggletooth::Region              region_ = snaggletooth::Region::Ntsc;  // the cartridge's, from its header
     snaggletooth::CartridgeMap        map_ = snaggletooth::CartridgeMap::LoRom;  // the map the machine reads the image by

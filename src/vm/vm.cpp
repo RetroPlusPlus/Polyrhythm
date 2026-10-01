@@ -28,6 +28,7 @@
 #include "src/vm/run_governor.h"       // RunGovernor — what a running cartridge owes the wall clock
 #include "src/vm/save_writer.h"        // SaveWriter — the thread a keyed machine's bytes reach disk on
 #include "src/vm/vm_backend.h"
+#include "src/vm/vm_core_access.h"     // VmCoreAccess — the audio system's way to a machine, defined here
 #include "src/vm/vm_runner.h"          // VmRunner — the thread a running cartridge steps on
 #include "src/vm/vm_testing.h"         // VmTestAccess — the deterministic seam, defined at file end
 
@@ -1323,6 +1324,12 @@ Vm::Vm(detail::CoreFactory core, VMPlatform platform, TimingProfile timing, VmCo
     if (config.video) {
         video(true);
     }
+}
+
+Vm vm::VmCoreAccess::makeAudioUnit(detail::CoreFactory core, VMPlatform platform, TimingProfile timing) {
+    Vm machine(core, platform, timing, VmConfig{});
+    machine.impl_->backend->hostAudioUnit();
+    return machine;
 }
 
 void Vm::batterySave(std::string_view name) {

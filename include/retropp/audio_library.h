@@ -70,7 +70,11 @@ enum class AudioType { Music, Sfx, Vocals, VMDriver };
 // Driver is a hosted RESIDENT sound driver (the game's own engine, run as a long-lived addressable machine
 // on the VM — retropp/driver_binding.h). Registered through uploadDriver / registerDriver (below), it is
 // AudioType::VMDriver by construction and hosted through AudioSystem::host(), never play()'d.
-enum class AudioKind { Chiptune, Pcm, Driver };
+//
+// HostDriven is an audio system's kind, never a registration's: the console's audio unit alone, with no
+// console CPU built around it, driven by the game. The SNES has one — its sound CPU and sound chip are a
+// unit of their own beside the console — so `AudioSystem::SNES{AudioKind::HostDriven}` hosts that unit.
+enum class AudioKind { Chiptune, Pcm, Driver, HostDriven };
 
 // An opaque handle to a registered audio, minted by the AudioLibrary and cued with AudioSystem::play().
 // Its lifetime is the library's (the whole program) — the AtlasId / PaletteId value-handle contract.

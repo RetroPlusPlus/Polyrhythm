@@ -1692,6 +1692,7 @@ if(RETROPP_BUILD_TESTS)
         tests/snes_backend_audio_test.cpp
         tests/snes_apu_places_test.cpp
         tests/snes_chiptune_test.cpp
+        tests/snes_audio_unit_test.cpp
         tests/net_socket_test.cpp
         tests/net_tls_test.cpp
         tests/vm_frame_sink_test.cpp

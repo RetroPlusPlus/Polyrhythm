@@ -21,6 +21,13 @@ struct SnesBackendTestAccess {
     [[nodiscard]] static bool hosting(const SnesBackend& backend) noexcept {
         return backend.snes_.has_value();
     }
+    // The audio unit alone, when the machine is that: its state, and whether it is that at all.
+    [[nodiscard]] static bool audioUnitAlone(const SnesBackend& backend) noexcept {
+        return backend.apu_.has_value();
+    }
+    [[nodiscard]] static const snaggletooth::ApuState& audioUnitState(const SnesBackend& backend) {
+        return backend.apu_->state();
+    }
     // The image the backend holds — a game's cartridge, or the one it wrote for its routines.
     [[nodiscard]] static const std::vector<std::uint8_t>& image(const SnesBackend& backend) noexcept {
         return backend.rom_;

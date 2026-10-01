@@ -76,7 +76,25 @@ void SnesBackend::restoreSave(std::vector<std::uint8_t> save) {
     saveChanged_ = false;  // a restore reports a change; a loaded save is not one
 }
 
+void SnesBackend::hostAudioUnit() {
+    if (snes_) {
+        throw std::logic_error("hostAudioUnit: this machine already holds a cartridge or an image; the "
+                               "audio unit alone is a machine of its own");
+    }
+    apu_.emplace();  // the seeded post-boot machine: $AA and $BB on the ports, the boot program waiting
+    if (resampler_) {
+        resampler_->reset();
+    }
+}
+
 void SnesBackend::reset() {
+    if (apu_) {
+        apu_->reset();
+        if (resampler_) {
+            resampler_->reset();
+        }
+        return;
+    }
     if (imageBuilt_) {
         emplaceMachine();  // the image holds every placed routine; a fresh machine on it is the reset
         return;
@@ -94,6 +112,9 @@ void SnesBackend::reset() {
 void SnesBackend::loadRom(std::span<const std::uint8_t> rom) {
     if (rom.empty()) {
         throw std::invalid_argument("the cartridge image has no bytes");
+    }
+    if (apu_) {
+        throw std::logic_error("this machine is its audio unit alone and has no cartridge slot");
     }
     if (imageBuilt_) {
         throw std::logic_error(
@@ -130,7 +151,11 @@ std::uint64_t SnesBackend::runForCycles(std::uint64_t cpuCycles) {
     const std::uint64_t slice = clock()->cyclesPerFrame / 4;
     for (std::uint64_t remaining = cpuCycles; remaining != 0;) {
         const std::uint64_t step = std::min(remaining, slice);
-        snes_->run(step);
+        if (apu_) {
+            apu_->run(step);
+        } else {
+            snes_->run(step);
+        }
         drainAudio();
         remaining -= step;
     }
@@ -138,7 +163,7 @@ std::uint64_t SnesBackend::runForCycles(std::uint64_t cpuCycles) {
 }
 
 void SnesBackend::drainAudio() {
-    const std::vector<snaggletooth::StereoFrame> frames = snes_->takeFrames();
+    const std::vector<snaggletooth::StereoFrame> frames = apu_ ? apu_->takeFrames() : snes_->takeFrames();
     if (!audioSink_) {
         return;  // nobody listens: the frames are dropped, as an unwatched picture is never drawn
     }
@@ -181,6 +206,9 @@ void SnesBackend::frame(const snaggletooth::VideoFrame& frame) {
 void SnesBackend::setFrameSink(FrameSink sink) { frameSink_ = std::move(sink); }
 
 void SnesBackend::setVideoEnabled(bool enabled) {
+    if (enabled && apu_) {
+        throw std::logic_error("video: this machine is its audio unit alone and draws nothing");
+    }
     videoEnabled_ = enabled;
     if (snes_) {
         snes_->setFrameObserver(enabled ? this : nullptr);
@@ -224,7 +252,7 @@ bool SnesBackend::takeSaveDataChanged() {
 // through the verbs that write it by name, so no register is driven and no cycle is spent.
 
 std::optional<SnesBackend::Resolved> SnesBackend::resolve(std::uint32_t address) const {
-    if (!snes_) {
+    if (!snes_ && !apu_) {
         return std::nullopt;  // nothing hosted: this machine has no memory yet
     }
     const std::optional<snes_address::Decoded> decoded = snes_address::decode(address);
@@ -238,6 +266,15 @@ std::optional<SnesBackend::Resolved> SnesBackend::resolve(std::uint32_t address)
         }
         return Resolved{.memory = memory, .base = at, .size = size};
     };
+    if (apu_) {
+        // The audio unit alone: its three memories, and nothing on a bus it does not have.
+        switch (decoded->space) {
+            case snes::Space::AudioRam:    return within(Memory::AudioRam, 0x10000u);
+            case snes::Space::AudioPort:   return within(Memory::AudioPort, 4u);
+            case snes::Space::DspRegister: return within(Memory::DspRegister, 128u);
+            default:                       return std::nullopt;
+        }
+    }
     switch (decoded->space) {
         case snes::Space::VideoRam:    return within(Memory::VideoRam, snes_->vram().size());
         case snes::Space::Palette:     return within(Memory::Palette, snes_->cgram().size());
@@ -322,15 +359,18 @@ std::uint8_t SnesBackend::readByte(Memory memory, std::size_t offset) const {
         case Memory::VideoRam:  return snes_->vram()[offset];
         case Memory::Palette:   return snes_->cgram()[offset];
         case Memory::Sprites:   return snes_->oam()[offset];
-        case Memory::AudioRam:  return snes_->peekApu(static_cast<std::uint16_t>(offset));
+        case Memory::AudioRam:
+            return apu_ ? apu_->peek(static_cast<std::uint16_t>(offset))
+                        : snes_->peekApu(static_cast<std::uint16_t>(offset));
         case Memory::AudioPort:
-            // The console's side of comm port `offset`: the byte the sound CPU last sent, the value a read
-            // of the CPU-bus register $2140 + offset answers, with nothing moved. Ports 0-3 all answer, so
-            // the read is whole.
-            return *snes_->peekRegister(static_cast<std::uint32_t>(0x2140 + offset));
+            // The console's side of comm port `offset`: the byte the sound CPU last sent — the output latch
+            // itself on the audio unit alone, the value a read of the CPU-bus register $2140 + offset
+            // answers on the console — with nothing moved. Ports 0-3 all answer, so the read is whole.
+            return apu_ ? apu_->readPort(static_cast<std::uint8_t>(offset))
+                        : *snes_->peekRegister(static_cast<std::uint32_t>(0x2140 + offset));
         case Memory::DspRegister:
             // The DSP register as it stands, from the audio unit's own register file — no fetch, no program.
-            return snes_->state().apu.dsp.regs[offset];
+            return apu_ ? apu_->state().dsp.regs[offset] : snes_->state().apu.dsp.regs[offset];
     }
     return 0;
 }
@@ -371,20 +411,23 @@ void SnesBackend::writeByte(Memory memory, std::size_t offset, std::uint8_t valu
             snes_->writeOam(static_cast<std::uint16_t>(offset), value);
             return;
         case Memory::AudioRam:
-            snes_->writeApuRam(static_cast<std::uint16_t>(offset), value);
+            if (apu_) apu_->writeRam(static_cast<std::uint16_t>(offset), value);
+            else      snes_->writeApuRam(static_cast<std::uint16_t>(offset), value);
             return;
         case Memory::AudioPort:
             // A write sends `value` to the sound CPU: it sets the input latch the sound CPU reads at
-            // $F4 + offset (writeApuPort takes the port index), and leaves the output latch the console
-            // reads as it stands — so a port place written and then read gives back what the sound CPU sent,
-            // not what the console wrote.
-            snes_->writeApuPort(static_cast<std::uint8_t>(offset), value);
+            // $F4 + offset (the port index), and leaves the output latch the console reads as it stands —
+            // so a port place written and then read gives back what the sound CPU sent, not what the
+            // console wrote.
+            if (apu_) apu_->writePort(static_cast<std::uint8_t>(offset), value);
+            else      snes_->writeApuPort(static_cast<std::uint8_t>(offset), value);
             return;
         case Memory::DspRegister:
             // The sound CPU's own write to the chip, made from the host: a key-on arms the voices the next
             // poll takes, an ENDX write acknowledges the end flags, and the byte lands where the machine
             // stands, spending no cycle.
-            snes_->writeApuDspRegister(static_cast<std::uint8_t>(offset), value);
+            if (apu_) apu_->writeDspRegister(static_cast<std::uint8_t>(offset), value);
+            else      snes_->writeApuDspRegister(static_cast<std::uint8_t>(offset), value);
             return;
     }
 }
@@ -497,10 +540,19 @@ std::string busAddress(std::uint32_t address) {
     return text;
 }
 
+// The audio unit alone has no 65816: a verb that needs the console refuses, naming what it needed.
+void requireConsole(bool audioUnitOnly, const char* verb) {
+    if (audioUnitOnly) {
+        throw std::logic_error(std::string(verb) +
+                               ": this machine is its audio unit alone and has no console CPU");
+    }
+}
+
 }  // namespace
 
 std::uint32_t SnesBackend::placeRoutine(std::span<const std::uint8_t> bytes,
                                        std::optional<std::uint32_t> origin) {
+    requireConsole(apu_.has_value(), "placeRoutine");
     if (romHosted_) {
         throw std::logic_error(
             "this VM hosts a game's own cartridge, which has no arena to place a routine into; call "
@@ -561,6 +613,7 @@ void SnesBackend::rebuildRoutineImage() {
 }
 
 AssembledRoutine SnesBackend::assemble(std::string_view source) const {
+    requireConsole(apu_.has_value(), "assemble");
     snaggletooth::assembler::Assembly assembly =
         snaggletooth::assembler::assembleCpu65816(source, "routine.asm");
     if (assembly.ok() && !assembly.ranges.empty() && assembly.ranges.front().start == 0) {
@@ -614,6 +667,7 @@ void SnesBackend::writeRegister(std::uint16_t registerId, std::uint64_t value, i
 }
 
 void SnesBackend::run() {
+    requireConsole(apu_.has_value(), "run");
     if (!snes_) {
         throw std::logic_error("run: this machine holds no code to call (place a routine first)");
     }
@@ -639,10 +693,17 @@ void SnesBackend::run() {
 }
 
 std::uint64_t SnesBackend::readRegister(std::uint16_t registerId) {
+    requireConsole(apu_.has_value(), "readRegister");
     return readRegisterField(snes_->cpuState(), static_cast<snes::Reg>(registerId));
 }
 
 void SnesBackend::advanceClock(std::uint64_t cycles) {
+    if (apu_) {
+        // The audio unit's own clock moves by `cycles` of it, and what the chip made reaches the sink.
+        apu_->run(cycles);
+        drainAudio();
+        return;
+    }
     if (!imageBuilt_) {
         throw std::logic_error(romHosted_
                                    ? "advanceClock: this machine hosts a game's cartridge, which "
@@ -684,6 +745,7 @@ void SnesBackend::finishInstruction() {
 void SnesBackend::callInContext(std::uint32_t entry, std::span<const ResidentRegister> presets,
                                 CallStack stack, std::size_t maxInstructions,
                                 const std::function<void()>& readOutputs) {
+    requireConsole(apu_.has_value(), "callInContext");
     if (!snes_) {
         throw std::logic_error("callInContext: this machine holds no code to call");
     }
@@ -781,6 +843,7 @@ void SnesBackend::setEscapeSink(EscapeSink sink) {
 }
 
 void SnesBackend::armEscape(std::uint32_t address, bool replacesRoutine) {
+    requireConsole(apu_.has_value(), "an escape");
     const std::optional<snes_address::Decoded> decoded = snes_address::decode(address);
     if (!snes_ || !decoded || decoded->space != snes::Space::Bus) {
         throw std::invalid_argument("an escape is on the console's bus; address " + std::to_string(address) +
@@ -846,6 +909,7 @@ void SnesBackend::reached(std::uint32_t address) {
 }
 
 void SnesBackend::writeLiveRegister(std::uint16_t registerId, std::uint64_t value, int /*width*/) {
+    requireConsole(apu_.has_value(), "writeLiveRegister");
     snaggletooth::Cpu65816State file = snes_->cpuState();
     writeRegisterField(file, static_cast<snes::Reg>(registerId), value);
     snes_->setCpuState(file);
@@ -857,6 +921,7 @@ void SnesBackend::setWatchSink(WatchSink sink) {
 }
 
 void SnesBackend::armWatch(const MemoryRegion& where, bool onRead, bool onWrite) {
+    requireConsole(apu_.has_value(), "a watch");
     if (!onRead && !onWrite) {
         return;  // nothing asked for
     }
@@ -1008,6 +1073,7 @@ std::optional<snaggletooth::CartridgeMap> mapFor(Mapper mapper) {
 
 void SnesBackend::configureResidentImage(std::span<const DriverImage> images, Mapper mapper,
                                          std::uint32_t stackTop) {
+    requireConsole(apu_.has_value(), "hosting a driver");
     if (romHosted_) {
         throw std::logic_error(
             "this VM hosts a game's own cartridge; a driver is hosted in an image the engine writes — its "
@@ -1121,6 +1187,7 @@ std::uint64_t SnesBackend::callResident(std::uint32_t entry, std::span<const Res
 }
 
 void SnesBackend::beginContinuous(std::uint32_t entry) {
+    requireConsole(apu_.has_value(), "beginContinuous");
     if (!snes_) {
         throw std::logic_error("beginContinuous: this machine holds no code to run (host a driver first)");
     }
