@@ -1,13 +1,28 @@
 # Audio
 
-Headers: `retropp/audio_system.h` (cue), `retropp/audio_library.h` (register), `retropp/gb_audio.h`
-(Game Boy presets) — plus `retropp/sdl_platform.h` only if you hand a system a custom sink.
+Headers: `retropp/audio_system.h` (cue), `retropp/audio_library.h` (register), `retropp/audio_effect.h`
+(the effects vocabulary), `retropp/gb_audio.h` (Game Boy presets) — plus `retropp/sdl_platform.h` only if
+you hand a system a custom sink.
 
 The platform plays sound in two halves. You **register** audio once on the program-wide **`AudioLibrary`**,
 getting back an `AudioId`. You **cue** it by handle on an **`AudioSystem`** — `play(id)` / `stop()`.
 Everything underneath — assembling the driver, running it at the right speed on its own thread, feeding
 the audio device — the AudioSystem handles for you. You work in audio terms; you never touch the
 machinery that makes the sound.
+
+**Three sound sources sit under those two verbs:**
+
+- **The Game Boy's sound chip** — chiptune routines registered as SM83 source or bytes and run at the
+  hardware clock, and a game's own resident sound driver hosted as a machine of its own
+  ([Hosting your own sound driver](#hosting-your-own-sound-driver)).
+- **The SNES's sound chip** — a 65816 sound driver hosted the way an SNES game carries one, and
+  **audio files played through the S-DSP's eight voices**: the engine converts the file to the chip's
+  sample format, and you cue it by voice, play mode and effect and change it as it plays
+  ([Audio files through the SNES's sound chip](#audio-files-through-the-sness-sound-chip)).
+- **PCM** — audio files decoded and streamed as they are, on a system with no machine in it.
+
+One `AudioLibrary`, one `AudioSystem` type, one cue grammar; the console you name at the system picks
+the hardware, and the `AudioEffect` vocabulary is realized by whichever hardware plays the sound.
 
 ```cpp
 #include "retropp/audio_system.h"
@@ -34,6 +49,7 @@ audio.play(song);
 - [Cueing: the `AudioSystem`](#cueing-the-audiosystem)
 - [Threads: what runs where](#threads-what-runs-where)
 - [Hosting your own sound driver](#hosting-your-own-sound-driver)
+- [Audio files through the SNES's sound chip](#audio-files-through-the-sness-sound-chip)
 - [Volume: the `AudioMixer`](#volume-the-audiomixer)
 - [Output: the `AudioSink`](#output-the-audiosink)
 - [Many audio systems at once](#many-audio-systems-at-once)
@@ -42,11 +58,15 @@ audio.play(song);
 
 ## The model
 
-- **A system is one backend — chiptune or PCM.** The first constructor argument is an `AudioKind`
-  (`Chiptune` or `Pcm`, no default), fixed for the system's life. A chiptune system runs a sound driver
-  on a small VM it owns; a PCM system decodes and streams an audio file (`.wav` / `.ogg` / `.flac` /
-  `.mp3`) and has no VM.
-  `play()` throws if you cue an id of the other kind, so a system only ever produces its own kind.
+- **A system is one kind — chiptune, PCM, or the console's audio unit.** The first constructor argument
+  is an `AudioKind` (`Chiptune`, `Pcm` or `HostDriven`, no default), fixed for the system's life. A
+  chiptune system runs a sound driver on a small VM it owns; a PCM system decodes and streams an audio
+  file (`.wav` / `.ogg` / `.flac` / `.mp3`, or a `.brr` sample) and has no VM; a `HostDriven` system hosts
+  the console's audio unit alone, for the game to drive through the system's `read` / `write` — on the
+  SNES, whose sound is a unit of its own ([The audio unit alone](vm/snes.md#the-audio-unit-alone)).
+  An audio file also plays on an SNES chiptune system, through the console's own sound chip
+  ([Audio files through the SNES's sound chip](#audio-files-through-the-sness-sound-chip)); any other
+  crossing of kinds throws at `play()`, so a system only ever produces its own kind.
 - **Register on the library, cue on a system.** Registration is program-wide and lives on the single
   `AudioLibrary` (`AudioLibrary::instance()`), not on an `AudioSystem`. `registerAudio(...)` hands the
   library a piece of audio and returns an `AudioId`; an `AudioSystem` only **cues** it (`play(id)` cues,
@@ -85,15 +105,16 @@ AudioId AudioLibrary::uploadAudio(std::span<const std::uint8_t> bytecode, AudioT
 AudioId AudioLibrary::registerAudio(ChiptunePath resourcePath, AudioType type, Isa isa,
                                     std::optional<AssetPolicy> policy = {});
 
-// The no-Isa overload takes a plain LiteralPath and registers a PCM audio file
-// (.wav/.ogg/.flac/.mp3), decoded and streamed on an AudioKind::Pcm system — no ISA, no driver.
+// The no-Isa overload takes a plain LiteralPath and registers an audio file (.wav/.ogg/.flac/.mp3, or a
+// .brr sample in the SNES sound chip's format) — no ISA, no driver. It streams on an AudioKind::Pcm
+// system and plays through the chip on an SNES chiptune system.
 AudioId AudioLibrary::registerAudio(LiteralPath resourcePath, AudioType type,
                                     std::optional<AssetPolicy> policy = {});
 ```
 
 Both mint an `AudioId` whose lifetime is the library's (the whole program). `uploadAudio` (bytes) is
 **always chiptune**; `registerAudio` by path infers the *kind* from the extension (`.asm` → chiptune,
-`.wav`/`.ogg`/`.flac`/`.mp3` → PCM), and the chiptune overload's `ChiptunePath` rejects a PCM extension
+`.wav`/`.ogg`/`.flac`/`.mp3`/`.brr` → an audio file), and the chiptune overload's `ChiptunePath` rejects an audio-file extension
 at compile time — so the kind is frozen into the entry with no way to mis-file it.
 
 - **`isa`** — the instruction set the chiptune driver is written for, **selected by you** at registration
@@ -121,9 +142,12 @@ is assembled in the `isa` you selected: `Isa::Sm83` uses the platform's own SM83
 backend assembles that console's instruction set. You never pick an assembler — the `isa` choice decides it.
 
 > **Audio files (PCM):** the same `registerAudio` name also accepts an **audio file** through its no-Isa
-> overload — a `.wav` / `.ogg` / `.flac` / `.mp3` path is recognized as PCM (by extension) and plays on an
-> `AudioKind::Pcm` system, which decodes and streams it instead of running a chiptune driver. A registered
-> sound is therefore either synthesized chiptune or a decoded file; construct the matching system kind to play it.
+> overload — a `.wav` / `.ogg` / `.flac` / `.mp3` path is recognized as PCM (by extension), as is a
+> `.brr` sample in the SNES sound chip's own format. It plays on an `AudioKind::Pcm` system, which decodes
+> and streams it instead of running a chiptune driver, and on an SNES chiptune system, which converts it
+> and plays it through the console's sound chip ([Audio files through the SNES's sound
+> chip](#audio-files-through-the-sness-sound-chip)). A registered sound is therefore either synthesized
+> chiptune or an audio file; construct a system that plays it.
 
 ### The Game Boy diagnostic tone
 
@@ -165,6 +189,11 @@ sources alike). Like `Music`, it is sustained.
 void AudioSystem::play(AudioId id, CueMode mode = CueMode::Layer);
                                       // start producing it as a NEW voice beside whatever is already sounding
 void AudioSystem::stop();             // silence the system: every voice stops; the output drains (the audio stays registered)
+
+// An audio file through the console's sound chip (an SNES chiptune system):
+void AudioSystem::play(AudioId id, const Cue& cue);                     // on the chip's voice the cue names, in its mode, with its effect
+void AudioSystem::effect(std::uint8_t voice, const AudioEffect& effect); // change the voice as it plays
+void AudioSystem::stop(std::uint8_t voice);                              // key that one voice off
 ```
 
 You cue an `AudioId` minted by the library. **Under the fixed `Layer` default, `play()` never cuts off
@@ -188,8 +217,10 @@ deviate is the explicit token at the call site, so the behavior is always visibl
 sfx.play(shot, retropp::CueMode::Retrigger);  // a repeat fire restarts the effect
 ```
 
-`stop()` is system-wide (one-shot `Sfx` voices also close themselves when their sound finishes);
-per-voice control arrives with the planned `play()` voice-handle surface.
+`stop()` is system-wide (one-shot `Sfx` voices also close themselves when their sound finishes). On an
+SNES system, `stop(voice)` keys one of the sound chip's voices off — the voices of [Audio files through
+the SNES's sound chip](#audio-files-through-the-sness-sound-chip); per-voice control of the other kinds
+arrives with the planned `play()` voice-handle surface.
 
 **A closing voice never clicks.** Cutting a waveform at amplitude is an audible click, so any close that
 isn't already at silence rides a short (~8 ms) release fade to zero: the voice a `Retrigger` replaces,
@@ -343,6 +374,23 @@ A driver with no state is `DriverId<NoSlots>` — pass no slots batch.
   for every image; `registerDriver(binding, verbs, slots)` takes a `HostedDriverBinding`, whose images are
   named one at a time — each either a literal path under the Embed / LoadFromPath policy, or inline bytes.
   An `.asm` image is assembled in the binding's `isa`; another extension is raw bytes.
+- **An image can be written for another processor than the binding's.** `DriverImagePath::isa` is
+  optional: unset, the image is in the binding's `isa`; named, the build bakes it with that instruction
+  set's assembler. An SNES driver is the case — 65816 code, and the SPC700 program it uploads to the
+  audio unit:
+
+  ```cpp
+  HostedDriverBinding binding{
+      .images    = {DriverImagePath{.base = 0x008000, .path = "drivers/init.asm"},
+                    DriverImagePath{.base = 0x00A000, .path = "drivers/sound.asm", .isa = Isa::Spc700}},
+      .tickEntry = 0x008400,
+      .init      = Instruction::call(0x008000, snes::A, /*fixedValue=*/0),
+      .isa       = Isa::Wdc65816,
+  };
+  ```
+
+  The scan reads it the way it reads the policy: a literal `Isa::…` token in the image's own initializer,
+  or the binding's.
 - **The policy is per image, and the build honours each one separately.** `DriverImagePath::policy` is
   optional; an image that names none resolves to `Embed`. The build scan reads each `DriverImagePath`
   initializer, so a binding can mix freely — the usual shape is an `Embed` boot image beside a
@@ -353,8 +401,9 @@ A driver with no state is `DriverId<NoSlots>` — pass no slots batch.
   [assets-and-embedding.md](assets-and-embedding.md#choosing-the-policy).
 - **Placement is declared, banked when a driver needs it.** Each image names a base; `gb::banked(bank, addr)`
   places a bank-qualified image and the VM bank-switches through the driver's own placed code, with the
-  mapper (`gb::Mbc3`) declared on the binding. The Vm-layer placement mechanics are in
-  [vm-and-routines.md](vm/vm-and-routines.md#hosting-a-resident-driver).
+  mapper (`gb::Mbc3`) declared on the binding. On the SNES a base is a 24-bit bus address and the mapper
+  is `snes::LoRom` or `snes::HiRom` ([snes.md](vm/snes.md#the-mappers)). The Vm-layer placement mechanics
+  are in [vm-and-routines.md](vm/vm-and-routines.md#hosting-a-resident-driver).
 - **A hosted driver rides the `vmDriver` mixer bus** (see [Volume](#volume-the-audiomixer)) — a straight
   amplifier over the whole driver voice, unity by default. The system's `stop()` does **not** close a
   resident driver (that would discard its song position); only `HostedDriver::close()` or the system's
@@ -407,6 +456,94 @@ mix arriving late at the device — neither can say which of a dozen hosted driv
 `examples/driver_hosting/` hosts two synthetic drivers — one of each family — behind one identical panel,
 every verb under a control. Both drivers zero their state RAM in `.init`, so pressing RESET after moving
 the DRIVER VOL fader drops the readout to 0 — the restart is visible rather than asserted.
+`examples/snes/driver/` is the same faceplate for one SNES driver on `AudioSystem::SNES`: its `.init`
+uploads an SPC700 program to the audio unit, pads play its three songs, a chirp and a fade, and the
+readout shows the song and the note the program reports through the ports.
+
+## Audio files through the SNES's sound chip
+
+The SNES makes no sound of its own: its sound chip, the S-DSP, is an eight-voice sample player, and every
+sound it makes is sample data the console gave it, keyed by a program. On an `AudioSystem::SNES` of the
+`Chiptune` kind a **registered audio file is such a sample**. Cue it with a `Cue` — the voice, and how it
+plays:
+
+```cpp
+#include "retropp/audio_effect.h"
+#include "retropp/audio_library.h"
+#include "retropp/audio_system.h"
+
+auto& lib = retropp::AudioLibrary::instance();
+const retropp::AudioId kick   = lib.registerAudio("audio/kick.wav", retropp::AudioType::Sfx);   // converted for the chip
+const retropp::AudioId square = lib.registerAudio("audio/square.brr", retropp::AudioType::Sfx); // already in its format
+
+retropp::AudioSystem::SNES music{retropp::AudioKind::Chiptune};
+
+music.play(kick);                                                   // voice 0, round until stopped, as recorded, full, in the middle
+music.play(kick, retropp::Cue{.voice = 3, .mode = retropp::PlayMode::once(),
+                              .effect = retropp::AudioEffect{.pitch = 1.5f, .volume = 0.8f, .pan = -0.25f}});
+music.play(kick, retropp::Cue{.voice = 4, .mode = retropp::PlayMode::repeat(120)});   // struck twice a second
+music.play(square, retropp::Cue{.voice = 1,
+                                .effect = retropp::AudioEffect{.echo = retropp::Echo{.delay = 0.128f, .feedback = 0.25f, .level = 0.5f}}});
+music.effect(1, retropp::AudioEffect{.pitch = 2.0f});              // the voice as it plays: an octave up, the echo gone
+music.stop(1);                                                      // that voice keys off
+music.stop();                                                       // every voice keys off
+```
+
+```cpp
+struct Cue {
+    std::uint8_t voice = 0;   // which of the chip's eight voices; a cue on a sounding voice takes it over
+    PlayMode     mode{};      // how long it plays, and whether it is struck again
+    AudioEffect  effect{};    // how it sounds
+};
+```
+
+**`PlayMode` is how a cued sample plays** — a decision made at the cue, never baked into the file, in the
+shape of the animation player's playback mode: `PlayMode::continuous()` (the default) plays the sample
+round from its start until the voice is stopped; `PlayMode::once()` plays one pass, then the voice keys
+itself off; `PlayMode::repeat(perMinute)` plays one pass and strikes the voice again at a tempo, in
+strikes a minute as a metronome counts (a repeat with no tempo throws `std::invalid_argument`). A pass is
+the file: a `.wav` / `.ogg` / `.flac` / `.mp3` is encoded to loop round from its start, and a `.brr` loops or ends as its own last
+block says. `stop(voice)` and `stop()` end a mode along with the sound.
+
+**`AudioEffect` is the effects vocabulary** (`retropp/audio_effect.h`): what a game asks of a sound, in
+audio terms, the same struct on every system — each system realizes the fields its hardware has and
+throws `std::invalid_argument` naming a field it cannot. Every field defaults to no change, so a cue names
+only what it changes, and a default-constructed `AudioEffect` is the identity:
+
+| Field | Meaning | On the S-DSP |
+|---|---|---|
+| `pitch` (1) | the playback rate: 1 as recorded, 2 an octave up, 0.5 an octave down | the voice's pitch register |
+| `volume` (1) | 0 silent to 1 full | the voice's left and right volume |
+| `pan` (0) | −1 the left side only, 0 the middle, 1 the right side only; the middle is full on both sides and panning takes from the far side | the two volumes set unequally |
+| `echo` | `Echo{.delay, .feedback, .level}`: a delayed copy fed back on itself — the time between repeats in seconds, how much of each repeat feeds the next (0 one repeat, 1 forever), how loud the repeats are | the chip's echo path, its filter passing the sound straight; the voice feeds the path |
+| `reverb` | `Reverb{.decay, .level}`: a diffuse tail — how long it hangs on (0 none, 1 the longest the hardware gives), how loud it is | the same path, short and fed back through a filter that darkens each pass |
+
+`echo` and `reverb` are optionals: absent is no effect, present the caller says what it sounds like. **The
+chip has one echo path**, so a cue engages one of the two (both together throw), and the most recent cue
+or `effect()` that engages it sets the path for every voice feeding it; a cue with neither takes its voice
+out of the path.
+
+**What the system does underneath.** The first audio file cued hosts the engine's own sound driver on the
+system — a 65816 init and tick with an SPC700 program the init uploads to the audio unit; you never name
+it, and a driver of your own hosts beside it through `host()` as before. Each file is loaded into audio
+RAM once per system: a `.wav` / `.ogg` / `.flac` / `.mp3` is decoded at the chip's rate (32 kHz), folded
+to mono and encoded into the chip's format, looping round from its start; a `.brr` is loaded as it is (a
+nonzero multiple of nine bytes whose last block carries END, or `std::invalid_argument`). The chip's directory holds **64 samples**, and
+the samples share audio RAM with the program and the echo buffer — about 63 KB without an echo; a file
+that does not fit throws `std::length_error` saying how much room was left. The echo buffer is placed at
+the top of audio RAM the first time a cue engages the path, sized for that delay (2 KB per 16 ms); the
+samples loaded after it stay below it, and a later cue asking a longer delay than the buffer holds is
+refused. A cue is performed at the driver's next tick, one frame of the console's clock after the call.
+
+The chip's eight voices come out of one mix, on the **`VMDriver`** bus. `stop()` keys every voice off and
+mutes the echo path's output (its buffer circulates a residue of the chip's integer arithmetic that would
+otherwise never reach zero); the next cue that engages the path sets its level again. The samples stay
+loaded. A system whose console has no sample player — a Game Boy system, a `Pcm` or `HostDriven` one —
+throws `std::logic_error` from all three verbs; a voice the chip does not have throws `std::out_of_range`.
+
+The `snes_sampler` example (`examples/snes/sampler/`) is this surface on a panel: eight voices, five
+samples, a play mode and tempo, pitch, volume, pan and an echo or a reverb per voice, each change of
+sound reaching the voice as it plays.
 
 ## Volume: the `AudioMixer`
 
@@ -504,11 +641,19 @@ AudioSystem(AudioKind     kind,
             unsigned      sampleRate = kAudioSampleRate /* 48 kHz */);
 ```
 
-The console is a `VMPlatform`. `GameBoy` / `GameBoyColor` are the backends available today; the defaults
-reproduce the faithful Game Boy Color baseline. Other consoles (SNES, Genesis, …) are drop-in backends —
-the same `AudioSystem` surface drives them, with that console's sound chip and assembler behind it.
-`platform` / `timing` configure the chiptune VM; a PCM system has no VM and ignores them, using only
-`sampleRate` as its decode target.
+The console is a `VMPlatform`: `GameBoy`, `GameBoyColor` or `Snes`, the same `AudioSystem` surface
+driving each with that console's sound chip and assembler behind it; the defaults are the Game Boy Color.
+The pre-bound types name the console once — `AudioSystem::GB`, `AudioSystem::GBC`, `AudioSystem::SNES`:
+
+```cpp
+AudioSystem::SNES music{AudioKind::Chiptune};   // VMPlatform::Snes, TimingProfile::Snes
+```
+
+On the SNES a hosted driver's step is one frame of the console's own clock, and its binding says
+`Isa::Wdc65816` ([Hosting your own sound driver](#hosting-your-own-sound-driver)); a registered audio file
+plays through the console's sound chip ([Audio files through the SNES's sound
+chip](#audio-files-through-the-sness-sound-chip)). `platform` / `timing` configure the chiptune VM; a PCM
+system has no VM and ignores them, using only `sampleRate` as its decode target.
 
 ## What works today / what's planned
 
@@ -524,7 +669,9 @@ the same `AudioSystem` surface drives them, with that console's sound chip and a
 | Concurrent voices per system (`play()` never preempts; voices mix into the system's output) | available |
 | PCM audio-pack backend (register + play a `.wav` / `.ogg` / `.flac` / `.mp3` file on an `AudioKind::Pcm` system) | available |
 | `AudioMixer` volume levels (Master + Music/Sfx/Vocals, perceptual slider, default unity) | available |
-| Per-voice gain + pan/balance (developer-owned, the `play()` voice handle) | planned |
+| Hosting a sound driver on the SNES (`AudioSystem::SNES`, `snes::LoRom` / `snes::HiRom`, an SPC700 image beside the 65816 code) | available |
+| Audio files through the SNES's sound chip (`play(id, Cue{.voice, .mode, .effect})`, `effect(voice, …)`, `stop(voice)`; `.brr` samples; `PlayMode` continuous / once / repeat at a tempo; the `AudioEffect` vocabulary — pitch, volume, pan, echo, reverb — realized on the S-DSP) | available |
+| Per-voice gain + pan/balance on the other kinds (developer-owned, the `play()` voice handle) | planned |
 | Anti-channel-stealing (splitting ONE driver's channel writes across parallel sound chips, so a driver whose own allocation steals channels stops stealing them) | planned |
 
 When a planned capability lands, the same registration/cue surface gains it without changing how you

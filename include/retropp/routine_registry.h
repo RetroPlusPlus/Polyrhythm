@@ -2,8 +2,11 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <string_view>
+
+#include "retropp/isa.h"  // Isa — the instruction set a placed routine's file name states
 
 // Routine delivery runtime state, the routine analog of asset_registry.h's EMBED table. Backs
 // path-based registration (registerRoutine(LiteralPath, …) / AudioLibrary::registerAudio(LiteralPath, …));
@@ -29,16 +32,29 @@ namespace retropp {
 
 namespace detail {
 
+// Where a routine assembled by an absolute assembler goes: the ISA its file name states, and the address
+// its bytes were assembled for.
+struct EmbeddedPlacement {
+    Isa           isa;
+    std::uint32_t origin;
+};
+
 // Record that a logical routine path resolves to embedded bytecode (a constexpr array valid for the
 // program lifetime). Called before main() from the auto-generated per-target registry TU
 // (retropp_autoembed, extended to routines) — emitted ONLY for routines with a scanned
-// call site, so an unused routine is never recorded here.
-void registerEmbeddedRoutine(std::string_view path, const std::uint8_t* bytes, std::size_t size);
+// call site, so an unused routine is never recorded here. A `.asm` whose name states an ISA
+// (`<name>.65816.asm`, `<name>.spc700.asm`) is recorded with its placement; a bare `.asm` is SM83,
+// lands wherever the arena has room, and carries none.
+void registerEmbeddedRoutine(std::string_view path, const std::uint8_t* bytes, std::size_t size,
+                             std::optional<EmbeddedPlacement> placement = std::nullopt);
 
 // The embedded bytecode registered for `path`, or an empty span if none was baked for it. Path-based
 // registration under an Embed policy reports an empty span through asset_registry.h's warnEmbedNotBaked
 // and then reads the .asm from assetRoot(), so a literal path still resolves while the bake is missing.
 [[nodiscard]] std::span<const std::uint8_t> findEmbeddedRoutine(std::string_view path);
+
+// The placement recorded for `path`, or nothing when the routine was recorded without one (or not at all).
+[[nodiscard]] std::optional<EmbeddedPlacement> findEmbeddedRoutinePlacement(std::string_view path);
 
 }  // namespace detail
 }  // namespace retropp

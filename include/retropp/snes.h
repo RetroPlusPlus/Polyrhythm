@@ -1,21 +1,20 @@
 #pragma once
 
-// SNES / 65816 controller vocabulary — the platform-specific half of the VM host surface.
+// The SNES's vocabulary — the platform-specific half of the VM host surface.
 //
-// vm.h is system-agnostic; this header supplies the SNES's controller vocabulary as the value a game
-// hands vm.buttons(). The console has two controller ports, so this header names both. A game binds its
-// input to the Button actions below and reads them each tick with held(), exactly as it does for the Game
-// Boy family (gb.h).
-//
-// The SNES's routine and register vocabulary — the 65816 register set, the memory map — is not here: a
-// hosted cartridge runs its own code, and naming the places inside it is a later capability. What this
-// header ships is the pad.
+// vm.h is system-agnostic; this header supplies what a binding, a declaration or an ActionMap names on
+// this console: the pad and its two ports, the 65816 register file as Location constants, the machine's
+// memories as MemoryRegion constants, the helpers that name a memory the bus cannot reach, a routine's
+// return, and the cartridge mappers. `retropp/gb.h` is the Game Boy family's.
 
 #include <cstdint>
 #include <optional>
 
+#include "retropp/driver_binding.h"  // Mapper — the cartridge mappers are constants of it
 #include "retropp/guest_buttons.h"  // GuestButtons — the opaque word vm.buttons() takes
 #include "retropp/input.h"          // ActionId + InputState — the Button vocabulary is an Actions enum
+#include "retropp/location.h"       // Location — a register a binding names
+#include "retropp/memory_region.h"  // MemoryRegion — the machine's memories are constants of it
 
 namespace retropp::snes {
 
@@ -114,5 +113,125 @@ struct Ports {
         .r      = down(Button::R),
     };
 }
+
+// ── Registers ───────────────────────────────────────────────────────────────────────────────────
+
+// The 65816 register file, as Location constants a binding names. The enumerator order IS the backend's
+// register id and fixes each register's width: the five 8-bit registers first, then the six 16-bit ones.
+enum class Reg : std::uint16_t { A, B, P, DB, PB, C, X, Y, D, S, PC };
+
+// The readable spelling at a binding site:
+//
+//   RoutineBinding{.inputs = {snes::A, snes::X}, .output = snes::A}
+//
+// A and B are the accumulator's low and high bytes, and C is the whole 16-bit accumulator. X and Y are 16
+// bits wide whatever the index-width flag says; in 8-bit index mode the chip uses the low byte, so a
+// binding that carries a byte in one carries it as a std::uint16_t.
+inline constexpr Location A  = Location::reg(static_cast<std::uint16_t>(Reg::A));   // accumulator, low byte
+inline constexpr Location B  = Location::reg(static_cast<std::uint16_t>(Reg::B));   // accumulator, high byte
+inline constexpr Location P  = Location::reg(static_cast<std::uint16_t>(Reg::P));   // the status byte
+inline constexpr Location DB = Location::reg(static_cast<std::uint16_t>(Reg::DB));  // the data bank
+inline constexpr Location PB = Location::reg(static_cast<std::uint16_t>(Reg::PB));  // the program bank
+inline constexpr Location C  = Location::reg(static_cast<std::uint16_t>(Reg::C));   // the whole accumulator
+inline constexpr Location X  = Location::reg(static_cast<std::uint16_t>(Reg::X));   // index register X
+inline constexpr Location Y  = Location::reg(static_cast<std::uint16_t>(Reg::Y));   // index register Y
+inline constexpr Location D  = Location::reg(static_cast<std::uint16_t>(Reg::D));   // the direct page
+inline constexpr Location S  = Location::reg(static_cast<std::uint16_t>(Reg::S));   // the stack pointer
+inline constexpr Location PC = Location::reg(static_cast<std::uint16_t>(Reg::PC));  // the program counter
+
+// ── A routine's return ──────────────────────────────────────────────────────────────────────────
+
+// A routine a JSL enters and an RTL leaves. Wraps the entry address a bindRoutine, an escape's `.at` or
+// an Instruction::call names; a bare address is a routine a JSR enters and an RTS leaves. The engine
+// pushes the landing a JSL would and, for a replaced routine, stands an RTL at the entry.
+//
+//   auto decode = machine.bindRoutine<std::uint16_t(std::uint16_t)>(snes::rtl(0x018000),
+//                                                                  {.inputs = {snes::C}, .output = snes::C});
+[[nodiscard]] constexpr std::uint32_t rtl(std::uint32_t entry) noexcept { return entry | 0x80000000u; }
+
+// ── The machine's memories ──────────────────────────────────────────────────────────────────────
+
+// Where a value lives on this console, as the 32-bit address a MemoryRegion, a Location or a routine's
+// entry carries. A plain 24-bit bus address names work RAM, the cartridge image or its save the way the
+// console's own map reaches them; a memory the bus cannot name is reached by name through one of the
+// helpers below, which folds which memory into the top byte. The backend decodes it. Every alias of a
+// byte names that byte: `0x000010`, `0x7E0010` and `0xBF0010` are one cell of work RAM.
+enum class Space : std::uint8_t {
+    Bus         = 0x00,  // the 65816's own bus: work RAM, the cartridge, its save
+    VideoRam    = 0x01,  // the picture chip's 64 KB, a byte address
+    Palette     = 0x02,  // CGRAM, 512 bytes
+    Sprites     = 0x03,  // OAM, 544 bytes
+    AudioRam    = 0x04,  // the audio unit's 64 KB
+    AudioPort   = 0x05,  // the four communication ports, the console's side of the audio unit
+    DspRegister = 0x06,  // the sound chip's 128 registers, read as they stand
+};
+
+// Byte `at` of `space`: the space in the top byte, the offset in the 24 bits below it.
+[[nodiscard]] constexpr std::uint32_t inSpace(Space space, std::uint32_t at) noexcept {
+    return (static_cast<std::uint32_t>(space) << 24) | (at & 0x00FFFFFFu);
+}
+
+// Byte `at` of each memory the bus cannot name — the `.at` of a place inside one:
+//
+//   MemoryRegion{.at = snes::videoRam(0x2000), .size = 32}  // one 4 bpp tile, 0x2000 bytes in
+//
+// Each is written the way the chip reads it: no port address steps and no latch moves.
+[[nodiscard]] constexpr std::uint32_t videoRam(std::uint16_t at) noexcept { return inSpace(Space::VideoRam, at); }
+[[nodiscard]] constexpr std::uint32_t palette(std::uint16_t at)  noexcept { return inSpace(Space::Palette, at); }
+[[nodiscard]] constexpr std::uint32_t sprites(std::uint16_t at)  noexcept { return inSpace(Space::Sprites, at); }
+[[nodiscard]] constexpr std::uint32_t audioRam(std::uint16_t at) noexcept { return inSpace(Space::AudioRam, at); }
+
+// The console's side of the audio unit, named by index — the audio unit has no whole memory here beyond
+// its RAM, so these name one port or one register at a time:
+//
+//   MemoryRegion{.at = snes::audioPort(0), .size = 1}   // comm port zero, the console's side
+//   MemoryRegion{.at = snes::dspRegister(0x4C), .size = 1}  // KON, the sound chip's key-on register
+//
+// A comm port (0-3) is asymmetric, exactly as the console reaches it: a write to snes::audioPort(n) sends
+// a byte the sound CPU reads, and a read of it receives the byte the sound CPU last sent — two separate
+// latches, so a value written is not the value read back. A DSP register (0-127) reads as it stands, and a
+// write to it is the sound CPU's own write to the chip — key-on, volume, pitch, the echo — made by the
+// game directly.
+[[nodiscard]] constexpr std::uint32_t audioPort(std::uint8_t index)   noexcept { return inSpace(Space::AudioPort, index); }
+[[nodiscard]] constexpr std::uint32_t dspRegister(std::uint8_t index) noexcept { return inSpace(Space::DspRegister, index); }
+
+// Each memory as a MemoryRegion: the same value a game fills in for its own content, filled in here for
+// the hardware. Read or write one straight away —
+//
+//   const std::vector<std::uint8_t> colors = vm.read(snes::Palette);
+//
+// — or name a piece of one by building a MemoryRegion at that address instead.
+//
+// These are the memories that are the same size in every console, so they can be constants. The
+// cartridge and its save are not among them: their sizes are the image's, so a place inside either is a
+// plain bus address (0x008000, 0x700000).
+//
+// `count` is 1 on all of them — a whole memory is the degenerate case of an array with one entry — so
+// read(…) with no index hands back the entire memory.
+//
+// A register is a place too, at its bus address ($004210, or the same offset in any system bank): a
+// read answers the byte the program's own read would, with nothing moved — the NMI flag a read of $4210
+// clears stays set. A register takes no write through a place; a program writes one through a routine.
+inline constexpr MemoryRegion WorkRam  = {.at = 0x7E0000, .size = 0x20000};  // 128 KB, banks $7E-$7F
+inline constexpr MemoryRegion VideoRam = {.at = videoRam(0), .size = 0x10000};  // tiles and maps, by byte
+inline constexpr MemoryRegion Palette  = {.at = palette(0), .size = 0x200};  // the 256 palette words
+inline constexpr MemoryRegion Sprites  = {.at = sprites(0), .size = 0x220};  // 128 entries + their high bits
+inline constexpr MemoryRegion AudioRam = {.at = audioRam(0), .size = 0x10000};  // the audio unit's 64 KB
+
+// ── The mappers ─────────────────────────────────────────────────────────────────────────────────
+
+// How the image a hosted driver runs in is mapped onto the bus, as the header's own map-mode byte names
+// it. Declare one in a binding's `.mapper`; each image's `.base` is then a bus address under that map, and
+// the core writes the header at the map's own site and sizes the image to hold the highest placed byte:
+//
+//   HostedDriverBinding{.images = {DriverImagePath{.base = 0xC10000, .path = "…/samples.bin"}, …},
+//                       .mapper = snes::HiRom, …, .isa = Isa::Wdc65816}
+//
+// LoRom reads each bank's upper 32 KB ($8000-$FFFF) and puts the header at $00:FFC0 (image offset
+// $7FC0); HiRom reads whole 64 KB banks at $C0-$FF, their upper halves mirrored in $00-$3F, and puts the
+// header at image offset $FFC0. A driver that fits one LoROM bank ($00:8000-$00:FFAF) leaves `.mapper` at
+// its default, none.
+inline constexpr Mapper LoRom = Mapper::fromId(0x20);
+inline constexpr Mapper HiRom = Mapper::fromId(0x21);
 
 }  // namespace retropp::snes

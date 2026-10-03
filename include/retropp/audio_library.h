@@ -70,7 +70,11 @@ enum class AudioType { Music, Sfx, Vocals, VMDriver };
 // Driver is a hosted RESIDENT sound driver (the game's own engine, run as a long-lived addressable machine
 // on the VM — retropp/driver_binding.h). Registered through uploadDriver / registerDriver (below), it is
 // AudioType::VMDriver by construction and hosted through AudioSystem::host(), never play()'d.
-enum class AudioKind { Chiptune, Pcm, Driver };
+//
+// HostDriven is an audio system's kind, never a registration's: the console's audio unit alone, with no
+// console CPU built around it, driven by the game. The SNES has one — its sound CPU and sound chip are a
+// unit of their own beside the console — so `AudioSystem::SNES{AudioKind::HostDriven}` hosts that unit.
+enum class AudioKind { Chiptune, Pcm, Driver, HostDriven };
 
 // An opaque handle to a registered audio, minted by the AudioLibrary and cued with AudioSystem::play().
 // Its lifetime is the library's (the whole program) — the AtlasId / PaletteId value-handle contract.
@@ -85,12 +89,14 @@ namespace detail {
 }  // namespace detail
 
 // Infer the audio KIND from a path's extension: `.asm` (ISA assembly source) is a Chiptune; an audio
-// container (`.wav` / `.ogg` / `.flac` / `.mp3`) is PCM. Anything else is taken as Chiptune. Used when
-// registering by path; uploadAudio (bytecode) is always a chiptune. constexpr: the one predicate drives
-// both the runtime inference and the compile-time ChiptunePath check.
+// container (`.wav` / `.ogg` / `.flac` / `.mp3`), or a `.brr` sample in the SNES sound chip's own format,
+// is PCM. Anything else is taken as Chiptune. Used when registering by path; uploadAudio (bytecode) is
+// always a chiptune. constexpr: the one predicate drives both the runtime inference and the compile-time
+// ChiptunePath check.
 [[nodiscard]] constexpr AudioKind audioKindForExtension(std::string_view path) noexcept {
     if (detail::endsWith(path, ".wav") || detail::endsWith(path, ".ogg") ||
-        detail::endsWith(path, ".flac") || detail::endsWith(path, ".mp3")) {
+        detail::endsWith(path, ".flac") || detail::endsWith(path, ".mp3") ||
+        detail::endsWith(path, ".brr")) {
         return AudioKind::Pcm;
     }
     return AudioKind::Chiptune;  // `.asm` and anything else
@@ -109,8 +115,8 @@ public:
     consteval ChiptunePath(const char (&literal)[N])  // NOLINT(google-explicit-constructor)
         : path_(literal) {
         if (audioKindForExtension(path_.view()) == AudioKind::Pcm) {
-            throw "registerAudio with an Isa registers a chiptune; a .wav/.ogg/.mp3/.flac audio file must "
-                  "use the no-Isa registerAudio overload";
+            throw "registerAudio with an Isa registers a chiptune; a .wav/.ogg/.mp3/.flac/.brr audio file "
+                  "must use the no-Isa registerAudio overload";
         }
     }
 
@@ -244,11 +250,15 @@ struct DriverVerbs {
 // `.asm` path assembles in the driver's ISA at host(); any other extension is read as raw image bytes.
 // `policy` selects Embed (baked) or LoadFromPath (ships beside the binary, read at runtime — the posture
 // for copyright-derived driver content, which is never embedded). Unset defaults to Embed (a small image),
-// overridden per image by naming a policy.
+// overridden per image by naming a policy. `isa` is the same shape for the instruction set: unset, the
+// image is written in the binding's own `isa`; named, it is written in that one — the SPC700 program a
+// 65816 driver uploads to the SNES's audio unit, beside the 65816 code that uploads it — and the build
+// bakes an Embed image with that instruction set's assembler.
 struct DriverImagePath {
     std::uint32_t              base = 0;
     LiteralPath                path;
     std::optional<AssetPolicy> policy{};
+    std::optional<Isa>         isa{};
 };
 
 // One image of a hosted-driver registration, given either way: a per-image PATH (above — the build resolves

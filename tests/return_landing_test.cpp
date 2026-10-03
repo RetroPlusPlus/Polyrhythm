@@ -21,7 +21,7 @@ constexpr std::uint8_t  kJrSelf  = 0x18;    // JR $ — the marker the run parks
 // A routine that returns immediately: the call's RET pops the landing address and the run stops.
 std::uint32_t placeReturnOnly(SameBoyBackend& backend) {
     static constexpr std::array<std::uint8_t, 1> kRet{0xC9};
-    return backend.placeRoutine(std::span<const std::uint8_t>(kRet));
+    return backend.placeRoutine(std::span<const std::uint8_t>(kRet), std::nullopt);
 }
 
 TEST(ReturnLanding, CallRestoresTheBytesItFound) {

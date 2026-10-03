@@ -188,7 +188,12 @@ void SameBoyBackend::advanceClock(std::uint64_t cycles) {
     machine_.setRegisters(before);
 }
 
-std::uint32_t SameBoyBackend::placeRoutine(std::span<const std::uint8_t> bytes) {
+std::uint32_t SameBoyBackend::placeRoutine(std::span<const std::uint8_t> bytes,
+                                           std::optional<std::uint32_t> origin) {
+    if (origin) {
+        throw std::invalid_argument(
+            "this core places a routine where its arena has room, not at an address");
+    }
     if (romHosted_) {
         throw std::logic_error(
             "this VM hosts a game's own cartridge, which has no arena to place a routine into; call "

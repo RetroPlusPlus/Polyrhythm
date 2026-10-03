@@ -13,6 +13,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <stdexcept>
 #include <functional>
 #include <optional>
 #include <span>
@@ -105,6 +106,11 @@ public:
     // Placed routines stay placed (their bytes live in the code space, untouched by reset).
     virtual void reset() = 0;
 
+    // The machine as its audio unit alone: the sound CPU, its RAM and the sound chip, with no console
+    // CPU built around them. The audio unit's places, its clock and enableAudio are the surface; a verb
+    // that needs the console refuses. A core whose audio is not a unit of its own refuses here.
+    virtual void hostAudioUnit() { throw std::logic_error("this core's audio is not a unit of its own"); }
+
     // Advance the machine's free-running clock by `cycles` CPU cycles without executing a routine, so
     // time-based hardware registers (e.g. the Game Boy's rDIV divider) keep ticking between calls as
     // on always-running hardware. Must not disturb routine-visible state (registers/RAM the next call
@@ -122,9 +128,16 @@ public:
     [[nodiscard]] virtual std::optional<MachineClock> clock() const { return std::nullopt; }
 
     // Inject a routine's extracted bytes into the code space and return the absolute entry address of
-    // its first byte. Throws (std::runtime_error) if the backend's code arena cannot hold it, or
-    // (std::logic_error) if this machine hosts a game's own cartridge — that image has no arena.
-    virtual std::uint32_t placeRoutine(std::span<const std::uint8_t> bytes) = 0;
+    // its first byte. `origin` is the address the bytes were assembled for, when the core's assembler
+    // is absolute: such bytes are correct there and nowhere else, so they land there and the core's
+    // image grows to hold them. With no origin they land wherever the arena has room.
+    //
+    // Throws (std::runtime_error) if the backend's code arena cannot hold it; (std::invalid_argument)
+    // for an origin the core's image cannot hold, one overlapping bytes already placed, or any origin at
+    // all on a core whose routines land where its arena has room; (std::logic_error) if this machine
+    // hosts a game's own cartridge — that image has no arena.
+    virtual std::uint32_t placeRoutine(std::span<const std::uint8_t> bytes,
+                                       std::optional<std::uint32_t> origin) = 0;
 
     // Load a whole cartridge image the game supplies and reset the machine, so the image's bytes are
     // addressable. The backend parses the image's own header; the engine never reads a ROM byte and

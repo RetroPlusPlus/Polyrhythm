@@ -791,11 +791,20 @@ endfunction()
 # retropp_finalize_assets). The convention for NEW examples; existing flat demos keep the shared pile
 # (retiring the shared pile is a separate cleanup).
 # DIRECTORY names a grouping subdirectory when several examples for one system share a folder (e.g.
-# snes/player); it defaults to the example's own name, so a flat example passes nothing.
+# snes/player); it defaults to the example's own name, so a flat example passes nothing. The build tree
+# keeps the grouping: examples/snes/player builds into build/examples/snes/player_demo, and a flat
+# example into build/examples/<name>_demo.
 function(retropp_add_example _name)
     cmake_parse_arguments(PARSE_ARGV 1 _retropp_ex "" "DIRECTORY" "")
     if(NOT _retropp_ex_DIRECTORY)
         set(_retropp_ex_DIRECTORY "${_name}")
+    endif()
+    get_filename_component(_retropp_ex_group "${_retropp_ex_DIRECTORY}" DIRECTORY)
+    get_filename_component(_retropp_ex_leaf "${_retropp_ex_DIRECTORY}" NAME)
+    if(_retropp_ex_group)
+        set(_retropp_ex_out "${CMAKE_BINARY_DIR}/examples/${_retropp_ex_group}/${_retropp_ex_leaf}_demo")
+    else()
+        set(_retropp_ex_out "${CMAKE_BINARY_DIR}/examples/${_name}_demo")
     endif()
     file(GLOB _retropp_ex_srcs CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/examples/${_retropp_ex_DIRECTORY}/*.cpp")
     add_executable(retropp-${_name}-demo ${_retropp_ex_srcs})
@@ -804,7 +813,7 @@ function(retropp_add_example _name)
     retropp_set_warnings(retropp-${_name}-demo)
     retropp_autocompile_shaders(retropp-${_name}-demo)
     set_target_properties(retropp-${_name}-demo PROPERTIES
-        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/examples/${_name}_demo")
+        RUNTIME_OUTPUT_DIRECTORY "${_retropp_ex_out}")
 endfunction()
 
 # Asset embed/copy — driven ENTIRELY by the code. The asset POLICY in a loadAtlas() /
@@ -864,6 +873,40 @@ function(retropp_scan_driver_images _text _out_embed _out_copy)
     set(${_out_copy} "${_copy}" PARENT_SCOPE)
 endfunction()
 
+# The instruction set each `.asm` driver image is written in, for the routine bake: set as
+# `_isa_of_<the logical path as a C identifier>` in the caller's scope. An image's own `.isa` when it names
+# one; otherwise the `.isa` of the HostedDriverBinding statement it is declared in — read with the images
+# taken out, so an image's token never stands for the binding's; otherwise SM83, the binding's default. As
+# with the policy, only a literal `Isa::…` token is seen.
+function(retropp_scan_driver_image_isas _text)
+    string(REGEX MATCHALL "HostedDriverBinding[^;]*;" _bindings "${_text}")
+    foreach(_binding IN LISTS _bindings)
+        string(REGEX REPLACE "DriverImagePath[ \t\r\n]*\\{[^{}]*\\}" "" _root "${_binding}")
+        if(_root MATCHES "Isa::Wdc65816")
+            set(_root_isa "Wdc65816")
+        elseif(_root MATCHES "Isa::Spc700")
+            set(_root_isa "Spc700")
+        else()
+            set(_root_isa "Sm83")
+        endif()
+        string(REGEX MATCHALL "DriverImagePath[ \t\r\n]*\\{[^{}]*\\}" _images "${_binding}")
+        foreach(_image IN LISTS _images)
+            string(REGEX MATCH "\\.path[ \t\r\n]*=[ \t\r\n]*\"([^\"]*)\"" _matched "${_image}")
+            if(NOT _matched)
+                continue()
+            endif()
+            set(_logical "${CMAKE_MATCH_1}")
+            if(_image MATCHES "\\.isa[ \t\r\n]*=[ \t\r\n]*Isa::(Sm83|Wdc65816|Spc700)")
+                set(_isa "${CMAKE_MATCH_1}")
+            else()
+                set(_isa "${_root_isa}")
+            endif()
+            string(MAKE_C_IDENTIFIER "${_logical}" _key)
+            set(_isa_of_${_key} "${_isa}" PARENT_SCOPE)
+        endforeach()
+    endforeach()
+endfunction()
+
 function(retropp_autoembed_assets _target)
     get_target_property(_srcs ${_target} SOURCES)
     if(NOT _srcs)
@@ -900,11 +943,12 @@ function(retropp_autoembed_assets _target)
                     continue()
                 endif()
                 string(REGEX REPLACE "\"" "" _logical "${_pathlit}")
-                # registerAudio carries BOTH chiptune (.asm — the routine scan assembles those) and PCM
-                # audio-pack files (.wav/.ogg/...) — a file-bytes asset baked/copied like a PNG, here. Skip
-                # its .asm calls so only the PCM containers are handled on the asset side.
+                # registerAudio carries BOTH chiptune (.asm — the routine scan assembles those) and audio
+                # files (.wav/.ogg/..., and a .brr sample in the SNES sound chip's format) — a file-bytes
+                # asset baked/copied like a PNG, here. Skip its .asm calls so only the audio files are
+                # handled on the asset side.
                 if(_loader STREQUAL "registerAudio" AND
-                   NOT _logical MATCHES "\\.(wav|ogg|flac|mp3)$")
+                   NOT _logical MATCHES "\\.(wav|ogg|flac|mp3|brr)$")
                     continue()
                 endif()
                 if(_call MATCHES "AssetPolicy::Embed")
@@ -1029,14 +1073,19 @@ endfunction()
 # (per-call AssetPolicy:: token > per-type default Embed), and acts on it per routine:
 #   * LoadFromPath → COPY the .asm beside the binary (preserving its logical path), so the runtime
 #                    assembles it from assetRoot() — the same copy the asset scan does for a file.
-#   * Embed        → assemble the .asm to BYTECODE AT COMPILE TIME (the constexpr SM83 assembler) and
-#                    register the bytes in the routine registry; ONLY the bytecode ships, the .asm never
-#                    does. This is the producer for retropp::detail::findEmbeddedRoutine.
+#   * Embed        → assemble the .asm to BYTECODE AT COMPILE TIME and register the bytes in the routine
+#                    registry; ONLY the bytecode ships, the .asm never does. This is the producer for
+#                    retropp::detail::findEmbeddedRoutine. Which assembler is the call's own ISA token
+#                    (`Isa::Wdc65816` in a RoutineBinding, a registerAudio's Isa argument; for a driver
+#                    image, its own `.isa` or its HostedDriverBinding's), read from the source text
+#                    exactly as the policy token is: a call naming none is SM83, assembled by the
+#                    engine's constexpr assembler in the generated header; a call naming
+#                    Snaggletooth's ISA runs its assembler CLI at build
+#                    time (cmake/bake_snaggletooth_routine.cmake), which also records where the bytes go.
 # Only `.asm` paths are routines; a PCM container path (.wav/.ogg) is left to the asset side / its future
-# arm. Only the SM83 ISA exists in v1 (a routine is GameBoy-family) — a future ISA adds its assembler +
-# symbols to the generated registry TU here. Conservative like the asset scan: a missing file is skipped
-# (Embed → runtime disk read; LoadFromPath → the consumer's to ship), comments are stripped before
-# matching, and a LoadFromPath routine is NEVER baked.
+# arm. Conservative like the asset scan: a missing file is skipped (Embed → runtime disk read;
+# LoadFromPath → the consumer's to ship), comments are stripped before matching, and a LoadFromPath
+# routine is NEVER baked.
 function(retropp_autoembed_routines _target)
     get_target_property(_srcs ${_target} SOURCES)
     if(NOT _srcs)
@@ -1080,6 +1129,15 @@ function(retropp_autoembed_routines _target)
                 else()
                     set(_eff "Embed")   # per-type default for a routine / chiptune driver
                 endif()
+                # The ISA the call names, kept per logical path for the bake below; none named is SM83.
+                string(MAKE_C_IDENTIFIER "${_logical}" _key)
+                if(_call MATCHES "Isa::Wdc65816")
+                    set(_isa_of_${_key} "Wdc65816")
+                elseif(_call MATCHES "Isa::Spc700")
+                    set(_isa_of_${_key} "Spc700")
+                else()
+                    set(_isa_of_${_key} "Sm83")
+                endif()
                 if(_eff STREQUAL "Embed")
                     list(APPEND _embed_paths "${_logical}")
                 else()
@@ -1088,10 +1146,12 @@ function(retropp_autoembed_routines _target)
             endforeach()
         endforeach()
         # Driver images (registerDriver): an `.asm` image assembles to bytecode, so it belongs here beside
-        # the other routines. Any other extension is raw bytes and is the asset scan's.
+        # the other routines, in the instruction set it is written in. Any other extension is raw bytes and
+        # is the asset scan's.
         set(_drv_embed "")
         set(_drv_copy "")
         retropp_scan_driver_images("${_t}" _drv_embed _drv_copy)
+        retropp_scan_driver_image_isas("${_t}")
         foreach(_logical IN LISTS _drv_embed)
             if(_logical MATCHES "\\.asm$")
                 list(APPEND _embed_paths "${_logical}")
@@ -1132,6 +1192,8 @@ function(retropp_autoembed_routines _target)
     file(MAKE_DIRECTORY "${_gen_dir}/generated")
     set(_reg_includes "")
     set(_reg_body "")
+    set(_gen_headers "")
+    set(_layout_prev "")
     set(_idx 0)
     # Per-target symbol names, for the reason retropp_autoembed_assets states: these arrays are external,
     # and a library and an executable that both carry baked routines land in one program.
@@ -1144,11 +1206,50 @@ function(retropp_autoembed_routines _target)
             continue()
         endif()
         set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_abs}")
+        set(_sym "retropp_routine_${_ident}_${_idx}")
+        string(MAKE_C_IDENTIFIER "${_logical}" _key)
+        set(_isa "${_isa_of_${_key}}")
+        if(NOT _isa)
+            set(_isa "Sm83")  # a driver image declared outside a HostedDriverBinding statement names none
+        endif()
+        if(NOT _isa STREQUAL "Sm83")
+            # Snaggletooth's assembler, at build time: the CLI assembles the source, and the bake script
+            # writes the header with the bytes, their origin and the ISA. Each bake reads the layout the
+            # one before it wrote, so a target's routines without an ORG of their own are laid out in
+            # turn from the arena's start and never overlap.
+            if(_isa STREQUAL "Wdc65816")
+                set(_cli cpu65816_asm)
+            else()
+                set(_cli spc700_asm)
+            endif()
+            set(_header "${_gen_dir}/generated/routine_${_idx}.h")
+            set(_layout "${_gen_dir}/generated/layout_${_idx}.txt")
+            add_custom_command(
+                OUTPUT "${_header}" "${_layout}"
+                COMMAND ${CMAKE_COMMAND}
+                        -DASSEMBLER=$<TARGET_FILE:${_cli}> -DSOURCE=${_abs} -DLOGICAL=${_logical}
+                        -DSYMBOL=${_sym} -DISA=${_isa} -DHEADER=${_header}
+                        -DLAYOUT_IN=${_layout_prev} -DLAYOUT_OUT=${_layout}
+                        -P "${RETROPP_ENGINE_SOURCE_DIR}/cmake/bake_snaggletooth_routine.cmake"
+                DEPENDS "${_abs}" ${_cli} ${_layout_prev}
+                        "${RETROPP_ENGINE_SOURCE_DIR}/cmake/bake_snaggletooth_routine.cmake"
+                COMMENT "Assembling Embed routine '${_logical}' (${_isa}) for ${_target}"
+                VERBATIM)
+            list(APPEND _gen_headers "${_header}")
+            set(_layout_prev "${_layout}")
+            string(APPEND _reg_includes "#include \"generated/routine_${_idx}.h\"\n")
+            string(APPEND _reg_body
+                "    retropp::detail::registerEmbeddedRoutine(\"${_logical}\", "
+                "retropp::generated::${_sym}.data(), retropp::generated::${_sym}.size(), "
+                "retropp::detail::EmbeddedPlacement{.isa = retropp::generated::${_sym}_isa, "
+                ".origin = retropp::generated::${_sym}_origin});\n")
+            math(EXPR _idx "${_idx} + 1")
+            continue()
+        endif()
         # The .asm SOURCE as a constexpr char[] (each byte cast, so a high-bit UTF-8 byte in a comment
         # does not narrow), exactly as the engine's own preset-source codegen does.
         file(READ "${_abs}" _hex HEX)
         string(REGEX REPLACE "(..)" "char(0x\\1)," _bytes "${_hex}")
-        set(_sym "retropp_routine_${_ident}_${_idx}")
         file(WRITE "${_gen_dir}/generated/routine_${_idx}.h"
             "// AUTO-GENERATED by retropp_autoembed_routines for '${_logical}'. DO NOT EDIT.\n"
             "#pragma once\n#include <array>\n#include <cstddef>\n#include <cstdint>\n#include <string_view>\n"
@@ -1192,6 +1293,11 @@ function(retropp_autoembed_routines _target)
         "}  // namespace\n")
     retropp_anchor_registry(${_target} "${_registry}" routines)
     target_sources(${_target} PRIVATE "${_registry}")
+    if(_gen_headers)
+        # The registry TU includes headers the bake writes at build time, so it is compiled after them.
+        set_source_files_properties("${_registry}" PROPERTIES OBJECT_DEPENDS "${_gen_headers}")
+        target_sources(${_target} PRIVATE ${_gen_headers})
+    endif()
     # The generated TU compiles the engine's INTERNAL constexpr assembler (src/vm/...) over the source —
     # the engine source root resolves the `src/...` includes; _gen_dir resolves the per-routine generated
     # headers. RETROPP_ENGINE_SOURCE_DIR points at the engine tree even when a consumer is the top-level
@@ -1345,9 +1451,12 @@ add_library(retroppengine STATIC
     src/audio/audio_library_pcm.cpp
     src/audio/pcm_decode.cpp
     src/audio/gb_audio.cpp
+    src/audio/snes/brr.cpp
+    src/audio/snes/default_driver.cpp
     src/vm/gameboy/sameboy_machine.cpp
     src/vm/gameboy/sameboy_backend.cpp
     src/vm/snes/snes_backend.cpp
+    src/vm/snes/snes_image.cpp
     src/vm/gameboy/gb_routines.cpp
     src/vm/vm.cpp
     src/vm/vm_runner.cpp
@@ -1402,6 +1511,9 @@ target_link_libraries(retroppengine PRIVATE retropp-net)
 # the only engine code that touches it. No public header exposes a GB_* symbol, so it stays an
 # implementation detail consumers link transitively but never see.
 target_link_libraries(retroppengine PRIVATE retropp-sameboy snaggletooth::snaggletooth)
+# PRIVATE: the SNES backend assembles a routine's 65816 source through Snaggletooth's assembler, as the
+# Game Boy backend assembles SM83 through the engine's own. No public header exposes an assembler symbol.
+target_link_libraries(retroppengine PRIVATE snaggletooth_cpu65816)
 # Bake the engine's own VM routine .asm files into constexpr char[] SOURCE headers, so the
 # constexpr SM83 assembler (sm83_assembler.h) turns them into embedded bytecode AT COMPILE TIME
 # (gb_routines.cpp registers from the baked bytes) with no runtime .asm read. The .asm file stays the
@@ -1428,6 +1540,40 @@ endforeach()
 string(APPEND _routine_body "}  // namespace retropp::sameboy::routinesrc\n")
 file(WRITE "${_routine_hdr}" "${_routine_body}")
 target_include_directories(retroppengine PRIVATE "${RETROPP_ROUTINE_GEN_DIR}")
+
+# The engine's default SNES sound driver (src/audio/snes/driver/) is assembled at build time by
+# Snaggletooth's assemblers — the 65816 init and tick with cpu65816_asm, the SPC700 sound program with
+# spc700_asm — through the same bake script every Embed driver image goes through, into headers under
+# retropp/generated/ that src/audio/snes/default_driver.cpp registers from. Each source says its ORG, so
+# the bakes share no layout.
+set(_snes_driver_headers "")
+foreach(_img init=cpu65816_asm tick=cpu65816_asm sound=spc700_asm)
+    string(REPLACE "=" ";" _kv "${_img}")
+    list(GET _kv 0 _name)
+    list(GET _kv 1 _cli)
+    set(_src "${CMAKE_CURRENT_SOURCE_DIR}/src/audio/snes/driver/${_name}.asm")
+    set(_hdr "${RETROPP_ROUTINE_GEN_DIR}/retropp/generated/snes_sound_driver_${_name}.h")
+    set(_layout "${RETROPP_ROUTINE_GEN_DIR}/retropp/generated/snes_sound_driver_${_name}.layout")
+    if(_cli STREQUAL "spc700_asm")
+        set(_isa "Spc700")
+    else()
+        set(_isa "Wdc65816")
+    endif()
+    add_custom_command(
+        OUTPUT "${_hdr}" "${_layout}"
+        COMMAND ${CMAKE_COMMAND}
+                -DASSEMBLER=$<TARGET_FILE:${_cli}> -DSOURCE=${_src}
+                -DLOGICAL=src/audio/snes/driver/${_name}.asm
+                -DSYMBOL=snesSoundDriver_${_name} -DISA=${_isa} -DHEADER=${_hdr}
+                -DLAYOUT_IN= -DLAYOUT_OUT=${_layout}
+                -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/bake_snaggletooth_routine.cmake"
+        DEPENDS "${_src}" ${_cli} "${CMAKE_CURRENT_SOURCE_DIR}/cmake/bake_snaggletooth_routine.cmake"
+        COMMENT "Assembling the default SNES sound driver's ${_name} (${_isa})"
+        VERBATIM)
+    list(APPEND _snes_driver_headers "${_hdr}")
+endforeach()
+target_sources(retroppengine PRIVATE ${_snes_driver_headers})
+set_source_files_properties(src/audio/snes/default_driver.cpp PROPERTIES OBJECT_DEPENDS "${_snes_driver_headers}")
 
 # The Game Boy diagnostic-tone AUDIO preset (src/audio/gb_audio.cpp) reads its .asm from this
 # directory at registration. The VM routine presets (gb_routines.cpp) embed at compile time (above)
@@ -1571,8 +1717,20 @@ if(RETROPP_BUILD_TESTS)
         tests/snes_backend_frame_test.cpp
         tests/snes_backend_input_test.cpp
         tests/snes_backend_save_test.cpp
+        tests/snes_backend_places_test.cpp
+        tests/snes_regions_test.cpp
+        tests/snes_backend_routines_test.cpp
+        tests/snes_routine_embed_scan_test.cpp
+        tests/snes_backend_escape_test.cpp
+        tests/snes_backend_watch_test.cpp
+        tests/snes_backend_nesting_test.cpp
+        tests/snes_backend_driver_test.cpp
         tests/snes_vm_test.cpp
         tests/snes_backend_audio_test.cpp
+        tests/snes_apu_places_test.cpp
+        tests/snes_chiptune_test.cpp
+        tests/snes_audio_unit_test.cpp
+        tests/snes_sampler_test.cpp
         tests/net_socket_test.cpp
         tests/net_tls_test.cpp
         tests/vm_frame_sink_test.cpp
@@ -1802,7 +1960,7 @@ if(RETROPP_BUILD_TESTS)
     target_link_libraries(vm_linkage_raw_snes PRIVATE retropp::engine)
     retropp_set_warnings(vm_linkage_raw_snes)
 
-    set(_retropp_vm_snes_needle "the snes core hosts a cartridge and keeps no routine arena")
+    set(_retropp_vm_snes_needle "this vm already holds an image the engine wrote for its routines")
 
     add_test(NAME vm_linkage_prebound_snes_carries_its_core
              COMMAND ${CMAKE_COMMAND}
@@ -2154,6 +2312,31 @@ if(RETROPP_BUILD_EXAMPLES)
     target_include_directories(retropp-snes_player-demo PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}
         ${CMAKE_CURRENT_SOURCE_DIR}/third_party/snaggletooth/tools)
+    # ── SNES co-execution — the demo cartridge running on its own thread beside a panel that reads and
+    # writes the places inside it: the palette, video RAM's tiles, the sprite's work-RAM bytes and a byte
+    # of the image the cartridge reads every frame. It hosts the same shared cartridge the player does, so
+    # it links and includes the same. CI runs its --verify (registered below).
+    retropp_add_example(snes_coexecution DIRECTORY snes/coexecution)
+    target_link_libraries(retropp-snes_coexecution-demo PRIVATE snaggletooth_cpu65816 snaggletooth_spc700)
+    target_include_directories(retropp-snes_coexecution-demo PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/snaggletooth/tools)
+    # ── SNES sound driver — a media-player faceplate for a driver hosted the way an SNES game carries one:
+    # 65816 init and tick code, and an SPC700 sound program the init uploads to the audio unit. Its three
+    # sources are registered as paths, so the build bakes each with its own instruction set's assembler.
+    # CI runs its --verify (registered below).
+    retropp_add_example(snes_driver DIRECTORY snes/driver)
+
+    # The SNES audio unit driven by the game the way the console's CPU drives it: the ports, audio RAM and
+    # the S-DSP's registers as places on a Vm::SNES, with no 65816 program at all — eight voices on four
+    # waves, the frames through a queue to the device, a panel of voice columns.
+    retropp_add_example(snes_apu DIRECTORY snes/apu)
+
+    # The SNES sampler: audio files registered on the library — four the engine converts to the chip's
+    # sample format and one already in it — played through the console's sound chip with
+    # play(id, Cue{.voice, .effect}) on an AudioSystem::SNES; a panel of voice columns with each voice's
+    # sample, pitch, volume, pan and effect. CI runs its --verify (registered below).
+    retropp_add_example(snes_sampler DIRECTORY snes/sampler)
 
     # ── Curve demo — plots a Catmull-Rom curve through waypoints, a constant-speed atDistance walker, and
     # a Hermite curve, using a tiny in-memory marker atlas (no committed asset). Dev-run only; the live
@@ -2456,6 +2639,32 @@ if(RETROPP_BUILD_EXAMPLES)
 
     add_test(NAME SnesPlayerExample.HoldsHardwareCadenceLive
              COMMAND retropp-snes_player-demo --verify)
+
+    # The SNES co-execution demo, headless: it declares its four places on the demo cartridge, advances
+    # it a tick at a time, round-trips a palette word and the sprite's X, and checks that a step patched
+    # into the image moves the sprite that far a frame; it exits nonzero on any miss. Deterministic
+    # coverage of the same verbs is snes_backend_places_test's and snes_regions_test's.
+    add_test(NAME SnesCoexecutionExample.Verify
+             COMMAND retropp-snes_coexecution-demo --verify)
+
+    # The SNES sound driver demo, headless on a capture sink: it hosts the driver, plays a song, the effect
+    # and a fade through the handle, and checks what the driver publishes and what the output carries; it
+    # exits nonzero on any miss. Deterministic coverage of the resident verbs is snes_backend_driver_test's.
+    add_test(NAME SnesDriverExample.Verify
+             COMMAND retropp-snes_driver-demo --verify)
+
+    # The SNES audio-unit demo, headless: the game greets the boot program on the ports, loads a sample into
+    # audio RAM, sets the S-DSP up through its registers, keys a voice on and hears it, and keys it off; it
+    # exits nonzero on any miss. Deterministic coverage of the same places is snes_apu_places_test's.
+    add_test(NAME SnesApuExample.Verify
+             COMMAND retropp-snes_apu-demo --verify)
+
+    # The SNES sampler demo, headless on a listening sink: a one-shot audio file cued through the chip
+    # sounds and plays out, the looping .brr with an echo keeps sounding until its voice is stopped, two
+    # voices cued together stop with stop(); it exits nonzero on any miss. Deterministic coverage of the
+    # same path is snes_sampler_test's.
+    add_test(NAME SnesSamplerExample.Verify
+             COMMAND retropp-snes_sampler-demo --verify)
 
     # ── Guest-escape demo — a running cartridge hands control to native code and carries on.
     # Authors a cartridge whose loop calls its own routine every frame, hosts it and run()s it, then

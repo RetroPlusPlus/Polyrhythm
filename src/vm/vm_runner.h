@@ -123,6 +123,13 @@ public:
     // a thread.
     void beforeEachStep(std::function<void()> hook);
 
+    // Install what runs on the stepping thread every time the loop looks at the machine — before it
+    // decides whether a step is owed, and again on every wake(), whether or not a step follows. This is
+    // where a request from another thread is served without waiting for the next step: the requester
+    // posts it, calls wake(), and a parked machine serves it at once, a stepping one as its step ends.
+    // Replaces any hook already installed. Install it before the machine is given a thread.
+    void onEachLook(std::function<void()> hook);
+
     // CPU cycles the machine has run across every step so far — what stepOnce returned, summed. A
     // pacing closure reads it to answer how far the machine has run ahead of what it owes.
     [[nodiscard]] std::uint64_t cyclesRun() const noexcept {
@@ -154,7 +161,9 @@ public:
     // true costs nothing; destroying one that reports false waits out the step in flight.
     [[nodiscard]] bool finished() const noexcept;
 
-    // Wake a parked runner. Harmless on an inline one.
+    // Wake a parked runner: the loop looks at the machine again now — the look hook runs, then the
+    // step decision. A wake is never lost: one that lands while the loop is between its look and its
+    // park ends that park at once. Harmless on an inline one.
     void wake() noexcept;
 
 private:
@@ -171,8 +180,10 @@ private:
     std::vector<Instruction>           drained_;  // the mailbox's landing buffer, sized once
     std::function<void()>              beforeStep_;
     std::function<void()>              afterStep_;
+    std::function<void()>              look_;     // threaded only — every look at the machine
     std::function<void()>              place_;    // threaded only — the loop's first act
     std::atomic<std::uint64_t>         cyclesRun_{0};
+    std::atomic<std::uint64_t>         wakes_{0};  // counted by wake(); the park's predicate
 
     std::function<std::size_t()>             backlog_;
     std::function<std::chrono::nanoseconds()> untilNext_;  // empty: a park runs the full interval

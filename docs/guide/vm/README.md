@@ -135,8 +135,8 @@ that owns it; a console page adds only what its hardware makes different.
 
 Three capabilities depend on what a core offers rather than on the surface: escapes need a
 per-instruction hook, watches a per-access one, and a routine surface an arena to place code in and a
-register file to bind. A core without one refuses at the declaration rather than accepting it, and the
-exception names what the core does instead.
+register file to bind. A core without one refuses at the verb that would need it, and the exception
+names what the core does instead.
 
 | Capability | Game Boy / Game Boy Color | SNES |
 |---|---|---|
@@ -144,11 +144,12 @@ exception names what the core does instead.
 | video, sound, both as above | answers | answers |
 | input — the pad | one pad, `gb::held` | two ports, `snes::Ports` |
 | battery-backed save data | `.sav` | `.srm` |
-| a routine registered from bytes or `.asm` and called for a value | answers | refuses |
-| `advanceClock` — the free-running clock between calls | answers | refuses |
-| naming places, `read` / `write` by address | answers | refuses |
-| escapes, watches, `bindRoutine` | answers | refuses |
-| hosting a resident sound driver | answers | refuses |
+| a routine registered from bytes or `.asm` and called for a value | answers | answers |
+| `advanceClock` — the free-running clock between calls | answers | answers, on a routine machine |
+| naming places, `read` / `write` by address | answers | answers |
+| `bindRoutine` — a routine the cartridge holds, called in its context | answers | answers |
+| escapes, watches | answers | answers, on a byte whichever address reaches it |
+| hosting a resident sound driver | answers, `gb::Mbc3` | answers, `snes::LoRom` / `snes::HiRom`, with the SPC700 program it uploads |
 
 The exception each refusal throws, and the message, is on the console's page:
 [gameboy.md](gameboy.md#two-models-one-core), [snes.md](snes.md#what-the-core-answers-and-what-it-refuses).

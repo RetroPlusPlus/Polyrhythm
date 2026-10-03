@@ -82,7 +82,8 @@ TEST(HostRom, RoutinesCannotBePlacedIntoTheGamesCartridge) {
     SameBoyBackend backend{ConsoleModel::GameBoyColor};
     backend.loadRom(authorCartridge(kSmallestCartridge));
 
-    EXPECT_THROW(backend.placeRoutine(std::span<const std::uint8_t>(kDriverBytes)), std::logic_error);
+    EXPECT_THROW(backend.placeRoutine(std::span<const std::uint8_t>(kDriverBytes), std::nullopt),
+                 std::logic_error);
 }
 
 // The same refusal at the surface a game actually calls: a hosted cartridge has no arena, so
@@ -98,7 +99,8 @@ TEST(HostRom, RegisteringARoutineOnAHostedCartridgeIsRefused) {
 
 TEST(HostRom, ARoutinePlacedBeforeHostingIsNotCarriedIntoTheGamesCartridge) {
     SameBoyBackend backend{ConsoleModel::GameBoyColor};
-    const std::uint32_t entry = backend.placeRoutine(std::span<const std::uint8_t>(kDriverBytes));
+    const std::uint32_t entry =
+        backend.placeRoutine(std::span<const std::uint8_t>(kDriverBytes), std::nullopt);
 
     std::vector<std::uint8_t> rom = authorCartridge(kSmallestCartridge);
     rom[entry] = 0x00;  // the game's own byte at that address

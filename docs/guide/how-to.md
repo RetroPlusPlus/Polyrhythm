@@ -454,7 +454,17 @@ audio.play(chime);
 ```
 
 The kind is inferred from the extension and frozen into the entry, so a file cannot be mis-filed as
-a chiptune driver. A system produces only its own kind — `play()` throws if you cue the other one.
+a chiptune driver. The same file also plays through the SNES's sound chip, on an SNES chiptune system,
+cued by voice, play mode and effect:
+
+```cpp
+AudioSystem::SNES music{AudioKind::Chiptune};
+music.play(chime, Cue{.voice = 2, .mode = PlayMode::once(), .effect = AudioEffect{.pan = -0.5f}});
+music.effect(2, AudioEffect{.pitch = 1.5f});   // the voice as it plays
+music.stop(2);
+```
+
+Any other crossing of kinds throws at `play()` — a system produces only what its hardware makes.
 
 ## Make something glow <a id="make-something-glow"></a>
 

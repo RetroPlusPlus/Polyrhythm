@@ -34,7 +34,8 @@ public:
     [[nodiscard]] std::optional<MachineClock> clock() const override {
         return MachineClock{.hertzNumerator = 4'194'304, .hertzDivisor = 1, .cyclesPerFrame = 70'224};
     }
-    std::uint32_t placeRoutine(std::span<const std::uint8_t> bytes) override;
+    std::uint32_t placeRoutine(std::span<const std::uint8_t> bytes,
+                               std::optional<std::uint32_t> origin) override;
     void loadRom(std::span<const std::uint8_t> rom) override;
     void bootHostedRom() override;
     [[nodiscard]] AssembledRoutine assemble(std::string_view source) const override;

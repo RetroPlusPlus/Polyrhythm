@@ -25,8 +25,10 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <condition_variable>
 #include <cstdint>
+#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <memory>
@@ -35,6 +37,7 @@
 #include <span>
 #include <sstream>
 #include <stdexcept>
+#include <string>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -45,12 +48,16 @@
 #include "retropp/audio_mixer.h"       // AudioMixer::instance().effectiveGain — the per-voice output scale
 #include "retropp/routine_registry.h"  // detail::findEmbeddedRoutine
 #include "retropp/sdl_platform.h"      // SdlAudioSink — the auto-owned production sink (ctor 3)
+#include "retropp/snes.h"              // snes::audioRam / dspRegister — the sampler's places
 #include "src/audio/audio_system_testing.h"  // detail::AudioSystemTestAccess — the synchronous test seam
 #include "src/audio/auto_close.h"      // detail::shouldAutoStop — the one-shot-SFX lifecycle decision
 #include "src/audio/cue_queue.h"       // audio::AudioCommand / CueQueue — the main→production channel
 #include "src/audio/pcm_decode.h"      // detail::g_pcmDecode — the Pcm decode hook (installed by the no-ISA registerAudio)
 #include "src/audio/produce_step.h"    // detail::mixFrames / rampFrame — the pure mixdown + release fade
 #include "src/audio/ring_buffer.h"
+#include "src/audio/snes/brr.h"             // audio::brr — the chip's sample format, encoded and decoded
+#include "src/audio/snes/default_driver.h"  // audio::snesdriver — the sampler's driver and its layout
+#include "src/vm/run_governor.h"     // vm::RunGovernor — the wall-clock pace the audio unit runs at
 #include "src/vm/vm_core_access.h"   // vm::VmCoreAccess — builds a voice's machine on the core the game named
 #include "src/vm/vm_runner.h"        // vm::VmRunner — the machine a voice steps through
 
@@ -280,6 +287,39 @@ struct AudioSystem::Impl {
         DriverDefinition                residentDef;             // machine facts (images/tick/slots/verbs)
         Isa                             residentIsa = Isa::Sm83; // the ISA (verified at host)
         std::shared_ptr<DriverSnapshot> snapshot;                // published read-slots (shared w/ handle)
+
+        // The audio unit, on a HostDriven system: the console's sound hardware alone, the game driving
+        // it through the system's place verbs. Sustained like a resident driver — stop() leaves it
+        // running, since its RAM holds the game's samples — and paced by its own clock, never by the mix.
+        bool audioUnit = false;
+
+        // The sampler: the resident voice hosting the engine's default SNES sound driver, which this
+        // system hosts by itself the first time an audio file is cued through the chip. A resident voice
+        // in every other respect; the system's sample loads and chip settings reach its machine through
+        // `writes`, served on the machine's own thread.
+        bool sampler = false;
+
+        // Bytes for a place on this voice's machine, posted by the production thread and written by the
+        // machine's thread at its next look — before its next step, so a sample is in audio RAM before
+        // the gesture that keys it is performed. Guarded by the Impl's writeMtx.
+        struct PlaceWrite {
+            std::uint32_t             at;
+            std::vector<std::uint8_t> bytes;
+        };
+        std::vector<PlaceWrite> writes;
+    };
+
+    // One request the game thread makes of the audio unit — a read or a write of one place — carried
+    // to the unit's thread and answered there. The requester owns it (it lives on that thread's stack)
+    // and waits on `answered` until `done`; the unit's thread fills `result` or `error` and sets `done`
+    // under the request mutex. A write carries its bytes by copy, so the requester's span may die.
+    struct UnitRequest {
+        MemoryRegion              where;
+        std::uint32_t             index = 0;
+        bool                      isRead = false;
+        std::vector<std::uint8_t> bytes;   // a write's bytes in, a read's bytes out
+        std::exception_ptr        error;   // what the unit's verb threw, rethrown to the requester
+        bool                      done = false;
     };
 
     // `ownedSink` is null on the borrow path and holds the sink on the owning path; it is declared
@@ -290,7 +330,7 @@ struct AudioSystem::Impl {
     std::unique_ptr<AudioSink>        ownedSink;
     AudioSink&                        sink;
     unsigned                          sampleRate;
-    AudioKind                         kind_;          // the system's fixed backend — Chiptune or Pcm
+    AudioKind                         kind_;          // the system's fixed kind — Chiptune, Pcm or HostDriven
     VMPlatform                        platform_;      // the console each chiptune voice's VM is built as
     detail::CoreFactory               core_;          // the core those VMs are built on
     TimingProfile                     timing_;        // the profile each voice's Vm is constructed with; a voice is stepped by its machine's clock
@@ -305,6 +345,31 @@ struct AudioSystem::Impl {
     int                               maxStepsPerWake;  // safety cap on steps per produce pass
     std::size_t                       framesPerStep;   // audio frames one step of a machine produces
     audio::SpscRingBuffer<AudioFrame> ring;
+
+    // The audio unit of a HostDriven system (null on every other kind). Both pointers are set once, on
+    // the constructing thread, and read from the game thread for the system's life: the unit's voice is
+    // never closed (stop() and the auto-close both leave it), so they stay valid without ever reaching
+    // into the production thread's voice list. The request channel is declared BEFORE the voices so it
+    // outlives the unit's thread, which is joined as its voice is destroyed and serves requests until then.
+    Vm*                             audioUnit_  = nullptr;  // the unit's machine
+    vm::VmRunner*                   unitRunner_ = nullptr;  // the thread that steps it
+    std::optional<vm::RunGovernor>  unitGovernor_;          // its wall-clock pace (threaded systems)
+    std::mutex                      unitRequestMtx;
+    std::condition_variable         unitAnswered;
+    std::vector<UnitRequest*>       unitRequests;           // posted by the game thread, taken by the unit's
+
+    // The sampler's bookkeeping — one sampler per system, so it lives here beside the voice that is it.
+    // Audio RAM as the default driver lays it out: samples from kSamplesStart, each with an entry in the
+    // directory page, up to `sampleLimit` — the boot window, or the echo buffer once one is placed below
+    // it. `samplerEntries` maps an audio file's id to the directory entry its sample occupies on this
+    // system. Production-thread-only, like the voices.
+    std::vector<std::optional<std::uint8_t>> samplerEntries;
+    std::uint16_t                nextSampleAddress = audio::snesdriver::kSamplesStart;
+    std::uint8_t                 nextSampleEntry   = 0;
+    std::uint16_t                sampleLimit       = audio::snesdriver::kSamplesEnd;
+    std::optional<std::uint8_t>  echoDelayLength;  // EDL of the echo buffer placed in audio RAM, once one is
+    std::uint8_t                 echoVoices = 0;   // EON — the voices whose cue engaged the echo path
+    std::mutex                   writeMtx;         // guards every voice's `writes`
 
     // The active voices — every cued sound still sounding, mixed together each pass. Audio-thread-owned
     // (a voice is created when its cue is applied there, mixed there, and closed there); each voice's
@@ -382,7 +447,7 @@ struct AudioSystem::Impl {
           platform_(platform),
           core_(core),
           timing_(timing),
-          clock_(core != nullptr ? vm::VmCoreAccess::clockOf(core, platform) : std::nullopt),
+          clock_(clockFor(core, platform, kind)),
           targetFrames(rate / 20),
           ringFloor(rate / 40),
           autoStopSilenceFrames(rate / 4),
@@ -405,7 +470,7 @@ struct AudioSystem::Impl {
           platform_(platform),
           core_(core),
           timing_(timing),
-          clock_(core != nullptr ? vm::VmCoreAccess::clockOf(core, platform) : std::nullopt),
+          clock_(clockFor(core, platform, kind)),
           targetFrames(rate / 20),
           ringFloor(rate / 40),
           autoStopSilenceFrames(rate / 4),
@@ -415,6 +480,17 @@ struct AudioSystem::Impl {
           framesPerStep(framesPerStepFor(clock_, rate)),
           ring(rate / 4) {
         wire();
+    }
+
+    // The clock every machine of this system runs on: the console's, or — for a HostDriven system — the
+    // audio unit's own, since that is the machine it hosts. Nothing on a platform with no core.
+    static std::optional<vm::MachineClock> clockFor(detail::CoreFactory core, VMPlatform platform,
+                                                    AudioKind kind) {
+        if (core == nullptr) {
+            return std::nullopt;
+        }
+        return kind == AudioKind::HostDriven ? vm::VmCoreAccess::audioUnitClockOf(core, platform)
+                                             : vm::VmCoreAccess::clockOf(core, platform);
     }
 
     // The frame quantum: one frame of the voice machine's own clock, in its own cycles. Zero on a
@@ -459,6 +535,142 @@ struct AudioSystem::Impl {
         });
     }
 
+    // A HostDriven system hosts its unit once it knows whether it has threads: on a threaded system the
+    // unit gets a thread of its own, on a manual one it is stepped by the test. Called by the threaded
+    // ctors from startProductionThread (before the production thread exists, so the voice list is
+    // still the constructing thread's to touch) and by the manual ctor directly.
+    void hostAudioUnitIfHostDriven() {
+        if (kind_ == AudioKind::HostDriven) {
+            hostAudioUnit();
+        }
+    }
+
+    // A HostDriven system is its console's audio unit, alone: one machine with no console CPU in it,
+    // built here and running from the system's first moment, its frames the system's output. The game
+    // drives it through the system's read / write. It rides the music bus.
+    //
+    // The unit is paced by ITS OWN CLOCK, not by the mix: a cued voice runs ahead until the pipeline
+    // holds the latency target and parks until the output drains it, but the unit is a chip that is
+    // always running — it steps when the wall clock owes it a frame, a fixed cushion ahead so the device
+    // never runs dry, and parks only until the next frame is due — the same governor a running cartridge
+    // paces by. A request from the game wakes the unit's thread, and the look hook serves it there — a
+    // parked unit at once, a stepping one as its step ends — so a write lands and a read is answered a
+    // thread wake after the call, never a frame after it.
+    void hostAudioUnit() {
+        auto voice       = std::make_unique<Voice>(laneCapacity());
+        voice->type      = AudioType::Music;
+        voice->audioUnit = true;
+        voice->runner    = std::make_unique<vm::VmRunner>(
+            vm::VmCoreAccess::makeAudioUnit(core_, platform_, timing_), vm::VmRunner::StepKind::Started,
+            cyclesPerFrame, runnerMode());
+        Voice* vp      = voice.get();
+        Vm*    machine = &voice->runner->machine();
+        audioUnit_     = machine;
+        unitRunner_    = voice->runner.get();  // the voice lives as long as the system: never closed
+        voice->runner->beforeFirstStep([this, vp, machine] {
+            machine->enableAudio(sampleRate, [this, vp](std::int16_t left, std::int16_t right) {
+                const std::uint32_t gain = AudioMixer::instance().effectiveGain(vp->type);
+                // The unit does not wait for the mix, so a lane the mix has not drained can fill; a
+                // frame it has no room for is dropped and counted, the way a full ring drops a mixed one.
+                if (!vp->lane.push(AudioFrame{applyGain(left, gain), applyGain(right, gain)})) {
+                    framesDropped.fetch_add(1, std::memory_order_relaxed);
+                }
+            });
+        });
+        voice->runner->onEachLook([this, machine] { serveUnitRequests(*machine); });
+        if (threaded) {
+            // The cushion: the latency target, in the unit's own cycles — how far ahead of the wall
+            // clock the unit runs, so the frames the device asks for are already made.
+            const std::uint64_t cushion =
+                static_cast<std::uint64_t>(targetFrames) * clock_->hertzNumerator /
+                (static_cast<std::uint64_t>(clock_->hertzDivisor) * sampleRate);
+            unitGovernor_.emplace(clock_->hertzNumerator, clock_->hertzDivisor);
+            unitGovernor_->restart(std::chrono::steady_clock::now());
+            vm::VmRunner*    raw = voice->runner.get();
+            vm::RunGovernor* g   = &*unitGovernor_;
+            voice->runner->start(
+                [g, raw, cushion] {
+                    // Step while the cycles run lag what the wall clock owes plus the cushion; both
+                    // sides are read on the stepping thread, so the closure is race-free by construction.
+                    const std::uint64_t owed = g->owedThrough(std::chrono::steady_clock::now()) + cushion;
+                    const std::uint64_t ran  = raw->cyclesRun();
+                    return static_cast<std::size_t>(ran > owed ? ran - owed : 0);
+                },
+                /*highWater=*/1,
+                [g, raw, cushion] {
+                    // How long until the wall clock owes everything run so far, less the cushion —
+                    // when the next frame is due. Measured this way the step lands when it is owed.
+                    const std::uint64_t ran = raw->cyclesRun();
+                    return g->timeUntilOwed(ran > cushion ? ran - cushion : 0);
+                });
+        }
+        voices.push_back(std::move(voice));
+        playing.store(true, std::memory_order_relaxed);
+    }
+
+    // ── The audio unit's place verbs ───────────────────────────────────────────────────────────────
+    // The game thread's read / write of a place on the unit. The unit is reached only from its own
+    // thread, so the request is posted, the unit woken, and the call waits until the unit's look hook
+    // has served it (serveUnitRequests). On a manual system the calling thread IS the unit's thread, so
+    // the request is served inline. What the unit's verb threw is rethrown here, at the call.
+    void requireAudioUnit(const char* verb) const {
+        if (audioUnit_ == nullptr) {
+            throw std::logic_error(std::string("AudioSystem::") + verb +
+                                   ": only a HostDriven system hosts its console's audio unit — this "
+                                   "system has no unit to reach");
+        }
+    }
+
+    // Carry one request to the unit and wait for its answer.
+    void askUnit(UnitRequest& request) {
+        if (!threaded) {
+            serveOne(*audioUnit_, request);  // the calling thread steps the unit on a manual system
+        } else {
+            {
+                std::lock_guard<std::mutex> lock(unitRequestMtx);
+                unitRequests.push_back(&request);
+            }
+            unitRunner_->wake();
+            std::unique_lock<std::mutex> lock(unitRequestMtx);
+            unitAnswered.wait(lock, [&request] { return request.done; });
+        }
+        if (request.error) {
+            std::rethrow_exception(request.error);
+        }
+    }
+
+    // The unit's thread: take every request posted so far and answer each, in posting order.
+    void serveUnitRequests(Vm& unit) {
+        std::vector<UnitRequest*> taken;
+        {
+            std::lock_guard<std::mutex> lock(unitRequestMtx);
+            if (unitRequests.empty()) {
+                return;
+            }
+            taken.swap(unitRequests);
+        }
+        for (UnitRequest* request : taken) {
+            serveOne(unit, *request);
+        }
+    }
+
+    void serveOne(Vm& unit, UnitRequest& request) {
+        try {
+            if (request.isRead) {
+                request.bytes = unit.read(request.where, request.index);
+            } else {
+                unit.write(request.where, std::span<const std::uint8_t>(request.bytes), request.index);
+            }
+        } catch (...) {
+            request.error = std::current_exception();
+        }
+        {
+            std::lock_guard<std::mutex> lock(unitRequestMtx);
+            request.done = true;
+        }
+        unitAnswered.notify_all();
+    }
+
     // ── Cue application (production thread, or inline in manual mode) ─────────────────────────────────
     // Drain every queued cue and apply it. Host-inbox first (so a host()-then-play() sequence finds its
     // voice already built), then the SPSC command queue. SPSC: only the production thread (or, in manual
@@ -496,12 +708,37 @@ struct AudioSystem::Impl {
                 // would click) and is removed at zero within milliseconds; the ring then drains and the
                 // sink silence-fills. A HOSTED RESIDENT DRIVER is excluded — it is always-running and
                 // closes only through its handle (close) or system destruction, so stop() never destroys
-                // its mid-game driver RAM. `playing` clears when the last tail finishes, in the produce
-                // pass. Registered audio stays registered — a later Play cues it afresh.
+                // its mid-game driver RAM. THE AUDIO UNIT of a HostDriven system is excluded for the same
+                // reason — its RAM holds the game's samples, and the chip is the system. `playing` clears
+                // when the last tail finishes, in the produce pass. Registered audio stays registered — a
+                // later Play cues it afresh.
                 for (const std::unique_ptr<Voice>& v : voices) {
-                    if (!v->resident) {
+                    if (!v->resident && !v->audioUnit) {
                         beginRelease(*v);
                     }
+                }
+                // The sampler stays, as a resident driver does; every voice it keyed on is keyed off,
+                // and the echo path's output is muted — its buffer circulates a residue of the chip's
+                // integer arithmetic that would otherwise never reach zero — until a cue engages it again.
+                if (Voice* s = findSamplerVoice()) {
+                    s->runner->enqueue(*s->residentDef.verbs.stop);
+                    if (echoDelayLength.has_value()) {
+                        writeDsp(*s, kEvolL, 0);
+                        writeDsp(*s, kEvolR, 0);
+                    }
+                }
+                break;
+            case audio::AudioCommand::Op::PlayCue:
+                applyPlayCue(cmd.id, cmd.cue);
+                break;
+            case audio::AudioCommand::Op::EffectVoice:
+                applyEffect(cmd.cue);
+                break;
+            case audio::AudioCommand::Op::StopVoice:
+                if (Voice* s = findSamplerVoice()) {
+                    s->runner->enqueue(Instruction::write(
+                        Location::memory(audio::snesdriver::voiceBlock(static_cast<std::uint8_t>(cmd.value))),
+                        1, audio::snesdriver::kKeyOffBlock));
                 }
                 break;
             case audio::AudioCommand::Op::DriverPlay:
@@ -600,6 +837,296 @@ struct AudioSystem::Impl {
         v->runner->enqueue(Instruction::write(Location::memory(s.address), s.width, value));
     }
 
+    // ── The sampler: audio files through the console's sound chip ────────────────────────────────────
+    // On an SNES system of the Chiptune kind a registered audio file is a sample the S-DSP plays. The
+    // system hosts the engine's default sound driver for it by itself the first time one is cued, loads
+    // each file into audio RAM once in the chip's own format, and keys the cue's voice on through the
+    // driver's mailbox — a resident-driver gesture like any other, performed at the machine's next tick.
+
+    void requireSampler(const char* verb) const {
+        if (kind_ != AudioKind::Chiptune || platform_ != VMPlatform::Snes) {
+            throw std::logic_error(std::string("AudioSystem::") + verb +
+                                   ": a Cue names a voice of the console's sample player, and only an SNES "
+                                   "system of the Chiptune kind has one");
+        }
+    }
+
+    [[nodiscard]] Voice* findSamplerVoice() {
+        for (const std::unique_ptr<Voice>& v : voices) {
+            if (v->sampler && !v->releasing) {
+                return v.get();
+            }
+        }
+        return nullptr;
+    }
+
+    // The sampler's voice, hosted on the first cue that needs it: the default driver's registration as a
+    // resident voice, built the way host() builds one, with no handle — the game never names the driver.
+    Voice& samplerVoice() {
+        if (Voice* s = findSamplerVoice()) {
+            return *s;
+        }
+        const DriverId<audio::snesdriver::Slots> id = audio::snesdriver::defaultDriver();
+        const AudioLibrary::Entry& entry = AudioLibrary::instance().entry(id.id());
+        auto voice           = std::make_unique<Voice>(laneCapacity());
+        voice->resident      = true;
+        voice->sampler       = true;
+        voice->id            = id.id();
+        voice->type          = AudioType::VMDriver;
+        voice->residentDef   = *entry.driver;
+        voice->residentIsa   = entry.isa;
+        voice->snapshot      = std::make_shared<DriverSnapshot>(entry.driver->slots.size());
+        initResidentVoice(*voice);
+        voices.push_back(std::move(voice));
+        playing.store(true, std::memory_order_relaxed);
+        return *voices.back();
+    }
+
+    // Bytes for a place on a voice's machine. A manual system's machine steps on this thread, so the
+    // write lands now; a threaded one's lands at its machine's next look, in posting order, before the
+    // step that follows it.
+    void postWrite(Voice& v, std::uint32_t at, std::vector<std::uint8_t> bytes) {
+        const MemoryRegion where{.at = at, .size = static_cast<std::uint32_t>(bytes.size())};
+        if (!threaded) {
+            v.runner->machine().write(where, std::span<const std::uint8_t>(bytes));
+            return;
+        }
+        {
+            std::lock_guard<std::mutex> lock(writeMtx);
+            v.writes.push_back(Voice::PlaceWrite{.at = at, .bytes = std::move(bytes)});
+        }
+        v.runner->wake();
+    }
+
+    // The machine's thread, at each look: every write posted so far, in order.
+    void serveWrites(Voice& v, Vm& machine) {
+        std::vector<Voice::PlaceWrite> taken;
+        {
+            std::lock_guard<std::mutex> lock(writeMtx);
+            if (v.writes.empty()) {
+                return;
+            }
+            taken.swap(v.writes);
+        }
+        for (const Voice::PlaceWrite& w : taken) {
+            machine.write(MemoryRegion{.at = w.at, .size = static_cast<std::uint32_t>(w.bytes.size())},
+                          std::span<const std::uint8_t>(w.bytes));
+        }
+    }
+
+    void writeDsp(Voice& s, std::uint8_t reg, std::uint8_t value) {
+        postWrite(s, snes::dspRegister(reg), std::vector<std::uint8_t>{value});
+    }
+
+    // 0 to 1 as the chip's 0 to 127.
+    [[nodiscard]] static std::uint8_t unit127(float value) {
+        return static_cast<std::uint8_t>(std::lround(std::clamp(value, 0.0f, 1.0f) * 127.0f));
+    }
+
+    // A voice's left and right volume from a cue's volume and pan: the middle is full on both sides, and
+    // panning takes from the far side until, at the edge, that side is silent.
+    [[nodiscard]] static std::pair<std::uint8_t, std::uint8_t> volumes(float volume, float pan) {
+        const std::uint8_t full = unit127(volume);
+        pan                     = std::clamp(pan, -1.0f, 1.0f);
+        const auto left  = static_cast<std::uint8_t>(pan <= 0 ? full : std::lround(full * (1.0f - pan)));
+        const auto right = static_cast<std::uint8_t>(pan >= 0 ? full : std::lround(full * (1.0f + pan)));
+        return {left, right};
+    }
+
+    void applyPlayCue(AudioId id, const Cue& cue) {
+        namespace sd = audio::snesdriver;
+        requireSampler("play");
+        const AudioLibrary& library = AudioLibrary::instance();
+        if (static_cast<std::size_t>(id) >= library.size()) {
+            return;  // unknown handle — nothing to cue
+        }
+        if (library.entry(id).kind != AudioKind::Pcm) {
+            throw std::runtime_error(
+                "AudioSystem::play: a Cue plays a registered audio file through the sound chip — this id "
+                "is not an audio file");
+        }
+        // The sampler first: hosting it the first time registers its driver on the library, and an entry
+        // taken before that would not survive the library growing.
+        Voice&                     s     = samplerVoice();
+        const AudioLibrary::Entry& entry = library.entry(id);
+        const AudioEffect&         e     = cue.effect;  // the voice and the effect pair were checked at the call
+        const std::uint8_t         entry_ = loadSample(s, id, entry);
+        realizeEchoPath(s, cue);
+        const auto pitch = static_cast<std::uint16_t>(
+            std::clamp<long>(std::lround(e.pitch * kPitchAsRecorded), 1, kPitchMax));
+        const auto [left, right] = volumes(e.volume, e.pan);
+        // A repeat's period in the driver's frames — the console's own, at the rate its clock gives.
+        sd::Mode      mode   = sd::Mode::Continuous;
+        std::uint16_t period = 0;
+        if (cue.mode.kind == PlayMode::Kind::Once) {
+            mode = sd::Mode::Once;
+        } else if (cue.mode.kind == PlayMode::Kind::Repeat) {
+            mode = sd::Mode::Repeat;
+            const double framesPerSecond = static_cast<double>(clock_->hertzNumerator) /
+                                           (static_cast<double>(clock_->hertzDivisor) * clock_->cyclesPerFrame);
+            period = static_cast<std::uint16_t>(std::clamp<long>(
+                std::lround(60.0 / cue.mode.perMinute * framesPerSecond), 1, 0xFFFF));
+        }
+        if (mode == sd::Mode::Repeat) {
+            s.runner->enqueue(Instruction::write(Location::memory(sd::voicePeriod(cue.voice)), 2, period));
+            s.runner->enqueue(Instruction::write(Location::memory(sd::voiceCountdown(cue.voice)), 2, period));
+        }
+        s.runner->enqueue(Instruction::write(Location::memory(sd::voiceBlock(cue.voice)), sd::kKeyOnWidth,
+                                             sd::keyOnBlock(entry_, pitch, left, right, mode)));
+    }
+
+    // A change to a voice as it plays: the echo path and the voice's share of it, then its pitch and
+    // volumes through the driver, with no key-on. Nothing to change on a system that has cued nothing.
+    void applyEffect(const Cue& cue) {
+        namespace sd = audio::snesdriver;
+        Voice* s = findSamplerVoice();
+        if (s == nullptr) {
+            return;
+        }
+        realizeEchoPath(*s, cue);
+        const AudioEffect& e     = cue.effect;
+        const auto         pitch = static_cast<std::uint16_t>(
+            std::clamp<long>(std::lround(e.pitch * kPitchAsRecorded), 1, kPitchMax));
+        const auto [left, right] = volumes(e.volume, e.pan);
+        s->runner->enqueue(Instruction::write(Location::memory(sd::voiceBlock(cue.voice)), sd::kChangeWidth,
+                                              sd::changeBlock(pitch, left, right)));
+    }
+
+    // The sample for an audio file, loaded into the sampler's audio RAM the first time this system cues
+    // it: a `.brr` file as it is, any other decoded at the chip's rate and encoded. Answers the directory
+    // entry it occupies.
+    std::uint8_t loadSample(Voice& s, AudioId id, const AudioLibrary::Entry& entry) {
+        namespace sd      = audio::snesdriver;
+        const auto index  = static_cast<std::size_t>(id);
+        if (index >= samplerEntries.size()) {
+            samplerEntries.resize(index + 1);
+        }
+        if (samplerEntries[index].has_value()) {
+            return *samplerEntries[index];
+        }
+        if (nextSampleEntry >= sd::kDirectorySlots) {
+            throw std::length_error(
+                "AudioSystem::play: the sound chip's sample directory holds 64 samples, and this system "
+                "has loaded them all");
+        }
+        const std::vector<std::uint8_t> file = readEntryBytes(entry);
+        std::vector<std::uint8_t>       blocks;
+        if (detail::endsWith(entry.asmPath, ".brr")) {
+            audio::brr::requireWellFormed(file);
+            blocks = file;
+        } else {
+            // Encoded to loop round from its start, so a cue can hold it; a pass ends where the file does.
+            blocks = audio::brr::encode(
+                audio::brr::toMono(decodeFile(file, audio::brr::kSampleRate)), /*loop=*/true);
+        }
+        const std::size_t end = nextSampleAddress + blocks.size();
+        if (end > sampleLimit) {
+            throw std::length_error("AudioSystem::play: this sample (" + std::to_string(blocks.size()) +
+                                    " bytes) does not fit in the audio RAM left for samples (" +
+                                    std::to_string(sampleLimit - nextSampleAddress) + " bytes)");
+        }
+        const std::uint8_t  entryIndex = nextSampleEntry++;
+        const std::uint16_t start      = nextSampleAddress;
+        const auto          lo         = static_cast<std::uint8_t>(start & 0xFF);
+        const auto          hi         = static_cast<std::uint8_t>(start >> 8);
+        postWrite(s, snes::audioRam(start), std::move(blocks));
+        // The directory entry: where the sample starts, and where a looping one continues — its start.
+        postWrite(s, snes::audioRam(static_cast<std::uint16_t>(sd::kDirectory + 4 * entryIndex)),
+                  std::vector<std::uint8_t>{lo, hi, lo, hi});
+        nextSampleAddress     = static_cast<std::uint16_t>(end);
+        samplerEntries[index] = entryIndex;
+        return entryIndex;
+    }
+
+    // The chip's one echo path: a buffer in audio RAM the chip writes its output into and reads back a
+    // delay later, mixed in at a level and fed back, through an eight-tap filter. An echo is that path as
+    // it is, the filter passing the sound straight; a reverb is the same path short and fed back through a
+    // filter that darkens each pass, so the repeats blur into a tail. The buffer is placed the first time
+    // either is engaged on this system, sized for that delay, at the top of audio RAM; the samples loaded
+    // after it stay below it, and a later cue asking a longer delay than it holds is refused. Per voice,
+    // the cue decides whether the voice feeds the path.
+    void realizeEchoPath(Voice& s, const Cue& cue) {
+        namespace sd         = audio::snesdriver;
+        const AudioEffect& e = cue.effect;
+        const auto bit       = static_cast<std::uint8_t>(1u << cue.voice);
+        if (!e.echo && !e.reverb) {
+            if ((echoVoices & bit) != 0) {
+                echoVoices = static_cast<std::uint8_t>(echoVoices & ~bit);
+                writeDsp(s, kEon, echoVoices);
+            }
+            return;
+        }
+        std::uint8_t                delayLength = 0;
+        std::uint8_t                feedback    = 0;
+        std::uint8_t                level       = 0;
+        std::array<std::uint8_t, 8> taps{};
+        if (e.echo) {
+            delayLength = static_cast<std::uint8_t>(
+                std::clamp<long>(std::lround(e.echo->delay / kEchoDelayStep), 1, kEchoDelayLengthMax));
+            feedback = unit127(e.echo->feedback);
+            level    = unit127(e.echo->level);
+            taps     = kStraightTaps;
+        } else {
+            delayLength = kReverbDelayLength;
+            feedback    = static_cast<std::uint8_t>(
+                std::lround(std::clamp(e.reverb->decay, 0.0f, 1.0f) * kReverbFeedbackAtFullDecay));
+            level = unit127(e.reverb->level);
+            taps  = kDarkeningTaps;
+        }
+        if (!echoDelayLength.has_value()) {
+            const std::size_t bytes = delayLength == 0 ? 4 : static_cast<std::size_t>(delayLength) * 2048;
+            const auto page  = static_cast<std::uint8_t>((sd::kSamplesEnd - bytes) >> 8);
+            const auto start = static_cast<std::uint16_t>(page << 8);
+            if (nextSampleAddress > start) {
+                throw std::length_error(
+                    "AudioSystem::play: the echo buffer goes at the top of audio RAM and the samples already "
+                    "loaded reach into it — cue the echo before loading them");
+            }
+            sampleLimit = start;
+            postWrite(s, snes::audioRam(start), std::vector<std::uint8_t>(bytes, 0));
+            writeDsp(s, kEsa, page);
+            writeDsp(s, kEdl, delayLength);
+            echoDelayLength = delayLength;
+        } else if (delayLength > *echoDelayLength) {
+            throw std::invalid_argument(
+                "AudioSystem::play: echo: a delay longer than the first echo cued on this system, whose "
+                "buffer was placed for that delay");
+        } else {
+            writeDsp(s, kEdl, delayLength);
+        }
+        writeDsp(s, kEfb, feedback);
+        writeDsp(s, kEvolL, level);
+        writeDsp(s, kEvolR, level);
+        for (std::size_t i = 0; i < taps.size(); ++i) {
+            writeDsp(s, static_cast<std::uint8_t>(kFirBase + 0x10 * i), taps[i]);
+        }
+        writeDsp(s, kFlg, kFlgEchoOn);
+        echoVoices = static_cast<std::uint8_t>(echoVoices | bit);
+        writeDsp(s, kEon, echoVoices);
+    }
+
+    // The S-DSP's echo path, by register.
+    static constexpr std::uint8_t kEfb     = 0x0D;  // the feedback
+    static constexpr std::uint8_t kFirBase = 0x0F;  // C0; C1..C7 follow at $1F..$7F
+    static constexpr std::uint8_t kEvolL   = 0x2C;  // the echo's volume, left
+    static constexpr std::uint8_t kEvolR   = 0x3C;  // and right
+    static constexpr std::uint8_t kEon     = 0x4D;  // which voices feed the path
+    static constexpr std::uint8_t kFlg     = 0x6C;  // the flags: mute, echo writes, the noise clock
+    static constexpr std::uint8_t kEsa     = 0x6D;  // the buffer's page
+    static constexpr std::uint8_t kEdl     = 0x7D;  // the delay, in steps of 2 KB and 16 ms
+    static constexpr std::uint8_t kFlgEchoOn = 0x00;  // unmuted, echo writes on, noise clock 0
+    static constexpr float        kEchoDelayStep = 0.016f;  // one EDL step at 32 kHz
+    static constexpr long         kEchoDelayLengthMax = 15;
+    // A reverb: passes 32 ms apart, each one darkened; at a decay of 1 each pass keeps a little under
+    // four fifths of the last, a tail of seconds that still dies away.
+    static constexpr std::uint8_t kReverbDelayLength         = 2;
+    static constexpr float        kReverbFeedbackAtFullDecay = 100.0f;
+    static constexpr std::array<std::uint8_t, 8> kStraightTaps{0x7F, 0, 0, 0, 0, 0, 0, 0};
+    static constexpr std::array<std::uint8_t, 8> kDarkeningTaps{0x3A, 0x20, 0x10, 0x08, 0x04, 0x02, 0x01, 0x00};
+    // The chip's pitch: $1000 plays a sample at the rate it was encoded at; the register holds 14 bits.
+    static constexpr float kPitchAsRecorded = 4096.0f;
+    static constexpr long  kPitchMax        = 0x3FFF;
+
     // Which thread steps a new voice's machine. A system with a production thread gives every machine a
     // thread of its own; a manual one has no threads at all, so its machines step from the calling
     // thread and a test stays deterministic.
@@ -612,7 +1139,8 @@ struct AudioSystem::Impl {
     // the step it is in the middle of and a step of margin. Within that, a lane cannot overflow, which is
     // why the APU callback pushes without inspecting the result. A Pcm voice has no machine and no lane.
     [[nodiscard]] std::size_t laneCapacity() const {
-        return kind_ == AudioKind::Chiptune ? targetFrames + 2 * framesPerStep : 0;
+        return kind_ == AudioKind::Chiptune || kind_ == AudioKind::HostDriven ? targetFrames + 2 * framesPerStep
+                                                                             : 0;
     }
 
     // The demand a caller passes when it takes whatever has been produced, at whatever pace it likes —
@@ -710,6 +1238,9 @@ struct AudioSystem::Impl {
         // wait lasts. A runner's machine keeps its address for the runner's whole life, and the runner
         // does not release it until its thread has left.
         v.runner->afterEachStep([this, vp, machine] { publishSnapshot(*vp, *machine); });
+        // What the system itself writes into the machine — the sampler's samples and chip settings — lands
+        // on the machine's thread at its next look, ahead of the step that follows.
+        v.runner->onEachLook([this, vp, machine] { serveWrites(*vp, *machine); });
         startRunner(v);
     }
 
@@ -807,6 +1338,12 @@ struct AudioSystem::Impl {
             return;  // unknown handle — nothing to cue
         }
         const AudioLibrary::Entry& entry = library.entry(id);
+        // An audio file on an SNES system of the Chiptune kind plays through the console's sound chip:
+        // play(id) is the cue with every default — voice 0, as recorded, full, in the middle.
+        if (entry.kind == AudioKind::Pcm && kind_ == AudioKind::Chiptune && platform_ == VMPlatform::Snes) {
+            applyPlayCue(id, Cue{});
+            return;
+        }
         // One kind per system: an id of the other backend cannot play here (the ISA-mismatch precedent —
         // a cheap enum compare before any placement / decode, so a mismatch throws loudly).
         if (entry.kind != kind_) {
@@ -842,7 +1379,7 @@ struct AudioSystem::Impl {
 
             Voice* vp      = voice.get();
             Vm*    machine = &voice->runner->machine();
-            voice->runner->beforeFirstStep([this, vp, machine, bytes = std::move(bytes)] {
+            voice->runner->beforeFirstStep([this, vp, machine, isa = entry.isa, bytes = std::move(bytes)] {
                 machine->enableAudio(sampleRate, [vp](std::int16_t left, std::int16_t right) {
                     // Auto-close bookkeeping: track the run of consecutive exact-zero output frames. A
                     // finished one-shot SFX's DAC-on tail settles to exact (0,0) (verified against the
@@ -859,7 +1396,11 @@ struct AudioSystem::Impl {
                     const std::uint32_t gain = AudioMixer::instance().effectiveGain(vp->type);
                     vp->lane.push(AudioFrame{applyGain(left, gain), applyGain(right, gain)});
                 });
-                vp->driver = machine->uploadRoutine<void()>(bytes, kChiptuneBinding);
+                // The chiptune binding carries the machine's own ISA: SM83 on a Game Boy (unchanged), the
+                // 65816 on the SNES. Every other field is the shared chiptune binding's.
+                RoutineBinding binding = kChiptuneBinding;
+                binding.isa            = isa;
+                vp->driver             = machine->uploadRoutine<void()>(bytes, binding);
                 machine->startDriver(*vp->driver);
             });
             startRunner(*voice);
@@ -878,21 +1419,35 @@ struct AudioSystem::Impl {
         playing.store(true, std::memory_order_relaxed);
     }
 
-    // Decode a Pcm entry's audio file into stereo frames at this system's sample rate. Embed → the build
-    // baked the container bytes into the asset registry (keyed by the logical path); otherwise the file
-    // ships beside the binary and is read from assetRoot(). PCM's per-type default is LoadFromPath.
+    // Decode a Pcm entry's audio file into stereo frames at this system's sample rate — a `.brr` sample
+    // through the chip format's own decoder, any other file through the audio-file decoder.
     std::vector<AudioFrame> decodePcmEntry(const AudioLibrary::Entry& entry) {
-        // Decode through the hook the audio-file registration installs, never by naming the decoder
-        // directly — that is what keeps the decoder out of binaries that register no audio file. A Pcm entry
-        // only exists because that registration ran, so the hook is always set here; the guard is defensive.
+        if (detail::endsWith(entry.asmPath, ".brr")) {
+            return audio::brr::decodeToFrames(readEntryBytes(entry), sampleRate);
+        }
+        return decodeFile(readEntryBytes(entry), sampleRate);
+    }
+
+    // An audio file's bytes decoded to stereo frames at `rate`, through the hook the audio-file
+    // registration installs — never by naming the decoder directly, which is what keeps the decoder out
+    // of binaries that register no audio file. A Pcm entry only exists because that registration ran, so
+    // the hook is always set here; the guard is defensive.
+    static std::vector<AudioFrame> decodeFile(std::span<const std::uint8_t> file, unsigned rate) {
         if (detail::g_pcmDecode == nullptr) {
             throw std::runtime_error(
                 "AudioSystem::play: PCM decoder is not linked — no audio file was registered");
         }
+        return detail::g_pcmDecode(file, rate);
+    }
+
+    // A Pcm entry's file bytes. Embed → the build baked them into the asset registry (keyed by the
+    // logical path); otherwise the file ships beside the binary and is read from assetRoot(). PCM's
+    // per-type default is LoadFromPath.
+    static std::vector<std::uint8_t> readEntryBytes(const AudioLibrary::Entry& entry) {
         if (resolveAssetPolicy(entry.policy, AssetPolicy::LoadFromPath) == AssetPolicy::Embed) {
             if (const std::span<const std::uint8_t> baked = detail::findEmbeddedAsset(entry.asmPath);
                 !baked.empty()) {
-                return detail::g_pcmDecode(baked, sampleRate);
+                return std::vector<std::uint8_t>(baked.begin(), baked.end());
             }
             detail::warnEmbedNotBaked("asset", entry.asmPath);
         }
@@ -904,8 +1459,7 @@ struct AudioSystem::Impl {
         std::ostringstream ss;
         ss << in.rdbuf();
         const std::string contents = ss.str();
-        const std::vector<std::uint8_t> bytes(contents.begin(), contents.end());
-        return detail::g_pcmDecode(bytes, sampleRate);
+        return std::vector<std::uint8_t>(contents.begin(), contents.end());
     }
 
     // Enter the release fade: the voice's remaining output rides a short linear ramp to zero
@@ -1161,6 +1715,7 @@ struct AudioSystem::Impl {
     // thread — applyPlay/produceOnce/drainCues never run elsewhere.
     void startProductionThread() {
         threaded = true;
+        hostAudioUnitIfHostDriven();  // its thread is its own; the production thread only mixes it
         running.store(true, std::memory_order_relaxed);
         productionThread = std::thread([this] { productionLoop(); });
     }
@@ -1245,7 +1800,9 @@ AudioSystem::AudioSystem(detail::CoreFactory core, AudioKind kind, VMPlatform pl
 // false so play()/stop() apply inline and the test drives production via AudioSystemTestAccess.
 AudioSystem::AudioSystem(ManualTag, detail::CoreFactory core, AudioKind kind, AudioSink& sink,
                          VMPlatform platform, TimingProfile timing, unsigned sampleRate)
-    : impl_(std::make_unique<Impl>(core, kind, sink, platform, timing, sampleRate)) {}
+    : impl_(std::make_unique<Impl>(core, kind, sink, platform, timing, sampleRate)) {
+    impl_->hostAudioUnitIfHostDriven();  // stepped by the test, through the seam
+}
 
 AudioSystem::~AudioSystem() {
     // Stop the sink first so its audio thread stops pulling the ring, THEN join the production thread so
@@ -1266,6 +1823,67 @@ void AudioSystem::play(AudioId id, CueMode mode) {
 void AudioSystem::stop() {
     impl_->cueQueue.push(audio::AudioCommand{audio::AudioCommand::Op::Stop, AudioId{}});
     impl_->wakeOrApply();
+}
+
+// A cue through the sound chip rides the same channel as every other cue, so it keeps its order with
+// them; whether this system has a sample player is settled here, at the call, before anything is queued.
+void AudioSystem::play(AudioId id, const Cue& cue) {
+    impl_->requireSampler("play");
+    if (cue.voice >= audio::snesdriver::kVoices) {
+        throw std::out_of_range("AudioSystem::play: the sound chip has eight voices, 0 to 7");
+    }
+    if (cue.effect.echo && cue.effect.reverb) {
+        throw std::invalid_argument(
+            "AudioSystem::play: echo and reverb are the sound chip's one echo path — a cue engages one of "
+            "them");
+    }
+    if (cue.mode.kind == PlayMode::Kind::Repeat && !(cue.mode.perMinute > 0.0f)) {
+        throw std::invalid_argument("AudioSystem::play: a repeat has a tempo — PlayMode::repeat(perMinute) with more than zero");
+    }
+    impl_->cueQueue.push(audio::AudioCommand{.op = audio::AudioCommand::Op::PlayCue, .id = id, .cue = cue});
+    impl_->wakeOrApply();
+}
+
+void AudioSystem::effect(std::uint8_t voice, const AudioEffect& effect) {
+    impl_->requireSampler("effect");
+    if (voice >= audio::snesdriver::kVoices) {
+        throw std::out_of_range("AudioSystem::effect: the sound chip has eight voices, 0 to 7");
+    }
+    if (effect.echo && effect.reverb) {
+        throw std::invalid_argument(
+            "AudioSystem::effect: echo and reverb are the sound chip's one echo path — a voice takes one "
+            "of them");
+    }
+    impl_->cueQueue.push(audio::AudioCommand{.op  = audio::AudioCommand::Op::EffectVoice,
+                                             .id  = AudioId{},
+                                             .cue = Cue{.voice = voice, .effect = effect}});
+    impl_->wakeOrApply();
+}
+
+void AudioSystem::stop(std::uint8_t voice) {
+    impl_->requireSampler("stop");
+    if (voice >= audio::snesdriver::kVoices) {
+        throw std::out_of_range("AudioSystem::stop: the sound chip has eight voices, 0 to 7");
+    }
+    impl_->cueQueue.push(
+        audio::AudioCommand{.op = audio::AudioCommand::Op::StopVoice, .id = AudioId{}, .value = voice});
+    impl_->wakeOrApply();
+}
+
+std::vector<std::uint8_t> AudioSystem::read(const MemoryRegion& where, std::uint32_t index) {
+    impl_->requireAudioUnit("read");
+    Impl::UnitRequest request{.where = where, .index = index, .isRead = true};
+    impl_->askUnit(request);
+    return std::move(request.bytes);
+}
+
+void AudioSystem::write(const MemoryRegion& where, std::span<const std::uint8_t> bytes, std::uint32_t index) {
+    impl_->requireAudioUnit("write");
+    Impl::UnitRequest request{.where = where,
+                              .index = index,
+                              .isRead = false,
+                              .bytes = std::vector<std::uint8_t>(bytes.begin(), bytes.end())};
+    impl_->askUnit(request);
 }
 
 bool       AudioSystem::isPlaying() const noexcept { return impl_->playing.load(std::memory_order_relaxed); }
@@ -1383,6 +2001,14 @@ std::uint64_t AudioSystemTestAccess::stepDriverRaw(AudioSystem& sys, std::uint64
         return ran;
     }
     return 0;
+}
+
+Vm& AudioSystemTestAccess::voiceMachine(AudioSystem& sys, std::size_t index) {
+    sys.impl_->drainCues();
+    if (index >= sys.impl_->voices.size() || sys.impl_->voices[index]->runner == nullptr) {
+        throw std::out_of_range("AudioSystemTestAccess::voiceMachine: no voice with a machine at that index");
+    }
+    return sys.impl_->voices[index]->runner->machine();
 }
 
 }  // namespace detail

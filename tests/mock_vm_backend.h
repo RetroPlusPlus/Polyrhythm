@@ -201,7 +201,9 @@ public:
     void reset() override { memory_.fill(0); }
     void advanceClock(std::uint64_t) override {}
 
-    std::uint32_t placeRoutine(std::span<const std::uint8_t>) override { throw notAMachine(); }
+    std::uint32_t placeRoutine(std::span<const std::uint8_t>, std::optional<std::uint32_t>) override {
+        throw notAMachine();
+    }
     void          loadRom(std::span<const std::uint8_t>) override { throw notAMachine(); }
     void          bootHostedRom() override { throw notAMachine(); }
 
