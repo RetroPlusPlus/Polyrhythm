@@ -36,14 +36,19 @@ namespace retropp::audio {
 // lowers a typed slots(...) batch to one DriverSlot per engaged field on the game thread, so every field
 // here is a plain scalar — the queue stays trivially copyable. (HOSTING itself does not ride this queue: a
 // host() hands its shared voice across through the Impl's host inbox, since the voice carries a shared_ptr.)
+//
+// PlayCue carries a play(id, Cue{…}) — the audio file `id` and its `cue`, a trivially copyable value;
+// EffectVoice an effect(voice, AudioEffect{…}), the voice and the effect as `cue`; StopVoice a stop(voice),
+// the voice in `value`.
 struct AudioCommand {
-    enum class Op { Play, Stop, DriverPlay, DriverStop, DriverSlot, DriverRestart, DriverClose };
+    enum class Op { Play, Stop, DriverPlay, DriverStop, DriverSlot, DriverRestart, DriverClose, PlayCue, EffectVoice, StopVoice };
     Op            op;
     AudioId       id;
     CueMode       mode      = CueMode::Layer;    // Play only
     AudioType     lane      = AudioType::Music;  // DriverPlay — which play lane
-    std::uint64_t value     = 0;                 // DriverPlay: the played id; DriverSlot: the write value
+    std::uint64_t value     = 0;                 // DriverPlay: the played id; DriverSlot: the write value; StopVoice: the voice
     std::uint32_t slotIndex = 0;                 // DriverSlot: the declared slot index
+    Cue           cue{};                         // PlayCue / EffectVoice: the voice and the effect
 };
 
 // The main→production cue channel: the same lock-free ring the PCM path uses, instantiated for commands.

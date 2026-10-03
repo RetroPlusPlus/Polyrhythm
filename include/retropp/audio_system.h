@@ -37,6 +37,7 @@
 #include <vector>
 
 #include "retropp/audio.h"
+#include "retropp/audio_effect.h"   // AudioEffect — a Cue's effect
 #include "retropp/audio_library.h"  // AudioId, AudioType, AudioKind, DriverId, SlotSpec, SlotAccessor — the
                                     // audio + driver-hosting vocabulary the catalog owns
 #include "retropp/timing.h"
@@ -61,6 +62,40 @@ class HostedDriver;
 // from Layer is this explicit per-call token (the AssetPolicy shape): the choice is always visible at
 // the call site, never ambient system state.
 enum class CueMode { Layer, Retrigger };
+
+// How a cued sample plays on its voice — a playback decision supplied when you cue it, never baked into
+// the file. Identity is the kind, first member; the data-bearing mode carries its tempo through the
+// named constructor (the PlaybackMode shape of the animation player).
+//
+//   Continuous  the sample plays round from its start until the voice is stopped (the default)
+//   Once        one pass, then the voice keys itself off
+//   Repeat      one pass, struck again at a tempo — `perMinute` strikes a minute, as a metronome counts
+struct PlayMode {
+    enum class Kind : std::uint8_t { Continuous, Once, Repeat };
+    Kind  kind      = Kind::Continuous;
+    float perMinute = 0.0f;  // Repeat: strikes a minute; more than zero
+
+    [[nodiscard]] bool operator==(const PlayMode&) const noexcept = default;
+
+    static constexpr PlayMode continuous() noexcept { return PlayMode{}; }
+    static constexpr PlayMode once() noexcept { return PlayMode{.kind = Kind::Once}; }
+    static constexpr PlayMode repeat(float perMinute) noexcept {
+        return PlayMode{.kind = Kind::Repeat, .perMinute = perMinute};
+    }
+};
+
+// A registered audio file cued through a console's sound chip — play(id, Cue{…}) on a system whose
+// console has a sample player (the SNES's S-DSP, eight voices). `voice` is which of the chip's voices
+// plays it; a cue on a voice that is sounding takes it over. `mode` is how long it plays and whether it
+// is struck again; `effect` is how it sounds (retropp/audio_effect.h) — left at their defaults the file
+// plays round until stopped, as recorded, full, in the middle.
+//
+//   music.play(kick, Cue{.voice = 3, .mode = PlayMode::repeat(120), .effect = AudioEffect{.pitch = 1.5f}});
+struct Cue {
+    std::uint8_t voice = 0;
+    PlayMode     mode{};
+    AudioEffect  effect{};
+};
 
 // How an AudioSystem's output is doing, gathered in one read (AudioSystem::audioStats()).
 // `framesBuffered` is live state — the depth of the queue between production and the sink at the moment
@@ -154,13 +189,34 @@ public:
     // sounds simply layer.
     void play(AudioId id, CueMode mode = CueMode::Layer);
 
+    // Cue a registered audio file through the console's sound chip, on the voice the cue names, with its
+    // effect. On an SNES system of the Chiptune kind the file is converted to the chip's sample format
+    // and loaded into audio RAM the first time it is cued here (a `.brr` file is loaded as it is), and
+    // the voice is keyed on at the cue's pitch, volume and pan, through the sound driver the system
+    // hosts for this by itself, and plays the way the cue's mode says — round until stopped, once, or
+    // struck again at a tempo; `play(id)` on such a file is this cue with every default. The chip's
+    // eight voices come out of one mix, on the VMDriver bus. An effect the chip does not have, and a
+    // repeat with no tempo, throw std::invalid_argument naming it; a system whose console has no sample
+    // player throws std::logic_error.
+    void play(AudioId id, const Cue& cue);
+
+    // Change a voice as it plays: its pitch, volume, pan and echo path follow `effect` now, with no new
+    // key-on. The sample itself is read at the key-on, so a different file takes a play(id, Cue{…}),
+    // and the next play(id, Cue{…}) on this voice brings its own effect. Same refusals as play(id, Cue{…}).
+    void effect(std::uint8_t voice, const AudioEffect& effect);
+
+    // Key one of the chip's voices off: the sound a play(id, Cue{.voice = voice}) started releases.
+    // Throws std::logic_error on a system whose console has no sample player.
+    void stop(std::uint8_t voice);
+
     // Silence the system: every voice rides a short release fade (~8 ms) to zero and closes — a hard
     // cut at amplitude would click — and the output drains to silence. Registered audio stays
     // registered — play() again to cue afresh. (One-shot Sfx voices also close themselves when their
     // sound finishes, already at silence; per-voice control arrives with the play() voice-handle
     // surface.) A HOSTED RESIDENT DRIVER is NOT silenced by stop() — it is always-running and closes only
     // through its own handle (HostedDriver::close) or this system's destruction, so stop() never destroys
-    // mid-game driver RAM (a song position). stop() release-fades the cued voices around it.
+    // mid-game driver RAM (a song position). stop() release-fades the cued voices around it. The sound
+    // chip's voices a play(id, Cue{…}) keyed on are keyed off, every one; the samples stay loaded.
     void stop();
 
     // ── Hosted resident driver ────────────────────────────────────────────────────────────────────

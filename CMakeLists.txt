@@ -943,11 +943,12 @@ function(retropp_autoembed_assets _target)
                     continue()
                 endif()
                 string(REGEX REPLACE "\"" "" _logical "${_pathlit}")
-                # registerAudio carries BOTH chiptune (.asm — the routine scan assembles those) and PCM
-                # audio-pack files (.wav/.ogg/...) — a file-bytes asset baked/copied like a PNG, here. Skip
-                # its .asm calls so only the PCM containers are handled on the asset side.
+                # registerAudio carries BOTH chiptune (.asm — the routine scan assembles those) and audio
+                # files (.wav/.ogg/..., and a .brr sample in the SNES sound chip's format) — a file-bytes
+                # asset baked/copied like a PNG, here. Skip its .asm calls so only the audio files are
+                # handled on the asset side.
                 if(_loader STREQUAL "registerAudio" AND
-                   NOT _logical MATCHES "\\.(wav|ogg|flac|mp3)$")
+                   NOT _logical MATCHES "\\.(wav|ogg|flac|mp3|brr)$")
                     continue()
                 endif()
                 if(_call MATCHES "AssetPolicy::Embed")
@@ -1450,6 +1451,8 @@ add_library(retroppengine STATIC
     src/audio/audio_library_pcm.cpp
     src/audio/pcm_decode.cpp
     src/audio/gb_audio.cpp
+    src/audio/snes/brr.cpp
+    src/audio/snes/default_driver.cpp
     src/vm/gameboy/sameboy_machine.cpp
     src/vm/gameboy/sameboy_backend.cpp
     src/vm/snes/snes_backend.cpp
@@ -1537,6 +1540,40 @@ endforeach()
 string(APPEND _routine_body "}  // namespace retropp::sameboy::routinesrc\n")
 file(WRITE "${_routine_hdr}" "${_routine_body}")
 target_include_directories(retroppengine PRIVATE "${RETROPP_ROUTINE_GEN_DIR}")
+
+# The engine's default SNES sound driver (src/audio/snes/driver/) is assembled at build time by
+# Snaggletooth's assemblers — the 65816 init and tick with cpu65816_asm, the SPC700 sound program with
+# spc700_asm — through the same bake script every Embed driver image goes through, into headers under
+# retropp/generated/ that src/audio/snes/default_driver.cpp registers from. Each source says its ORG, so
+# the bakes share no layout.
+set(_snes_driver_headers "")
+foreach(_img init=cpu65816_asm tick=cpu65816_asm sound=spc700_asm)
+    string(REPLACE "=" ";" _kv "${_img}")
+    list(GET _kv 0 _name)
+    list(GET _kv 1 _cli)
+    set(_src "${CMAKE_CURRENT_SOURCE_DIR}/src/audio/snes/driver/${_name}.asm")
+    set(_hdr "${RETROPP_ROUTINE_GEN_DIR}/retropp/generated/snes_sound_driver_${_name}.h")
+    set(_layout "${RETROPP_ROUTINE_GEN_DIR}/retropp/generated/snes_sound_driver_${_name}.layout")
+    if(_cli STREQUAL "spc700_asm")
+        set(_isa "Spc700")
+    else()
+        set(_isa "Wdc65816")
+    endif()
+    add_custom_command(
+        OUTPUT "${_hdr}" "${_layout}"
+        COMMAND ${CMAKE_COMMAND}
+                -DASSEMBLER=$<TARGET_FILE:${_cli}> -DSOURCE=${_src}
+                -DLOGICAL=src/audio/snes/driver/${_name}.asm
+                -DSYMBOL=snesSoundDriver_${_name} -DISA=${_isa} -DHEADER=${_hdr}
+                -DLAYOUT_IN= -DLAYOUT_OUT=${_layout}
+                -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/bake_snaggletooth_routine.cmake"
+        DEPENDS "${_src}" ${_cli} "${CMAKE_CURRENT_SOURCE_DIR}/cmake/bake_snaggletooth_routine.cmake"
+        COMMENT "Assembling the default SNES sound driver's ${_name} (${_isa})"
+        VERBATIM)
+    list(APPEND _snes_driver_headers "${_hdr}")
+endforeach()
+target_sources(retroppengine PRIVATE ${_snes_driver_headers})
+set_source_files_properties(src/audio/snes/default_driver.cpp PROPERTIES OBJECT_DEPENDS "${_snes_driver_headers}")
 
 # The Game Boy diagnostic-tone AUDIO preset (src/audio/gb_audio.cpp) reads its .asm from this
 # directory at registration. The VM routine presets (gb_routines.cpp) embed at compile time (above)
@@ -1693,6 +1730,7 @@ if(RETROPP_BUILD_TESTS)
         tests/snes_apu_places_test.cpp
         tests/snes_chiptune_test.cpp
         tests/snes_audio_unit_test.cpp
+        tests/snes_sampler_test.cpp
         tests/net_socket_test.cpp
         tests/net_tls_test.cpp
         tests/vm_frame_sink_test.cpp
@@ -2294,6 +2332,12 @@ if(RETROPP_BUILD_EXAMPLES)
     # waves, the frames through a queue to the device, a panel of voice columns.
     retropp_add_example(snes_apu DIRECTORY snes/apu)
 
+    # The SNES sampler: audio files registered on the library — four the engine converts to the chip's
+    # sample format and one already in it — played through the console's sound chip with
+    # play(id, Cue{.voice, .effect}) on an AudioSystem::SNES; a panel of voice columns with each voice's
+    # sample, pitch, volume, pan and effect. CI runs its --verify (registered below).
+    retropp_add_example(snes_sampler DIRECTORY snes/sampler)
+
     # ── Curve demo — plots a Catmull-Rom curve through waypoints, a constant-speed atDistance walker, and
     # a Hermite curve, using a tiny in-memory marker atlas (no committed asset). Dev-run only; the live
     # SdlPlatform/Renderer path is the CI compile signal for the curve primitive's example host.
@@ -2614,6 +2658,13 @@ if(RETROPP_BUILD_EXAMPLES)
     # exits nonzero on any miss. Deterministic coverage of the same places is snes_apu_places_test's.
     add_test(NAME SnesApuExample.Verify
              COMMAND retropp-snes_apu-demo --verify)
+
+    # The SNES sampler demo, headless on a listening sink: a one-shot audio file cued through the chip
+    # sounds and plays out, the looping .brr with an echo keeps sounding until its voice is stopped, two
+    # voices cued together stop with stop(); it exits nonzero on any miss. Deterministic coverage of the
+    # same path is snes_sampler_test's.
+    add_test(NAME SnesSamplerExample.Verify
+             COMMAND retropp-snes_sampler-demo --verify)
 
     # ── Guest-escape demo — a running cartridge hands control to native code and carries on.
     # Authors a cartridge whose loop calls its own routine every frame, hosts it and run()s it, then

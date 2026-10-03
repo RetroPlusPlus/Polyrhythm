@@ -93,6 +93,11 @@ struct AudioSystemTestAccess {
     // output at a chosen cycle granularity (the golden gate compares two granularities over the same
     // total cycles, asserting identical PCM — it cues a single voice, where the mix is the identity).
     static std::uint64_t stepDriverRaw(AudioSystem& sys, std::uint64_t cycles);
+
+    // Voice `index`'s machine, to read what a cue left in it — the sampler's audio RAM and chip
+    // registers through the Vm's own place verbs. A manual system's machines step on the calling thread,
+    // which is the only kind this reaches into.
+    static Vm& voiceMachine(AudioSystem& sys, std::size_t index);
 };
 
 }  // namespace retropp::detail

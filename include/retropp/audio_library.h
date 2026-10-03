@@ -89,12 +89,14 @@ namespace detail {
 }  // namespace detail
 
 // Infer the audio KIND from a path's extension: `.asm` (ISA assembly source) is a Chiptune; an audio
-// container (`.wav` / `.ogg` / `.flac` / `.mp3`) is PCM. Anything else is taken as Chiptune. Used when
-// registering by path; uploadAudio (bytecode) is always a chiptune. constexpr: the one predicate drives
-// both the runtime inference and the compile-time ChiptunePath check.
+// container (`.wav` / `.ogg` / `.flac` / `.mp3`), or a `.brr` sample in the SNES sound chip's own format,
+// is PCM. Anything else is taken as Chiptune. Used when registering by path; uploadAudio (bytecode) is
+// always a chiptune. constexpr: the one predicate drives both the runtime inference and the compile-time
+// ChiptunePath check.
 [[nodiscard]] constexpr AudioKind audioKindForExtension(std::string_view path) noexcept {
     if (detail::endsWith(path, ".wav") || detail::endsWith(path, ".ogg") ||
-        detail::endsWith(path, ".flac") || detail::endsWith(path, ".mp3")) {
+        detail::endsWith(path, ".flac") || detail::endsWith(path, ".mp3") ||
+        detail::endsWith(path, ".brr")) {
         return AudioKind::Pcm;
     }
     return AudioKind::Chiptune;  // `.asm` and anything else
@@ -113,8 +115,8 @@ public:
     consteval ChiptunePath(const char (&literal)[N])  // NOLINT(google-explicit-constructor)
         : path_(literal) {
         if (audioKindForExtension(path_.view()) == AudioKind::Pcm) {
-            throw "registerAudio with an Isa registers a chiptune; a .wav/.ogg/.mp3/.flac audio file must "
-                  "use the no-Isa registerAudio overload";
+            throw "registerAudio with an Isa registers a chiptune; a .wav/.ogg/.mp3/.flac/.brr audio file "
+                  "must use the no-Isa registerAudio overload";
         }
     }
 
