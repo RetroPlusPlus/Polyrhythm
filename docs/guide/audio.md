@@ -502,7 +502,7 @@ shape of the animation player's playback mode: `PlayMode::continuous()` (the def
 round from its start until the voice is stopped; `PlayMode::once()` plays one pass, then the voice keys
 itself off; `PlayMode::repeat(perMinute)` plays one pass and strikes the voice again at a tempo, in
 strikes a minute as a metronome counts (a repeat with no tempo throws `std::invalid_argument`). A pass is
-the file: a `.wav` is encoded to loop round from its start, and a `.brr` loops or ends as its own last
+the file: a `.wav` / `.ogg` / `.flac` / `.mp3` is encoded to loop round from its start, and a `.brr` loops or ends as its own last
 block says. `stop(voice)` and `stop()` end a mode along with the sound.
 
 **`AudioEffect` is the effects vocabulary** (`retropp/audio_effect.h`): what a game asks of a sound, in

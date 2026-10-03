@@ -125,6 +125,26 @@ TEST(SnesSampler, AnAudioFileCuedHostsTheSamplerAndLoadsItConverted) {
     EXPECT_EQ(dsp(*sys, 0x44), 0x01u);  // V4SRCN: the second entry
 }
 
+TEST(SnesSampler, AnOggFileCuedLoadsConvertedAndSounds) {
+    test::CaptureAudioSink sink;
+    auto                   sys = snesSystem(sink);
+    sys->play(AudioLibrary::instance().registerAudio("tests/fixtures/tone.ogg", AudioType::Sfx, AssetPolicy::Embed),
+              Cue{.voice = 6});
+    EXPECT_GT(nonSilentCount(stepAndDrain(*sys, sink)), 100u);
+
+    // The file, as the engine converted it: decoded at the chip's rate, folded to mono, encoded.
+    const std::span<const std::uint8_t> file = detail::findEmbeddedAsset("tests/fixtures/tone.ogg");
+    ASSERT_FALSE(file.empty());
+    const std::vector<std::uint8_t> expected =
+        brr::encode(brr::toMono(detail::decodePcm(file, brr::kSampleRate)), /*loop=*/true);
+    const std::vector<std::uint8_t> loaded = Access::voiceMachine(*sys, 0).read(
+        MemoryRegion{.at = snes::audioRam(sd::kSamplesStart), .size = static_cast<std::uint32_t>(expected.size())});
+    EXPECT_EQ(loaded, expected);
+    EXPECT_EQ(audioRam(*sys, sd::kDirectory + 0), 0x00u);
+    EXPECT_EQ(audioRam(*sys, sd::kDirectory + 1), 0x04u);
+    EXPECT_EQ(dsp(*sys, 0x64), 0x00u);  // V6SRCN
+}
+
 TEST(SnesSampler, TheKeyedVoiceSoundsAndStopVoiceKeysItOff) {
     test::CaptureAudioSink sink;
     auto                   sys = snesSystem(sink);
