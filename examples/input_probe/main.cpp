@@ -266,13 +266,52 @@ int runVerify() {
     SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy");
     SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
 
+    // DIAGNOSTIC (temporary): the platform constructor's SDL steps one at a time.
+    {
+        std::printf("diag: SDL_Init(VIDEO|GAMEPAD|AUDIO)\n");
+        const bool init = SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD | SDL_INIT_AUDIO);
+        std::printf("diag:   %s %s; video driver %s\n", init ? "ok" : "FAILED", init ? "" : SDL_GetError(),
+                    SDL_GetCurrentVideoDriver() ? SDL_GetCurrentVideoDriver() : "(none)");
+        std::printf("diag: SDL_CreateWindow\n");
+        SDL_Window* w = init ? SDL_CreateWindow("diag", 320, 240, SDL_WINDOW_HIGH_PIXEL_DENSITY) : nullptr;
+        std::printf("diag:   %s %s\n", w ? "ok" : "FAILED", w ? "" : SDL_GetError());
+        std::printf("diag: SDL_CreateGPUDevice\n");
+        SDL_GPUDevice* d = w ? SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_SPIRV | SDL_GPU_SHADERFORMAT_DXIL |
+                                                       SDL_GPU_SHADERFORMAT_METALLIB, false, nullptr)
+                             : nullptr;
+        if (d) {
+            const SDL_PropertiesID p = SDL_GetGPUDeviceProperties(d);
+            std::printf("diag:   ok; backend %s; device %s; driver %s %s\n", SDL_GetGPUDeviceDriver(d),
+                        SDL_GetStringProperty(p, SDL_PROP_GPU_DEVICE_NAME_STRING, "?"),
+                        SDL_GetStringProperty(p, SDL_PROP_GPU_DEVICE_DRIVER_NAME_STRING, "?"),
+                        SDL_GetStringProperty(p, SDL_PROP_GPU_DEVICE_DRIVER_INFO_STRING, "?"));
+        } else {
+            std::printf("diag:   FAILED %s\n", SDL_GetError());
+        }
+        std::printf("diag: SDL_ClaimWindowForGPUDevice\n");
+        const bool claim = d && SDL_ClaimWindowForGPUDevice(d, w);
+        std::printf("diag:   %s %s\n", claim ? "ok" : "FAILED", claim ? "" : SDL_GetError());
+        std::printf("diag: SDL_SetGPUSwapchainParameters\n");
+        const bool params = claim && SDL_SetGPUSwapchainParameters(d, w, SDL_GPU_SWAPCHAINCOMPOSITION_SDR,
+                                                                   SDL_GPU_PRESENTMODE_VSYNC);
+        std::printf("diag:   %s %s\n", params ? "ok" : "FAILED", params ? "" : SDL_GetError());
+        if (claim) SDL_ReleaseWindowFromGPUDevice(d, w);
+        if (d) SDL_DestroyGPUDevice(d);
+        if (w) SDL_DestroyWindow(w);
+        SDL_Quit();
+        std::printf("diag: done\n");
+    }
+
     std::unique_ptr<SdlPlatform> platform;
     try {
         platform = std::make_unique<SdlPlatform>(probeConfig());
     } catch (const std::runtime_error& e) {
         std::printf("skipped: %s\n", e.what());
-        return 77;
+        return 1;  // DIAGNOSTIC (temporary): reported failed so the reason reaches the log
     }
+    std::printf("diag: platform constructed; first pump\n");  // DIAGNOSTIC (temporary)
+    platform->pumpEvents();
+    std::printf("diag: first pump done\n");  // DIAGNOSTIC (temporary)
 
     const auto push = [](SDL_Event e) {
         e.common.timestamp = SDL_GetTicksNS();
