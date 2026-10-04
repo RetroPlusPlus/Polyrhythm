@@ -1,5 +1,7 @@
 #include "retropp/input_actions.h"
 
+#include <array>
+
 namespace retropp {
 
 ActionMap::ActionMap(std::initializer_list<ActionRow> rows) {
@@ -109,6 +111,27 @@ SDL_GamepadButton resolvePadButton(PadButton b, ControllerType family) noexcept 
             return SDL_GAMEPAD_BUTTON_INVALID;  // analog-backed: read an axis, not a button
     }
     return SDL_GAMEPAD_BUTTON_INVALID;
+}
+
+namespace {
+
+// The PadButton names a button press answers as: every digital enumerator except the four
+// printed-letter aliases. A pad control added to resolvePadButton is added here in the same edit.
+constexpr std::array kPressablePadButtons{
+    PadButton::FaceSouth, PadButton::FaceEast,  PadButton::FaceWest,    PadButton::FaceNorth,
+    PadButton::DpadUp,    PadButton::DpadDown,  PadButton::DpadLeft,    PadButton::DpadRight,
+    PadButton::ShoulderL, PadButton::ShoulderR, PadButton::StickClickL, PadButton::StickClickR,
+    PadButton::Start,     PadButton::Select,    PadButton::Guide,       PadButton::Share,
+};
+
+}  // namespace
+
+std::optional<PadButton> padButtonFrom(SDL_GamepadButton button) noexcept {
+    if (button == SDL_GAMEPAD_BUTTON_INVALID) return std::nullopt;
+    for (const PadButton b : kPressablePadButtons) {
+        if (resolvePadButton(b, ControllerType::Standard) == button) return b;
+    }
+    return std::nullopt;
 }
 
 bool padButtonIsAnalog(PadButton b) noexcept {

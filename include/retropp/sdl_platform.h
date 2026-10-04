@@ -1,6 +1,8 @@
 #pragma once
 
 #include <array>
+#include <memory>
+#include <optional>
 #include <vector>
 
 #include <SDL3/SDL.h>
@@ -13,6 +15,11 @@
 #include "retropp/platform.h"
 
 namespace retropp {
+
+namespace detail {
+class SourceCapture;
+struct SdlPlatformTestAccess;  // src/sdl_platform_testing.h — a platform with its window and input, no GPU device
+}
 
 // The production AudioSink: an SDL audio stream on the default playback device. start() opens the
 // stream at the requested rate and begins draining the supplied pull on SDL's audio thread (the
@@ -151,6 +158,19 @@ public:
     void assignKeyboard(int player);
     [[nodiscard]] std::vector<GamepadInfo> connectedGamepads() const;
 
+    // Capturing a pressed source — how a controls screen learns which physical input the player
+    // presses, bound or not. captureRequest arms a slot and clears its answer; the first press on
+    // that slot's devices after the request becomes the answer, and capturedSource reads it — the
+    // same value on every call until the slot's next request, empty before a request and while it
+    // waits. A press is a down event: a key (repeats are not presses), the left, right or middle
+    // mouse button, a pad button by position (padButtonFrom), or a trigger or stick direction rising
+    // past its default digital threshold after the live AnalogResponse. Anything already down at the
+    // request is not a press. A captured press still drives every action it is bound to. Slots clamp
+    // into [0, kMaxPlayers) and capture independently; a key or mouse press belongs to the keyboard's
+    // slot, a pad press to the pad's slot.
+    void captureRequest(int player = 0);
+    [[nodiscard]] std::optional<CapturedSource> capturedSource(int player = 0) const noexcept;
+
 protected:
     // Issue a CHANGED motor state to every pad routed to `player`. Only pads whose SDL rumble / trigger-
     // rumble capability is present are driven (a slot with no capable pad no-ops). uint8 0–255 → SDL
@@ -166,9 +186,19 @@ private:
         int            slot;
     };
 
+    // What the platform brings up: everything, or the window and the input alone (no GPU device, no
+    // audio) for the internal seam in src/sdl_platform_testing.h.
+    enum class Devices : std::uint8_t { All, InputOnly };
+    SdlPlatform(const EngineConfig& config, Devices devices);
+    friend struct detail::SdlPlatformTestAccess;
+
     void openGamepad(SDL_JoystickID id);
     void closeGamepad(SDL_JoystickID id);
     void buildSample();
+
+    // Hand one event to the capture: a key or mouse button down, or a pad's button down or axis motion
+    // with that pad's current readings. Runs only while a slot waits for a press.
+    void forwardToCapture(const SDL_Event& event);
 
     // The OS draggable-region hit-test, installed once at construction with `this` as the userdata. SDL
     // calls it during event processing with a window-space point; it maps that point → viewport (the same
@@ -188,6 +218,7 @@ private:
     std::vector<OpenPad> pads_;         // every connected pad, each routed to a slot
     int                  keyboardSlot_ = 0;  // the slot the keyboard+mouse unit feeds
     InputSample          sample_;       // rebuilt by pumpEvents; served by input()
+    std::unique_ptr<detail::SourceCapture> capture_;  // captureRequest / capturedSource
 
     // ── Per-pump device-activity flags (drive the active-device signal) ──
     bool kbActivityThisPump_ = false;

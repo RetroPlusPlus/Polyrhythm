@@ -2,6 +2,9 @@
 
 #include <SDL3/SDL_main.h>  // SDL_SetMainReady — the engine owns the entry-point handshake (SDL_MAIN_HANDLED)
 
+#include "sdl_platform_testing.h"
+#include "source_capture.h"
+
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -39,20 +42,22 @@ float maxMagnitude(float a, float b) noexcept {
     return std::abs(b) > std::abs(a) ? b : a;
 }
 
-// The signed axis value a stick-direction pseudo-button reads on one pad (positive = pressed
-// direction). Up is -y in SDL's convention.
-float stickDirValue(PadButton b, float leftX, float leftY, float rightX, float rightY) noexcept {
-    switch (b) {
-        case PadButton::LeftStickUp:     return -leftY;
-        case PadButton::LeftStickDown:   return leftY;
-        case PadButton::LeftStickLeft:   return -leftX;
-        case PadButton::LeftStickRight:  return leftX;
-        case PadButton::RightStickUp:    return -rightY;
-        case PadButton::RightStickDown:  return rightY;
-        case PadButton::RightStickLeft:  return -rightX;
-        case PadButton::RightStickRight: return rightX;
-        default:                         return 0.0f;
-    }
+using detail::stickDirValue;
+
+// One open pad as the capture reads it: its routing, its family, and its six raw analog readings.
+detail::CapturePad capturePad(SDL_Gamepad* handle, SDL_JoystickID id, int slot,
+                              ControllerType family) noexcept {
+    return detail::CapturePad{
+        .id          = id,
+        .slot        = slot,
+        .family      = family,
+        .rawLeftX    = rawStickAxis(SDL_GetGamepadAxis(handle, SDL_GAMEPAD_AXIS_LEFTX)),
+        .rawLeftY    = rawStickAxis(SDL_GetGamepadAxis(handle, SDL_GAMEPAD_AXIS_LEFTY)),
+        .rawRightX   = rawStickAxis(SDL_GetGamepadAxis(handle, SDL_GAMEPAD_AXIS_RIGHTX)),
+        .rawRightY   = rawStickAxis(SDL_GetGamepadAxis(handle, SDL_GAMEPAD_AXIS_RIGHTY)),
+        .rawTriggerL = rawTriggerAxis(SDL_GetGamepadAxis(handle, SDL_GAMEPAD_AXIS_LEFT_TRIGGER)),
+        .rawTriggerR = rawTriggerAxis(SDL_GetGamepadAxis(handle, SDL_GAMEPAD_AXIS_RIGHT_TRIGGER)),
+    };
 }
 
 // Fold one down/valued source into a per-action value: a plain digital source contributes 1 on x, a
@@ -69,12 +74,22 @@ void contribute(Vec2& value, Dir component, float magnitude) noexcept {
 }
 }  // namespace
 
-SdlPlatform::SdlPlatform(const EngineConfig& config)
-    : viewport_{config.viewport.width, config.viewport.height} {
+SdlPlatform::SdlPlatform(const EngineConfig& config) : SdlPlatform(config, Devices::All) {}
+
+std::unique_ptr<SdlPlatform> detail::SdlPlatformTestAccess::inputOnly(const EngineConfig& config) {
+    return std::unique_ptr<SdlPlatform>(new SdlPlatform(config, SdlPlatform::Devices::InputOnly));
+}
+
+SdlPlatform::SdlPlatform(const EngineConfig& config, Devices devices)
+    : viewport_{config.viewport.width, config.viewport.height},
+      capture_{std::make_unique<detail::SourceCapture>()} {
     // The engine owns SDL's entry-point handshake: with SDL_MAIN_HANDLED defined (engine build), a game
     // writes a plain main() and the engine acknowledges main-thread readiness here, once, before SDL_Init.
     [[maybe_unused]] static const bool mainReady = [] { SDL_SetMainReady(); return true; }();
-    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD | SDL_INIT_AUDIO)) {
+    const SDL_InitFlags subsystems = devices == Devices::InputOnly
+                                         ? SDL_INIT_VIDEO | SDL_INIT_GAMEPAD
+                                         : SDL_INIT_VIDEO | SDL_INIT_GAMEPAD | SDL_INIT_AUDIO;
+    if (!SDL_Init(subsystems)) {
         fail("SDL_Init failed");
     }
 
@@ -107,6 +122,12 @@ SdlPlatform::SdlPlatform(const EngineConfig& config)
     if (!window_) {
         SDL_Quit();
         fail("SDL_CreateWindow failed");
+    }
+
+    // The window and the input are all an input-only platform has: no GPU device, nothing drawn.
+    if (devices == Devices::InputOnly) {
+        SDL_SetWindowHitTest(window_, &SdlPlatform::hitTest, this);
+        return;
     }
 
     // Created with every shader format the supported backends accept so SDL picks an
@@ -199,6 +220,38 @@ std::vector<GamepadInfo> SdlPlatform::connectedGamepads() const {
         out.push_back(GamepadInfo{pad.id, pad.family, pad.slot});
     }
     return out;
+}
+
+void SdlPlatform::captureRequest(int player) {
+    const int slot = std::clamp(player, 0, kMaxPlayers - 1);
+    std::vector<detail::CapturePad> onSlot;
+    for (const OpenPad& pad : pads_) {
+        if (pad.slot == slot) onSlot.push_back(capturePad(pad.handle, pad.id, pad.slot, pad.family));
+    }
+    capture_->request(slot, onSlot, analogResponse_);
+}
+
+std::optional<CapturedSource> SdlPlatform::capturedSource(int player) const noexcept {
+    return capture_->answer(std::clamp(player, 0, kMaxPlayers - 1));
+}
+
+void SdlPlatform::forwardToCapture(const SDL_Event& event) {
+    SDL_JoystickID which = 0;
+    switch (event.type) {
+        case SDL_EVENT_KEY_DOWN:
+        case SDL_EVENT_MOUSE_BUTTON_DOWN:
+            capture_->event(event, keyboardSlot_, nullptr, analogResponse_);
+            return;
+        case SDL_EVENT_GAMEPAD_BUTTON_DOWN: which = event.gbutton.which; break;
+        case SDL_EVENT_GAMEPAD_AXIS_MOTION: which = event.gaxis.which;   break;
+        default: return;
+    }
+    for (const OpenPad& pad : pads_) {
+        if (pad.id != which) continue;
+        const detail::CapturePad readings = capturePad(pad.handle, pad.id, pad.slot, pad.family);
+        capture_->event(event, keyboardSlot_, &readings, analogResponse_);
+        return;
+    }
 }
 
 void SdlPlatform::emitVibration(int player, const MotorLevels& levels) noexcept {
@@ -307,6 +360,7 @@ void SdlPlatform::pumpEvents() {
             default:
                 break;
         }
+        if (capture_->anyArmed()) forwardToCapture(event);
     }
 
     // Poll the absolute pointer position once per pump: the OS suppresses pointer events over
