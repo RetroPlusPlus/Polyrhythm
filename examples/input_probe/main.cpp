@@ -33,9 +33,10 @@
 //
 // Close the window to quit.
 //
-// `input_probe --verify` drives the capture through a live SdlPlatform instead, with synthetic SDL
-// events and a virtual gamepad, prints one line per check and exits nonzero on any miss. Where no GPU
-// device can be created it prints the reason and exits 77, which CTest reports as skipped.
+// `input_probe --verify` drives the capture through a live SdlPlatform's event pump instead, with
+// synthetic SDL events and a virtual gamepad, prints one line per check and exits nonzero on any
+// miss. It brings the platform up with its window and input alone, so it needs no GPU device; where
+// SDL cannot open a window it prints the reason and exits 77, which CTest reports as skipped.
 
 #include <algorithm>
 #include <array>
@@ -64,6 +65,7 @@
 #include "retropp/viewport.h"
 #include "retropp/vibration.h"
 #include "retropp/windowed_host.h"
+#include "src/sdl_platform_testing.h"  // detail::SdlPlatformTestAccess — a platform with input and no GPU device
 
 namespace {
 
@@ -246,7 +248,7 @@ void rebind(ActionMap& map, Action action, const CapturedSource& press) {
 }
 
 // ── Verify mode ─────────────────────────────────────────────────────────────────────────────────
-// The capture driven through a live SdlPlatform. Keyboard and mouse presses are pushed onto SDL's
+// The capture driven through a live SdlPlatform's event pump. Keyboard and mouse presses are pushed onto SDL's
 // event queue; pad input comes from a virtual gamepad, whose buttons and axes reach the platform's
 // pump as a real pad's do. Each check pumps the platform and reads capturedSource / input().
 
@@ -260,58 +262,20 @@ int runVerify() {
     std::setvbuf(stdout, nullptr, _IONBF, 0);
     std::printf("input_probe --verify: the platform captures the next press, from synthetic SDL input\n\n");
 
-    // Set before the platform initializes SDL. The checks read input only, so SDL's dummy audio driver
-    // stands in for the host's. A window on an unattended machine has no keyboard focus, and SDL drops
-    // pad input to an application without focus unless background events are allowed.
-    SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy");
+    // Set before the platform initializes SDL: a window on an unattended machine has no keyboard
+    // focus, and SDL drops pad input to an application without focus unless background events are
+    // allowed.
     SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
 
-    // DIAGNOSTIC (temporary): the platform constructor's SDL steps one at a time.
-    {
-        std::printf("diag: SDL_Init(VIDEO|GAMEPAD|AUDIO)\n");
-        const bool init = SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD | SDL_INIT_AUDIO);
-        std::printf("diag:   %s %s; video driver %s\n", init ? "ok" : "FAILED", init ? "" : SDL_GetError(),
-                    SDL_GetCurrentVideoDriver() ? SDL_GetCurrentVideoDriver() : "(none)");
-        std::printf("diag: SDL_CreateWindow\n");
-        SDL_Window* w = init ? SDL_CreateWindow("diag", 320, 240, SDL_WINDOW_HIGH_PIXEL_DENSITY) : nullptr;
-        std::printf("diag:   %s %s\n", w ? "ok" : "FAILED", w ? "" : SDL_GetError());
-        std::printf("diag: SDL_CreateGPUDevice\n");
-        SDL_GPUDevice* d = w ? SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_SPIRV | SDL_GPU_SHADERFORMAT_DXIL |
-                                                       SDL_GPU_SHADERFORMAT_METALLIB, false, nullptr)
-                             : nullptr;
-        if (d) {
-            const SDL_PropertiesID p = SDL_GetGPUDeviceProperties(d);
-            std::printf("diag:   ok; backend %s; device %s; driver %s %s\n", SDL_GetGPUDeviceDriver(d),
-                        SDL_GetStringProperty(p, SDL_PROP_GPU_DEVICE_NAME_STRING, "?"),
-                        SDL_GetStringProperty(p, SDL_PROP_GPU_DEVICE_DRIVER_NAME_STRING, "?"),
-                        SDL_GetStringProperty(p, SDL_PROP_GPU_DEVICE_DRIVER_INFO_STRING, "?"));
-        } else {
-            std::printf("diag:   FAILED %s\n", SDL_GetError());
-        }
-        std::printf("diag: SDL_ClaimWindowForGPUDevice\n");
-        const bool claim = d && SDL_ClaimWindowForGPUDevice(d, w);
-        std::printf("diag:   %s %s\n", claim ? "ok" : "FAILED", claim ? "" : SDL_GetError());
-        std::printf("diag: SDL_SetGPUSwapchainParameters\n");
-        const bool params = claim && SDL_SetGPUSwapchainParameters(d, w, SDL_GPU_SWAPCHAINCOMPOSITION_SDR,
-                                                                   SDL_GPU_PRESENTMODE_VSYNC);
-        std::printf("diag:   %s %s\n", params ? "ok" : "FAILED", params ? "" : SDL_GetError());
-        if (claim) SDL_ReleaseWindowFromGPUDevice(d, w);
-        if (d) SDL_DestroyGPUDevice(d);
-        if (w) SDL_DestroyWindow(w);
-        SDL_Quit();
-        std::printf("diag: done\n");
-    }
-
+    // The checks read input and draw nothing, so the platform is brought up with its window and its
+    // input alone — no GPU device — and runs the same on a machine with no display to draw to.
     std::unique_ptr<SdlPlatform> platform;
     try {
-        platform = std::make_unique<SdlPlatform>(probeConfig());
+        platform = detail::SdlPlatformTestAccess::inputOnly(probeConfig());
     } catch (const std::runtime_error& e) {
         std::printf("skipped: %s\n", e.what());
-        return 1;  // DIAGNOSTIC (temporary): reported failed so the reason reaches the log
+        return 77;
     }
-    std::printf("diag: platform constructed; first pump\n");  // DIAGNOSTIC (temporary)
-    platform->pumpEvents();
-    std::printf("diag: first pump done\n");  // DIAGNOSTIC (temporary)
 
     const auto push = [](SDL_Event e) {
         e.common.timestamp = SDL_GetTicksNS();

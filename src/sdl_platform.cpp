@@ -2,6 +2,7 @@
 
 #include <SDL3/SDL_main.h>  // SDL_SetMainReady — the engine owns the entry-point handshake (SDL_MAIN_HANDLED)
 
+#include "sdl_platform_testing.h"
 #include "source_capture.h"
 
 #include <algorithm>
@@ -73,13 +74,22 @@ void contribute(Vec2& value, Dir component, float magnitude) noexcept {
 }
 }  // namespace
 
-SdlPlatform::SdlPlatform(const EngineConfig& config)
+SdlPlatform::SdlPlatform(const EngineConfig& config) : SdlPlatform(config, Devices::All) {}
+
+std::unique_ptr<SdlPlatform> detail::SdlPlatformTestAccess::inputOnly(const EngineConfig& config) {
+    return std::unique_ptr<SdlPlatform>(new SdlPlatform(config, SdlPlatform::Devices::InputOnly));
+}
+
+SdlPlatform::SdlPlatform(const EngineConfig& config, Devices devices)
     : viewport_{config.viewport.width, config.viewport.height},
       capture_{std::make_unique<detail::SourceCapture>()} {
     // The engine owns SDL's entry-point handshake: with SDL_MAIN_HANDLED defined (engine build), a game
     // writes a plain main() and the engine acknowledges main-thread readiness here, once, before SDL_Init.
     [[maybe_unused]] static const bool mainReady = [] { SDL_SetMainReady(); return true; }();
-    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD | SDL_INIT_AUDIO)) {
+    const SDL_InitFlags subsystems = devices == Devices::InputOnly
+                                         ? SDL_INIT_VIDEO | SDL_INIT_GAMEPAD
+                                         : SDL_INIT_VIDEO | SDL_INIT_GAMEPAD | SDL_INIT_AUDIO;
+    if (!SDL_Init(subsystems)) {
         fail("SDL_Init failed");
     }
 
@@ -112,6 +122,12 @@ SdlPlatform::SdlPlatform(const EngineConfig& config)
     if (!window_) {
         SDL_Quit();
         fail("SDL_CreateWindow failed");
+    }
+
+    // The window and the input are all an input-only platform has: no GPU device, nothing drawn.
+    if (devices == Devices::InputOnly) {
+        SDL_SetWindowHitTest(window_, &SdlPlatform::hitTest, this);
+        return;
     }
 
     // Created with every shader format the supported backends accept so SDL picks an

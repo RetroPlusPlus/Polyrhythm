@@ -2289,12 +2289,14 @@ if(RETROPP_BUILD_EXAMPLES)
     # (no assets).
     retropp_add_example(input_probe)
 
-    # The input probe's capture, through a live SdlPlatform: keyboard and mouse presses pushed onto
-    # SDL's event queue and a virtual gamepad's buttons and axes, checking what captureRequest /
-    # capturedSource answer, routing by slot, and that a captured press still drives its action; it
-    # exits nonzero on any miss. A runner where the platform cannot create its GPU device cannot run
-    # it: the demo prints the reason and exits 77, reported as skipped. Deterministic coverage of the
-    # same rules is source_capture_test's.
+    # The input probe's capture, through a live SdlPlatform's event pump: keyboard and mouse presses
+    # pushed onto SDL's event queue and a virtual gamepad's buttons and axes, checking what
+    # captureRequest / capturedSource answer, routing by slot, and that a captured press still drives
+    # its action; it exits nonzero on any miss. The platform is brought up with its window and input
+    # alone (src/sdl_platform_testing.h), so the case needs no GPU device; where SDL cannot open a
+    # window the demo prints the reason and exits 77, reported as skipped. Deterministic coverage of
+    # the same rules is source_capture_test's.
+    target_include_directories(retropp-input_probe-demo PRIVATE "${RETROPP_ENGINE_SOURCE_DIR}")
     add_test(NAME InputProbeExample.Verify
              COMMAND retropp-input_probe-demo --verify)
     set_tests_properties(InputProbeExample.Verify PROPERTIES SKIP_RETURN_CODE 77)

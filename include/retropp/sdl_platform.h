@@ -18,6 +18,7 @@ namespace retropp {
 
 namespace detail {
 class SourceCapture;
+struct SdlPlatformTestAccess;  // src/sdl_platform_testing.h — a platform with its window and input, no GPU device
 }
 
 // The production AudioSink: an SDL audio stream on the default playback device. start() opens the
@@ -184,6 +185,12 @@ private:
         ControllerType family;
         int            slot;
     };
+
+    // What the platform brings up: everything, or the window and the input alone (no GPU device, no
+    // audio) for the internal seam in src/sdl_platform_testing.h.
+    enum class Devices : std::uint8_t { All, InputOnly };
+    SdlPlatform(const EngineConfig& config, Devices devices);
+    friend struct detail::SdlPlatformTestAccess;
 
     void openGamepad(SDL_JoystickID id);
     void closeGamepad(SDL_JoystickID id);
