@@ -256,7 +256,15 @@ int runVerify() {
         std::printf("  %s %s\n", ok ? "ok    " : "FAILED", what);
         if (!ok) ++failures;
     };
+    // Unbuffered, so a run that stops early still shows every line it reached.
+    std::setvbuf(stdout, nullptr, _IONBF, 0);
     std::printf("input_probe --verify: the platform captures the next press, from synthetic SDL input\n\n");
+
+    // Set before the platform initializes SDL. The checks read input only, so SDL's dummy audio driver
+    // stands in for the host's. A window on an unattended machine has no keyboard focus, and SDL drops
+    // pad input to an application without focus unless background events are allowed.
+    SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy");
+    SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
 
     std::unique_ptr<SdlPlatform> platform;
     try {
@@ -332,8 +340,9 @@ int runVerify() {
     pumpSome();
     check(!platform->capturedSource().has_value(), "a key repeat is not a press");
 
+    // The rebind checks run on the captured key; with no capture they report failed.
     ActionMap map = probeMap();
-    rebind(map, Action::Fire, *f9);
+    if (f9) rebind(map, Action::Fire, *f9);
     int fireRows = 0;
     bool fireIsF9 = true;
     for (const ActionBinding& row : map.rows()) {
@@ -341,9 +350,9 @@ int runVerify() {
         ++fireRows;
         fireIsF9 = fireIsF9 && row.source == Source{SDL_SCANCODE_F9};
     }
-    check(fireRows == 1 && fireIsF9, "rebind leaves Fire one row, the captured key");
+    check(f9 && fireRows == 1 && fireIsF9, "rebind leaves Fire one row, the captured key");
 
-    rebind(map, Action::Up, *f9);
+    if (f9) rebind(map, Action::Up, *f9);
     int  upRows = 0, moveUpRows = 0, moveDownRows = 0;
     bool upIsF9 = true, moveUpIsF9 = true, moveKeepsStick = false;
     for (const ActionBinding& row : map.rows()) {
