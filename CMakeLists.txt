@@ -1420,6 +1420,7 @@ add_library(retroppengine STATIC
     src/input.cpp
     src/run_loop.cpp
     src/input_actions.cpp
+    src/source_capture.cpp
     src/analog_response.cpp
     src/windowed_host.cpp
     src/window.cpp
@@ -1642,6 +1643,7 @@ if(RETROPP_BUILD_TESTS)
         tests/window_chrome_test.cpp
         tests/window_position_test.cpp
         tests/action_map_test.cpp
+        tests/source_capture_test.cpp
         tests/engine_config_test.cpp
         tests/windowed_host_test.cpp
         tests/pacing_test.cpp
@@ -2282,9 +2284,20 @@ if(RETROPP_BUILD_EXAMPLES)
     # ── Input probe — a live hand-verification host for the action-based input system: one block per
     # digital action (multi-source: keys, positional + printed-letter pad buttons, a trigger past its
     # threshold, stick clicks, a mouse button), a dot on the Move vector (stick + WASD/arrows/d-pad),
-    # a throttle bar on the left trigger's axis, the active-device swatch, and console edge prints.
-    # In-code art only (no assets). Dev-run only; the device-free suites are the CI signal.
+    # a throttle bar on the left trigger's axis, the active-device swatch, console edge prints, and a
+    # rebind mode (F1 / F3 select a block, F2 captures the next press and binds it). In-code art only
+    # (no assets).
     retropp_add_example(input_probe)
+
+    # The input probe's capture, through a live SdlPlatform: keyboard and mouse presses pushed onto
+    # SDL's event queue and a virtual gamepad's buttons and axes, checking what captureRequest /
+    # capturedSource answer, routing by slot, and that a captured press still drives its action; it
+    # exits nonzero on any miss. A runner where the platform cannot create its GPU device cannot run
+    # it: the demo prints the reason and exits 77, reported as skipped. Deterministic coverage of the
+    # same rules is source_capture_test's.
+    add_test(NAME InputProbeExample.Verify
+             COMMAND retropp-input_probe-demo --verify)
+    set_tests_properties(InputProbeExample.Verify PROPERTIES SKIP_RETURN_CODE 77)
 
     # ── Render-stats demo — a 1080p load bench behind a hi-fi deck. Nine controls each load a different
     # part of the renderer (sprite count, extra tile layers, Below lenses, blend-run splitting, region

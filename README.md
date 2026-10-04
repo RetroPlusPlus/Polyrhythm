@@ -51,7 +51,8 @@ Active development. The core is in place and exercised end to end by a real cons
   simulation on a divider eases across the ticks it takes), and a host-selected timing profile.
 - **Platform & input** — SDL3 window, `SDL_GPU` device and event pump; native fullscreen and
   high-DPI; an action-based input surface — a game declares its own actions, binds each to any
-  number of sources, and the input surface resolves them per controller family.
+  number of sources, and the input surface resolves them per controller family; a controls screen
+  captures the player's next press as a source to bind.
 - **Rendering** — an `SDL_GPU` pipeline with an internal viewport, a window-filling
   integer/letterbox blit (nearest/bilinear), and a layered compositor:
   - arbitrary Z-sorted tile and sprite layers, indexed atlases with runtime palettes
@@ -114,8 +115,6 @@ Active development. The core is in place and exercised end to end by a real cons
   - off unless a machine is asked for it, because a raster costs cycles
 - **Persistence** — versioned, atomically-written save documents; a separate store for a
   player's other files; registration for arbitrary byte assets that are never interpreted.
-
-Planned: positional voices.
 
 For the full per-subsystem surface and current status, see the
 [developer guide](docs/guide/README.md).

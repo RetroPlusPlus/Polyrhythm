@@ -27,6 +27,7 @@ binding side.
 - [Reading input: `InputState`](#reading-input-inputstate)
 - [Player slots](#player-slots)
 - [The active-device signal](#the-active-device-signal)
+- [Capturing a pressed source](#capturing-a-pressed-source)
 - [Pointer & analog input](#pointer--analog-input)
 - [Analog processing: dead-zone + stick gate](#analog-processing-dead-zone--stick-gate)
 - [Controller vibration](#controller-vibration)
@@ -87,8 +88,9 @@ class ActionMap {
 ```
 
 **Updating the live bindings is resubmitting the value.** The platform keeps a replaceable copy of
-the last submission; a rebind screen or a gameplay/menu context switch edits the game's own map (or
-keeps two) and calls `actions` again. The swap takes effect at the next event pump, and edges
+the last submission; a rebind screen (which learns the source the player wants by
+[capturing their next press](#capturing-a-pressed-source)) or a gameplay/menu context switch edits
+the game's own map (or keeps two) and calls `actions` again. The swap takes effect at the next event pump, and edges
 stay honest across it: an action held through a resubmission that still binds it stays held (no
 phantom `justPressed`); unbinding a held source reads `justReleased` on the next tick. Persistence
 is game code — serialize your map however you like (see `SaveStore` in
@@ -283,6 +285,93 @@ motion) and persists otherwise. `ControllerType` is the detected physical pad fa
 families, so the family is never needed for input correctness — it drives glyphs and the
 label-alias/family-qualified resolution.
 
+## Capturing a pressed source
+
+A controls screen asks the player to press the input they want on an action, then binds it. The
+platform captures that press — a key, a mouse button, a pad button, a trigger or a stick direction,
+bound or not — and answers it as the `Source` an `ActionMap` row takes, so capturing and binding
+are one step.
+
+```cpp
+// SdlPlatform (sdl_platform.h)
+void captureRequest(int player = 0);                                       // arm the slot, clear its answer
+std::optional<CapturedSource> capturedSource(int player = 0) const noexcept;  // the press, once it arrives
+
+// input_actions.h
+struct CapturedSource {
+    Source       source;    // carries no family: binds on every pad family as it stands
+    ActiveDevice device{};  // KeyboardMouse, or Gamepad with the pad's family
+};
+std::optional<PadButton> padButtonFrom(SDL_GamepadButton button) noexcept;  // SDL button → its position
+```
+
+A rebind: request the capture when the screen starts listening, and bind the press in the tick that
+reads it.
+
+```cpp
+if (in.justPressed(Action::Rebind)) {
+    platform.captureRequest();
+    listening = true;
+}
+
+if (listening) {
+    if (const std::optional<CapturedSource> press = platform.capturedSource()) {
+        map.clearAction(action);        // the press replaces every binding the action had
+        map.bind(action, press->source);
+        platform.actions(map);
+        listening = false;
+    }
+}
+```
+
+A game that keeps per-family rows binds a pad press qualified to the pad it came from instead:
+
+```cpp
+if (press->source.kind == Source::Kind::Pad) {
+    map.bind(action, onPad(press->device.family, press->source.pad));   // this family only
+}
+```
+
+**What counts as a press** — a down event that arrives after the request:
+
+| Input | Captured as |
+|---|---|
+| a key | its `SDL_Scancode`; a key repeat is not a press |
+| the left, right or middle mouse button | its `MouseButton` |
+| a pad button | its positional `PadButton` (`padButtonFrom`) |
+| a trigger | `TriggerL` / `TriggerR`, when its pull rises to `kTriggerThreshold` |
+| a stick direction | `LeftStickUp` … `RightStickRight`, when that direction's deflection rises to `kStickDirThreshold` |
+
+The rules:
+
+- **Pad buttons are positions.** A pad press answers the button the player physically pressed, the
+  same on every family — the printed A on a Switch pad is `FaceEast`. The family travels beside the
+  source on `device`, never on it, so the captured source binds as a plain row; a source carrying a
+  family would suppress the action's plain pad rows on that family (see the suppression rule).
+- **Triggers and sticks cross the sampler's own thresholds,** after the live `AnalogResponse`, so a
+  captured analog source bound as returned reads held exactly while the movement that produced it
+  is held. When one movement crosses two stick directions at once, the larger deflection names the
+  press.
+- **Anything already down at the request is not a press.** The Confirm press that opened the
+  listening screen is never its own answer; a trigger already pulled or a stick already pushed counts
+  once it is released and pressed again.
+- **The first press wins, and the answer stays.** `capturedSource` reads the same press on every
+  call until the next `captureRequest`; it is empty before a request and while the request waits. A
+  screen that stops listening without a press needs nothing further — the next `captureRequest`
+  clears whatever the slot holds.
+- **Presses are caught at the event pump,** so a tap shorter than a tick is captured, and the answer
+  waits for whichever tick reads it.
+- **A captured press still drives its actions.** A source already bound fires its action on the tick
+  it is pressed, as always; a listening screen ignores its own actions while it listens.
+- **Slots.** `captureRequest(n)` / `capturedSource(n)` capture for player slot `n`: a key or mouse
+  press belongs to the slot the keyboard+mouse unit feeds (`assignKeyboard`), a pad press to its pad's
+  slot (`assignGamepad`). Slots capture independently.
+
+`examples/input_probe/` shows it live: F1 / F3 move an amber outline across the digital blocks, F2
+turns the selected block magenta while it listens, and the next press becomes that block's only
+binding. Rebinding a direction block also replaces that direction on the dot's `Move` vector — the
+rows a preset tagged with it (`asComponent`) give way to the captured source, tagged the same way.
+
 ## Pointer & analog input
 
 Beside the action surface rides the **raw** analog/pointer surface (`analog_input.h`), for reads
@@ -341,8 +430,9 @@ and feed it directly; `tests/mock_platform.h` is the worked example.
 
 **The live showcase is `examples/input_probe/`** — one block per digital action across every source
 kind, the Move/Aim twin-stick vectors, the throttle axis, the active-device swatch, a gate box that
-plots the left stick's raw vs. processed value, and console edge prints. Run it with any controller to
-see the whole surface at once.
+plots the left stick's raw vs. processed value, a rebind mode (F1 / F3 select a block, F2 captures
+the next press and binds it), and console edge prints. Run it with any controller to see the whole
+surface at once.
 
 ## Analog processing: dead-zone + stick gate
 
@@ -510,7 +600,8 @@ the whole input→output loop in one object.
 ## Where to change things
 
 - **Rebind / context-switch controls at runtime:** edit your map value (or keep one per context) and
-  `platform.actions(map)` again — takes effect at the next pump.
+  `platform.actions(map)` again — takes effect at the next pump. Learn the source the player wants
+  with `platform.captureRequest()` / `platform.capturedSource()`.
 - **Persist bindings:** serialize your map yourself; write the bytes through `SaveStore`
   ([persistence.md](persistence.md)).
 - **Per-family button choices:** `FaceLabel*` for the printed-letter convention; explicit
@@ -522,6 +613,7 @@ the whole input→output loop in one object.
 - **Drive controller vibration:** `platform.gamepad(player).vibration(MotorLevels)` each tick; author
   buzzes as a `VibrationPattern` played by a game-owned `VibrationPlayer` (mirrors animation).
 - **Add a pad control the vocabulary lacks** (Elite paddles, PS touchpad click): one `PadButton`
-  enumerator + one `resolvePadButton` case — additive.
+  enumerator, one `resolvePadButton` case, and its entry in `padButtonFrom`'s candidates
+  (`src/input_actions.cpp`) — additive.
 - **Multiplayer:** assign devices to slots (`assignGamepad` / `assignKeyboard`) and read
   `player(n)`; the map is shared.

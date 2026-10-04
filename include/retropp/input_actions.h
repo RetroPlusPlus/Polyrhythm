@@ -202,6 +202,16 @@ private:
     std::vector<ActionBinding> rows_;
 };
 
+// A press the platform captured for a controls screen (SdlPlatform::captureRequest /
+// capturedSource): the source the player pressed and the device that produced it. `source` carries
+// no family, so binding it as returned serves every pad family; `device.family` names the pad's
+// family for a game that wants the family-qualified row instead
+// (onPad(press.device.family, press.source.pad)).
+struct CapturedSource {
+    Source       source;
+    ActiveDevice device{};
+};
+
 // Preset bundles: conventional source rows for actions the CALLER names. A preset cannot know the
 // game's vocabulary — it contributes the source side; the game supplies the action side. Presets
 // never construct the game's map: merge them in with ActionMap::add. Zero enforcement — the result
@@ -234,6 +244,11 @@ template <ActionLike A>
 // Analog-backed entries (triggers, stick directions) return SDL_GAMEPAD_BUTTON_INVALID — they read
 // axes, not buttons (padButtonIsAnalog).
 [[nodiscard]] SDL_GamepadButton resolvePadButton(PadButton b, ControllerType family) noexcept;
+
+// The positional PadButton an SDL button is, on every pad family: SOUTH is FaceSouth, MISC1 is
+// Share. Derived from resolvePadButton, so the layout is written in one place. A button outside the
+// vocabulary (a paddle, the touchpad, SDL_GAMEPAD_BUTTON_INVALID) answers nothing.
+[[nodiscard]] std::optional<PadButton> padButtonFrom(SDL_GamepadButton button) noexcept;
 
 // Whether the PadButton reads an axis (triggers + stick directions) instead of an SDL button.
 [[nodiscard]] bool padButtonIsAnalog(PadButton b) noexcept;
