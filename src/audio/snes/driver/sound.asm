@@ -1,11 +1,11 @@
 ; The default sound driver's program for the SNES's sound CPU: a sample player. The 65816 half of the
 ; driver uploads it to $0200 through the boot program's transfer protocol and starts it there.
 ;
-; The program sets the S-DSP up once — unmuted, the echo off, the main volume full, every voice with its
-; envelope off and its gain direct at full, the sample directory at page $03 — and then polls port 0 for
-; commands. A command is one byte: its command in bits 7-5, a toggle in bit 4 the console flips on every
-; command so two identical commands are both seen, and the voice in bits 2-0. Its arguments are in ports 1
-; to 3, written before it. The program acknowledges a command by echoing its byte on port 0, and
+; The program sets the S-DSP up once — unmuted, the echo off, its ring parked on the top page, the main
+; volume full, every voice with its envelope off and its gain direct at full, the sample directory at page
+; $03 — and then polls port 0 for commands. A command is one byte: its command in bits 7-5, a toggle in
+; bit 4 the console flips on every command so two identical commands are both seen, and the voice in bits
+; 2-0. Its arguments are in ports 1 to 3, written before it. The program acknowledges a command by echoing its byte on port 0, and
 ; announces that it is set up and polling by writing $00 there first; the console sends nothing before.
 ;
 ;   $20   VOLUME   port 1 the left volume, port 2 the right (VxVOLL, VxVOLR)
@@ -23,26 +23,15 @@
 
         ORG $0200
         MOV $F1,#$00            ; CONTROL: the boot window unmapped, the timers off
-        MOV $F2,#$6C
-        MOV $F3,#$20            ; FLG: unmuted, echo writes off
-        MOV $F2,#$0C
-        MOV $F3,#$7F            ; MVOLL
-        MOV $F2,#$1C
-        MOV $F3,#$7F            ; MVOLR
-        MOV $F2,#$2C
-        MOV $F3,#$00            ; EVOLL
-        MOV $F2,#$3C
-        MOV $F3,#$00            ; EVOLR
-        MOV $F2,#$5C
-        MOV $F3,#$00            ; KOF: no voice held off
-        MOV $F2,#$3D
-        MOV $F3,#$00            ; NON
-        MOV $F2,#$4D
-        MOV $F3,#$00            ; EON
-        MOV $F2,#$2D
-        MOV $F3,#$00            ; PMON
-        MOV $F2,#$5D
-        MOV $F3,#$03            ; DIR: the sample directory is page $03
+        MOV X,#$00
+setup:  MOV A,!dsp+X            ; the S-DSP set up from the table at the end, a register at a time
+        MOV $F2,A
+        INC X
+        MOV A,!dsp+X
+        MOV $F3,A
+        INC X
+        CMP X,#dspEnd-dsp
+        BNE setup
         MOV X,#$00
 gains:  MOV A,X
         OR A,#$05
@@ -145,5 +134,21 @@ pitch:  MOV A,$03
         RET
 
 bits:   DB $01,$02,$04,$08,$10,$20,$40,$80
+
+; The S-DSP's setup: a register, then its value.
+dsp:    DB $6C,$20              ; FLG: unmuted, echo writes off
+        DB $6D,$FF              ; ESA: the echo ring on page $FF, where the first echo write after the
+                                ;      ring's placement lands, one sample before the new address applies
+        DB $7D,$00              ; EDL: a one-entry ring, so that write stays inside $FF00-$FF03
+        DB $0C,$7F              ; MVOLL
+        DB $1C,$7F              ; MVOLR
+        DB $2C,$00              ; EVOLL
+        DB $3C,$00              ; EVOLR
+        DB $5C,$00              ; KOF: no voice held off
+        DB $3D,$00              ; NON
+        DB $4D,$00              ; EON
+        DB $2D,$00              ; PMON
+        DB $5D,$03              ; DIR: the sample directory is page $03
+dspEnd:
 
         DS $0300-*              ; the program is one page: the upload sends exactly $0100 bytes

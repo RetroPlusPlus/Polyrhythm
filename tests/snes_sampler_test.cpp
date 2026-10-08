@@ -343,6 +343,25 @@ TEST(SnesSampler, EchoPlacesItsBufferAndReverbIsTheSamePathDarkened) {
     EXPECT_THROW(sys->stop(8), std::out_of_range);
 }
 
+TEST(SnesSampler, AnEchoEngagedAfterAKeyOnLeavesTheKeyedVoiceAlone) {
+    // The chip's first echo write after the buffer is placed lands at the ring's address before the
+    // placement. A voice keyed on and then an echo cued on another, at every frame between the two across
+    // forty frames: each voice plays the sample its own cue named.
+    for (int gap = 0; gap < 40; ++gap) {
+        test::CaptureAudioSink sink;
+        auto                   sys = snesSystem(sink);
+        sys->play(toneFile(), Cue{.voice = 0, .mode = PlayMode::continuous()});
+        for (int frame = 0; frame < gap; ++frame) {
+            Access::stepVoice(*sys, 0);
+        }
+        sys->play(loopFile(),
+                  Cue{.voice = 1, .effect = AudioEffect{.echo = Echo{.delay = 0.128f, .feedback = 0.25f, .level = 0.5f}}});
+        Access::stepVoice(*sys, 0);
+        EXPECT_EQ(dsp(*sys, 0x04), 0x00u) << "V0SRCN, the tone's entry, with the echo cued " << gap << " frames after it";
+        EXPECT_EQ(dsp(*sys, 0x14), 0x01u) << "V1SRCN, the loop's entry, with the echo cued " << gap << " frames after it";
+    }
+}
+
 TEST(SnesSampler, StopKeysEveryVoiceOffAndKeepsTheSampler) {
     test::CaptureAudioSink sink;
     auto                   sys = snesSystem(sink);
