@@ -361,9 +361,17 @@ struct AudioSystem::Impl {
     // The sampler's bookkeeping — one sampler per system, so it lives here beside the voice that is it.
     // Audio RAM as the default driver lays it out: samples from kSamplesStart, each with an entry in the
     // directory page, up to `sampleLimit` — the boot window, or the echo buffer once one is placed below
-    // it. `samplerEntries` maps an audio file's id to the directory entry its sample occupies on this
-    // system. Production-thread-only, like the voices.
-    std::vector<std::optional<std::uint8_t>> samplerEntries;
+    // it. `samplerSamples` maps an audio file's id to its sample loaded whole on this system: where it
+    // starts, the directory entry that plays it round, and, once a cue has played it through, the entry
+    // that ends it — the same bytes, continuing into `silence`, one block of nothing that loops on itself,
+    // placed among the samples the first time an entry needs it. Production-thread-only, like the voices.
+    struct LoadedSample {
+        std::uint16_t               start = 0;
+        std::uint8_t                entry = 0;
+        std::optional<std::uint8_t> ending;
+    };
+    std::vector<std::optional<LoadedSample>> samplerSamples;
+    std::optional<std::uint16_t> silence;
     std::uint16_t                nextSampleAddress = audio::snesdriver::kSamplesStart;
     std::uint8_t                 nextSampleEntry   = 0;
     std::uint16_t                sampleLimit       = audio::snesdriver::kSamplesEnd;
@@ -950,7 +958,10 @@ struct AudioSystem::Impl {
         Voice&                     s     = samplerVoice();
         const AudioLibrary::Entry& entry = library.entry(id);
         const AudioEffect&         e     = cue.effect;  // the voice and the effect pair were checked at the call
-        const std::uint8_t         entry_ = loadSample(s, id, entry);
+        LoadedSample&              sample = loadSample(s, id, entry);
+        // Round, or through to its end when the cue plays a pass.
+        const std::uint8_t entry_ =
+            cue.mode.kind == PlayMode::Kind::Continuous ? sample.entry : endingEntry(s, sample);
         realizeEchoPath(s, cue);
         const auto pitch = static_cast<std::uint16_t>(
             std::clamp<long>(std::lround(e.pitch * kPitchAsRecorded), 1, kPitchMax));
@@ -993,16 +1004,16 @@ struct AudioSystem::Impl {
     }
 
     // The sample for an audio file, loaded into the sampler's audio RAM the first time this system cues
-    // it: a `.brr` file as it is, any other decoded at the chip's rate and encoded. Answers the directory
-    // entry it occupies.
-    std::uint8_t loadSample(Voice& s, AudioId id, const AudioLibrary::Entry& entry) {
+    // it: a `.brr` file as it is, any other decoded at the chip's rate and encoded. Answers the sample as
+    // loaded, with the directory entry that plays it round.
+    LoadedSample& loadSample(Voice& s, AudioId id, const AudioLibrary::Entry& entry) {
         namespace sd      = audio::snesdriver;
         const auto index  = static_cast<std::size_t>(id);
-        if (index >= samplerEntries.size()) {
-            samplerEntries.resize(index + 1);
+        if (index >= samplerSamples.size()) {
+            samplerSamples.resize(index + 1);
         }
-        if (samplerEntries[index].has_value()) {
-            return *samplerEntries[index];
+        if (samplerSamples[index].has_value()) {
+            return *samplerSamples[index];
         }
         if (nextSampleEntry >= sd::kDirectorySlots) {
             throw std::length_error(
@@ -1034,7 +1045,43 @@ struct AudioSystem::Impl {
         postWrite(s, snes::audioRam(static_cast<std::uint16_t>(sd::kDirectory + 4 * entryIndex)),
                   std::vector<std::uint8_t>{lo, hi, lo, hi});
         nextSampleAddress     = static_cast<std::uint16_t>(end);
-        samplerEntries[index] = entryIndex;
+        samplerSamples[index] = LoadedSample{.start = start, .entry = entryIndex};
+        return *samplerSamples[index];
+    }
+
+    // The directory entry that plays a whole sample through to its end: the sample's own bytes, continuing
+    // from its last block into `silence` — so a pass ends on the sample's last sample, and the voice has
+    // nothing to sound in the frame before the driver keys it off. Takes an entry the first time a sample
+    // is played through; the block of silence is placed once per system, nine bytes among the samples.
+    std::uint8_t endingEntry(Voice& s, LoadedSample& sample) {
+        namespace sd = audio::snesdriver;
+        if (sample.ending.has_value()) {
+            return *sample.ending;
+        }
+        if (nextSampleEntry >= sd::kDirectorySlots) {
+            throw std::length_error(
+                "AudioSystem::play: the sound chip's sample directory holds 64 samples, and this system "
+                "has loaded them all");
+        }
+        if (!silence.has_value()) {
+            if (nextSampleAddress + audio::brr::kBlockBytes > sampleLimit) {
+                throw std::length_error("AudioSystem::play: the block of silence a pass ends in (" +
+                                        std::to_string(audio::brr::kBlockBytes) +
+                                        " bytes) does not fit in the audio RAM left for samples (" +
+                                        std::to_string(sampleLimit - nextSampleAddress) + " bytes)");
+            }
+            silence = nextSampleAddress;
+            // One block: shift 0, filter 0, every sample 0, flagged to end and loop — back to itself.
+            postWrite(s, snes::audioRam(*silence), std::vector<std::uint8_t>{0x03, 0, 0, 0, 0, 0, 0, 0, 0});
+            nextSampleAddress = static_cast<std::uint16_t>(nextSampleAddress + audio::brr::kBlockBytes);
+        }
+        const std::uint8_t entryIndex = nextSampleEntry++;
+        postWrite(s, snes::audioRam(static_cast<std::uint16_t>(sd::kDirectory + 4 * entryIndex)),
+                  std::vector<std::uint8_t>{static_cast<std::uint8_t>(sample.start & 0xFF),
+                                            static_cast<std::uint8_t>(sample.start >> 8),
+                                            static_cast<std::uint8_t>(*silence & 0xFF),
+                                            static_cast<std::uint8_t>(*silence >> 8)});
+        sample.ending = entryIndex;
         return entryIndex;
     }
 

@@ -211,6 +211,63 @@ TEST(SnesSampler, OncePlaysOnePassAndKeysTheVoiceOff) {
     EXPECT_EQ(workRam(*sys, sd::voiceBlock(1) + 6), 0u) << "the once is over";
 }
 
+TEST(SnesSampler, APassEndsOnTheSamplesLastSampleAndIsSilentUntilTheKeyOff) {
+    test::CaptureAudioSink sink;
+    auto                   sys = snesSystem(sink);
+    // The 20 ms tone, once: its 640 samples, then nothing — not its start again in the frame before the
+    // driver keys the voice off.
+    sys->play(toneFile(), Cue{.voice = 0, .mode = PlayMode::once()});
+    std::vector<AudioFrame> frames;
+    for (int step = 0; step < 6; ++step) {
+        const std::vector<AudioFrame> f = stepAndDrain(*sys, sink);
+        frames.insert(frames.end(), f.begin(), f.end());
+    }
+    std::size_t first = frames.size();
+    for (std::size_t i = 0; i < frames.size(); ++i) {
+        if (frames[i].left != 0 || frames[i].right != 0) {
+            first = i;
+            break;
+        }
+    }
+    ASSERT_LT(first, frames.size());
+    const std::size_t fileEnd = first + 640 * kAudioSampleRate / brr::kSampleRate;  // 20 ms at the sink's rate
+    ASSERT_LT(fileEnd + 4 * kAudioSampleRate / 1000, frames.size());
+    std::size_t last = 0;
+    for (std::size_t i = 0; i < frames.size(); ++i) {
+        if (frames[i].left != 0 || frames[i].right != 0) {
+            last = i;
+        }
+    }
+    // The last sounding frame is within two milliseconds of the file's end: the interpolation's few samples
+    // and the sink's resampling, never the frame that runs to the key-off.
+    EXPECT_LT(last, fileEnd + 2 * kAudioSampleRate / 1000) << "sounded " << (last - fileEnd) * 1000.0 / kAudioSampleRate
+                                                           << " ms past the file's end";
+
+    // The pass plays through a second directory entry: the sample's own start, continuing into one block
+    // of silence placed right after it, which ends and loops on itself.
+    const std::uint16_t silence = sd::kSamplesStart + 360;
+    EXPECT_EQ(dsp(*sys, 0x04), 0x01u);  // V0SRCN
+    EXPECT_EQ(audioRam(*sys, sd::kDirectory + 4), 0x00u);
+    EXPECT_EQ(audioRam(*sys, sd::kDirectory + 5), 0x04u);
+    EXPECT_EQ(audioRam(*sys, sd::kDirectory + 6), static_cast<std::uint8_t>(silence & 0xFF));
+    EXPECT_EQ(audioRam(*sys, sd::kDirectory + 7), static_cast<std::uint8_t>(silence >> 8));
+    const std::vector<std::uint8_t> block = Access::voiceMachine(*sys, 0).read(
+        MemoryRegion{.at = snes::audioRam(silence), .size = static_cast<std::uint32_t>(brr::kBlockBytes)});
+    EXPECT_EQ(block, (std::vector<std::uint8_t>{0x03, 0, 0, 0, 0, 0, 0, 0, 0}));
+
+    // A repeat plays the same ending entry; continuous plays the sample round through its own; the next
+    // sample loads after the block of silence.
+    sys->play(toneFile(), Cue{.voice = 1, .mode = PlayMode::repeat(120.0f)});
+    sys->play(toneFile(), Cue{.voice = 2, .mode = PlayMode::continuous()});
+    sys->play(loopFile(), Cue{.voice = 3});
+    stepAndDrain(*sys, sink);
+    EXPECT_EQ(dsp(*sys, 0x14), 0x01u);  // V1SRCN
+    EXPECT_EQ(dsp(*sys, 0x24), 0x00u);  // V2SRCN
+    EXPECT_EQ(dsp(*sys, 0x34), 0x02u);  // V3SRCN
+    EXPECT_EQ(audioRam(*sys, sd::kDirectory + 8), static_cast<std::uint8_t>((silence + 9) & 0xFF));
+    EXPECT_EQ(audioRam(*sys, sd::kDirectory + 9), static_cast<std::uint8_t>((silence + 9) >> 8));
+}
+
 TEST(SnesSampler, RepeatStrikesTheVoiceAgainAtItsTempo) {
     test::CaptureAudioSink sink;
     auto                   sys = snesSystem(sink);
