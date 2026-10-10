@@ -999,8 +999,9 @@ struct AudioSystem::Impl {
         const auto         pitch = static_cast<std::uint16_t>(
             std::clamp<long>(std::lround(e.pitch * kPitchAsRecorded), 1, kPitchMax));
         const auto [left, right] = volumes(e.volume, e.pan);
-        s->runner->enqueue(Instruction::write(Location::memory(sd::voiceBlock(cue.voice)), sd::kChangeWidth,
-                                              sd::changeBlock(pitch, left, right)));
+        s->runner->enqueue(Instruction::write(Location::memory(sd::voiceBlock(cue.voice) + sd::kChangeFieldsOffset),
+                                              sd::kChangeFieldsWidth, sd::changeFields(pitch, left, right)));
+        s->runner->enqueue(Instruction::write(Location::memory(sd::voiceBlock(cue.voice)), 1, sd::kChangeCommand));
     }
 
     // The sample for an audio file, loaded into the sampler's audio RAM the first time this system cues

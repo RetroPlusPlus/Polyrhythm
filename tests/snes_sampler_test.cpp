@@ -342,6 +342,28 @@ TEST(SnesSampler, EffectChangesAVoiceAsItPlaysWithNoNewKeyOn) {
     EXPECT_THROW(fresh->effect(8, AudioEffect{}), std::out_of_range);
 }
 
+TEST(SnesSampler, AChangeWhileARepeatPlaysLeavesItsSampleForTheNextStrike) {
+    test::CaptureAudioSink sink;
+    auto                   sys = snesSystem(sink);
+    // Two samples loaded, so the repeating voice's entry is not the first — the loop's, the tone's, and
+    // the tone's entry for a pass played through; a change made while it plays, and the strikes that
+    // follow still key on its own sample, at the changed pitch.
+    sys->play(loopFile(), Cue{.voice = 0});
+    sys->play(toneFile(), Cue{.voice = 2, .mode = PlayMode::repeat(601.0f)});  // a strike every six frames
+    stepAndDrain(*sys, sink);
+    EXPECT_EQ(dsp(*sys, 0x24), 0x02u);  // V2SRCN: the tone, played through
+    sys->effect(2, AudioEffect{.pitch = 2.0f, .volume = 0.5f});
+    stepAndDrain(*sys, sink);
+    EXPECT_EQ(workRam(*sys, sd::voiceBlock(2) + 1), 0x02u) << "the block's entry after the change";
+    EXPECT_EQ(dsp(*sys, 0x23), 0x20u);  // V2PITCHH: an octave up, as changed
+    for (int frame = 0; frame < 14; ++frame) {  // across at least two strikes
+        Access::stepVoice(*sys, 0);
+        EXPECT_EQ(dsp(*sys, 0x24), 0x02u) << "V2SRCN at frame " << frame;
+    }
+    EXPECT_EQ(dsp(*sys, 0x23), 0x20u);  // the strike keys on at the changed pitch
+    EXPECT_EQ(dsp(*sys, 0x20), 64u);    // V2VOLL: half, as changed
+}
+
 TEST(SnesSampler, TwoVoicesCuedInOneTickBothReachTheChip) {
     test::CaptureAudioSink sink;
     auto                   sys = snesSystem(sink);

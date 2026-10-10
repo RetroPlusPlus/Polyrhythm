@@ -69,12 +69,15 @@ inline constexpr int kKeyOnWidth = 8;
 // A voice's block for a key-off: the command alone, the rest of the block unread.
 inline constexpr std::uint64_t kKeyOffBlock = 2;
 
-// A voice's block for a change to the voice as it plays — its pitch and volumes, no key-on; the mode
-// byte past these six is left as it is.
-[[nodiscard]] constexpr std::uint64_t changeBlock(std::uint16_t pitch, std::uint8_t left, std::uint8_t right) noexcept {
-    return std::uint64_t{3} | (std::uint64_t{pitch} << 16) | (std::uint64_t{left} << 32) | (std::uint64_t{right} << 40);
+// A change to the voice as it plays — its pitch and volumes, no key-on — lands in two writes that leave
+// the block's sample entry and mode as they are, since a repeat's next strike keys the voice on from that
+// entry: the four bytes of pitch and volumes at the block's third byte, then the command byte.
+[[nodiscard]] constexpr std::uint32_t changeFields(std::uint16_t pitch, std::uint8_t left, std::uint8_t right) noexcept {
+    return std::uint32_t{pitch} | (std::uint32_t{left} << 16) | (std::uint32_t{right} << 24);
 }
-inline constexpr int kChangeWidth = 6;
+inline constexpr std::uint32_t kChangeFieldsOffset = 2;
+inline constexpr int           kChangeFieldsWidth  = 4;
+inline constexpr std::uint64_t kChangeCommand      = 3;
 
 }  // namespace retropp::audio::snesdriver
 
