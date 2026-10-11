@@ -1454,6 +1454,7 @@ add_library(retroppengine STATIC
     src/audio/gb_audio.cpp
     src/audio/snes/brr.cpp
     src/audio/snes/default_driver.cpp
+    src/audio/snes/sample_stream.cpp
     src/vm/gameboy/sameboy_machine.cpp
     src/vm/gameboy/sameboy_backend.cpp
     src/vm/snes/snes_backend.cpp
@@ -1733,6 +1734,7 @@ if(RETROPP_BUILD_TESTS)
         tests/snes_chiptune_test.cpp
         tests/snes_audio_unit_test.cpp
         tests/snes_sampler_test.cpp
+        tests/snes_stream_test.cpp
         tests/net_socket_test.cpp
         tests/net_tls_test.cpp
         tests/vm_frame_sink_test.cpp
@@ -2347,10 +2349,11 @@ if(RETROPP_BUILD_EXAMPLES)
     # waves, the frames through a queue to the device, a panel of voice columns.
     retropp_add_example(snes_apu DIRECTORY snes/apu)
 
-    # The SNES sampler: audio files registered on the library — four the engine converts to the chip's
-    # sample format and one already in it — played through the console's sound chip with
-    # play(id, Cue{.voice, .effect}) on an AudioSystem::SNES; a panel of voice columns with each voice's
-    # sample, pitch, volume, pan and effect. CI runs its --verify (registered below).
+    # The SNES sampler: audio files registered on the library — five the engine converts to the chip's
+    # sample format, one of them longer than the chip's audio RAM and streamed, and one already in it —
+    # played through the console's sound chip with play(id, Cue{.voice, .effect}) on an AudioSystem::SNES;
+    # a panel of voice columns with each voice's sample, pitch, volume, pan and effect. CI runs its
+    # --verify (registered below).
     retropp_add_example(snes_sampler DIRECTORY snes/sampler)
 
     # ── Curve demo — plots a Catmull-Rom curve through waypoints, a constant-speed atDistance walker, and
@@ -2676,8 +2679,9 @@ if(RETROPP_BUILD_EXAMPLES)
 
     # The SNES sampler demo, headless on a listening sink: a one-shot audio file cued through the chip
     # sounds and plays out, the looping .brr with an echo keeps sounding until its voice is stopped, two
-    # voices cued together stop with stop(); it exits nonzero on any miss. Deterministic coverage of the
-    # same path is snes_sampler_test's.
+    # voices cued together stop with stop(), and a six-second file longer than audio RAM plays through
+    # with its silences where the file has them; it exits nonzero on any miss. Deterministic coverage of
+    # the same path is snes_sampler_test's and snes_stream_test's.
     add_test(NAME SnesSamplerExample.Verify
              COMMAND retropp-snes_sampler-demo --verify)
 

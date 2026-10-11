@@ -35,10 +35,10 @@ macOS arm64:
 
 | Artifact | Size |
 |---|---|
-| The platform library (`retroppengine`) | ~1.8 MB |
-| A shipped binary, floor, no VM core | ~2.6 MB |
-| … with the Game Boy core | ~2.9 MB |
-| … with the SNES core | ~3.4 MB |
+| The platform library (`retroppengine`) | ~1.7 MB |
+| A shipped binary, floor, no VM core | ~2.5 MB |
+| … with the Game Boy core | ~2.7 MB |
+| … with the SNES core | ~3.2 MB |
 
 A floor is the smallest binary that links the platform, before a game adds its own code and content.
 
@@ -72,7 +72,7 @@ Active development. The core is in place and exercised end to end by a real cons
   | Source | What plays on it |
   |---|---|
   | **The Game Boy's sound chip** | chiptune routines at the hardware clock; a game's own resident sound driver, hosted as a long-lived machine driven by the player's own verbs |
-  | **The SNES's sound chip** | a 65816 sound driver hosted the way an SNES game carries one; audio files played through the S-DSP's eight voices — converted to its sample format by the engine, cued by voice, play mode (once, round until stopped, struck again at a tempo) and effect, and changed as they play |
+  | **The SNES's sound chip** | a 65816 sound driver hosted the way an SNES game carries one; audio files of any length played through the S-DSP's eight voices — converted to its sample format by the engine, streamed through the chip as the voice plays when they outrun its RAM, cued by voice, play mode (once, round until stopped, struck again at a tempo) and effect, and changed as they play |
   | **PCM** | audio files decoded and streamed as they are |
 
   Under all three: a mixed multi-voice chain with per-type levels, production off the game's

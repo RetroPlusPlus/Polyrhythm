@@ -57,6 +57,10 @@ public:
     // on it by the same names, advanceClock runs it on its own clock and enableAudio drains it; a
     // cartridge, a routine, a register, an escape, a watch, a driver and the pad refuse.
     void hostAudioUnit() override;
+    // The block the S-DSP's decoder is in for `voice`, 0 to 7, from the machine's state — the console's or
+    // the audio unit's alone. Throws std::out_of_range past voice 7, std::logic_error before the machine
+    // exists.
+    [[nodiscard]] std::uint16_t sampleDecoderAddress(std::uint8_t voice) const override;
     // On a machine holding the image this core writes — for its routines or a driver — park the CPU on
     // the image's idle loop, run `cycles`, and put the register file back, so the machine's own time
     // passes between calls, the sound chip plays through it, and nothing a call marshals moves. A

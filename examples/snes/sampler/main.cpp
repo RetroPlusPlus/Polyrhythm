@@ -3,12 +3,14 @@
 // The game registers audio files on the AudioLibrary — the same registerAudio("x.wav") the Game Boy's
 // audio-file path takes, plus a .brr sample in the chip's own format — and plays them on an
 // AudioSystem::SNES of the Chiptune kind with play(id, Cue{.voice, .effect}). The system converts each file
-// to the chip's sample format and loads it into audio RAM the first time it is cued, hosts the engine's
-// sound driver for the chip by itself, and keys the cue's voice on with the cue's pitch, volume and pan
-// and, when the cue asks, the chip's echo path as an echo or a reverb, playing the way the cue's mode says
-// — round until stopped, once, or struck again at a tempo. effect(voice, AudioEffect{…})
-// changes a voice as it plays — pitch, volume, pan, echo path, with no new key-on; stop(voice) keys one
-// voice off; stop() keys them all off.
+// to the chip's sample format the first time it is cued and loads it into audio RAM whole, or, when it
+// encodes to more than 4 KB, streams it through 4 KB of audio RAM the cue's voice keeps, delivering the file
+// a few pieces at a time as the voice plays — LONG is six seconds, longer than all of the sound chip's RAM.
+// It hosts the engine's sound driver for the chip by itself, and keys the cue's voice on with the cue's
+// pitch, volume and pan and, when the cue asks, the chip's echo path as an echo or a reverb, playing the way
+// the cue's mode says — round until stopped, once, or struck again at a tempo. effect(voice,
+// AudioEffect{…}) changes a voice as it plays — pitch, volume, pan, echo path, with no new key-on;
+// stop(voice) keys one voice off; stop() keys them all off.
 //
 // The pieces, one file each:
 //   panel.h/.cpp   the UI: eight voice columns, each with the sample it strikes, its pitch, volume and
@@ -23,7 +25,8 @@
 //                 is TAB for that voice
 //   LEFT / RIGHT  select a voice
 //   UP / DOWN     the selected voice's pitch
-//   TAB           the selected voice's sample: kick, snare, hat, pluck, square — taken at its next strike
+//   TAB           the selected voice's sample: kick, snare, hat, pluck, square, long — taken at its next
+//                 strike
 //   E / R         the selected voice's effect: an echo, a reverb, or none
 //   M             the selected voice's play mode: continuous, once, repeat — taken at its next strike
 //   9 / 0         the selected voice's repeat tempo, strikes a minute
@@ -35,7 +38,9 @@
 //   --verify    headless: cues the kick once and hears it play out, cues the square with an echo and hears
 //               it keep sounding, changes its pitch as it plays, stops its voice and hears silence, cues
 //               a one-shot once and hears it play out while a continuous one holds, cues two voices and
-//               stops them all; exits nonzero on any miss (CI runs this on every platform)
+//               stops them all, then cues LONG once and hears it through to its end — its silences where
+//               the file has them — while a short sample sounds on another voice; exits nonzero on any
+//               miss (CI runs this on every platform)
 
 #include <algorithm>
 #include <array>
@@ -44,6 +49,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <functional>
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -72,12 +78,14 @@ using namespace demo;
 
 namespace {
 
-// The samples: four audio files the engine converts, and one already in the chip's format.
+// The samples: five audio files the engine converts, and one already in the chip's format. LONG is a
+// six-second phrase, longer than the sound chip's RAM, with a gap of silence from 3.0 s to 3.4 s and
+// silence from 5.6 s.
 struct Sample {
     std::string_view name;
     AudioId          id;
 };
-std::array<Sample, 5> registerSamples() {
+std::array<Sample, 6> registerSamples() {
     // One registration a statement: the build reads each call's path to bake the file into the binary.
     AudioLibrary& lib    = AudioLibrary::instance();
     const AudioId kick   = lib.registerAudio("examples/snes/sampler/assets/samples/kick.wav", AudioType::Sfx, AssetPolicy::Embed);
@@ -85,7 +93,8 @@ std::array<Sample, 5> registerSamples() {
     const AudioId hat    = lib.registerAudio("examples/snes/sampler/assets/samples/hat.wav", AudioType::Sfx, AssetPolicy::Embed);
     const AudioId pluck  = lib.registerAudio("examples/snes/sampler/assets/samples/pluck.wav", AudioType::Sfx, AssetPolicy::Embed);
     const AudioId square = lib.registerAudio("examples/snes/sampler/assets/samples/square.brr", AudioType::Sfx, AssetPolicy::Embed);
-    return {{{"KICK", kick}, {"SNARE", snare}, {"HAT", hat}, {"PLUCK", pluck}, {"SQUARE", square}}};
+    const AudioId phrase = lib.registerAudio("examples/snes/sampler/assets/samples/long.wav", AudioType::Sfx, AssetPolicy::Embed);
+    return {{{"KICK", kick}, {"SNARE", snare}, {"HAT", hat}, {"PLUCK", pluck}, {"SQUARE", square}, {"LONG", phrase}}};
 }
 
 // The play modes, cycled by M; a repeat's tempo is the voice's own.
@@ -131,8 +140,31 @@ AudioEffect effectFor(std::uint16_t pitch, std::uint8_t volume, int pan, Fx fx) 
 // themselves, as the device would, to hear what the chip made.
 class ListeningSink final : public AudioSink {
 public:
-    void start(unsigned, int, AudioPullFn pull) override { pull_ = std::move(pull); }
+    void start(unsigned rate, int, AudioPullFn pull) override {
+        rate_ = rate;
+        pull_ = std::move(pull);
+    }
     void stop() override { pull_ = nullptr; }
+
+    [[nodiscard]] unsigned rate() const noexcept { return rate_; }
+
+    // Record `seconds` of what the system makes, frame for frame as the device would take it, giving up
+    // after `limit`. `pulled` runs after each pull with the seconds recorded so far. The frames are the
+    // machine's own time, however fast the pulls come.
+    std::vector<AudioFrame> record(double seconds, std::chrono::milliseconds limit,
+                                   const std::function<void(double)>& pulled) {
+        std::vector<AudioFrame> heard;
+        const auto              want     = static_cast<std::size_t>(seconds * rate_);
+        const auto              deadline = std::chrono::steady_clock::now() + limit;
+        std::vector<AudioFrame> frames(4096);
+        while (heard.size() < want && std::chrono::steady_clock::now() < deadline) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(5));
+            const std::size_t got = pull_ ? pull_(std::span<AudioFrame>(frames)) : 0;
+            heard.insert(heard.end(), frames.begin(), frames.begin() + static_cast<std::ptrdiff_t>(got));
+            pulled(static_cast<double>(heard.size()) / rate_);
+        }
+        return heard;
+    }
 
     // Listen for `span`: pull everything the system has as time passes, and return the loudest sample.
     int listen(std::chrono::milliseconds span) {
@@ -152,7 +184,20 @@ public:
 
 private:
     AudioPullFn pull_;
+    unsigned    rate_ = 0;
 };
+
+// The loudest sample on one side of `frames` between two times, in seconds after frame `origin`.
+int loudest(const std::vector<AudioFrame>& frames, std::size_t origin, unsigned rate, double from, double to,
+            bool left) {
+    int        peak  = 0;
+    const auto first = origin + static_cast<std::size_t>(from * rate);
+    const auto last  = std::min(frames.size(), origin + static_cast<std::size_t>(to * rate));
+    for (std::size_t i = first; i < last; ++i) {
+        peak = std::max(peak, std::abs(static_cast<int>(left ? frames[i].left : frames[i].right)));
+    }
+    return peak;
+}
 
 int runVerify() {
     int        failures = 0;
@@ -163,8 +208,9 @@ int runVerify() {
     std::printf("snes_sampler --verify: audio files through the SNES's sound chip\n\n");
     using namespace std::chrono_literals;
 
-    const std::array<Sample, 5> samples = registerSamples();
-    const AudioId kick = samples[0].id, pluck = samples[3].id, square = samples[4].id;
+    const std::array<Sample, 6> samples = registerSamples();
+    const AudioId kick = samples[0].id, hat = samples[2].id, pluck = samples[3].id, square = samples[4].id,
+                  phrase = samples[5].id;
     ListeningSink     sink;
     AudioSystem::SNES music{AudioKind::Chiptune, sink};
 
@@ -209,6 +255,36 @@ int runVerify() {
         refused = true;
     }
     check(refused, "a voice the chip does not have is refused at the call");
+
+    // LONG, once, panned hard left; a second in, the hat on another voice, panned hard right — so the left
+    // side hears LONG alone and the right side the hat. Every time is measured from LONG's first sound.
+    bool cued = true;
+    try {
+        music.play(phrase, Cue{.voice = 0, .mode = PlayMode::once(), .effect = AudioEffect{.pan = -1.0f}});
+    } catch (const std::exception&) {
+        cued = false;
+    }
+    check(cued, "LONG, a file longer than the sound chip's RAM, cued once");
+    bool                          hatCued = false;
+    const std::vector<AudioFrame> heard   = sink.record(6.8, 30s, [&](double seconds) {
+        if (!hatCued && seconds >= 1.0) {
+            music.play(hat, Cue{.voice = 1, .mode = PlayMode::once(), .effect = AudioEffect{.pan = 1.0f}});
+            hatCued = true;
+        }
+    });
+    const unsigned rate   = sink.rate();
+    std::size_t    origin = 0;
+    while (origin < heard.size() && heard[origin].left == 0) {
+        ++origin;
+    }
+    std::printf("  LONG's first sound at frame %zu; %zu frames heard after it\n", origin, heard.size() - origin);
+    const auto side = [&](double from, double to) { return loudest(heard, origin, rate, from, to, true); };
+    check(side(2.4, 2.9) > 0, "it sounds from 2.4 s to 2.9 s, past where a sample loaded whole runs out of room");
+    check(side(3.1, 3.3) == 0, "it is silent from 3.1 s to 3.3 s, the file's own gap at its own place");
+    check(side(3.6, 4.0) > 0, "it sounds again from 3.6 s to 4.0 s");
+    check(heard.size() >= origin + static_cast<std::size_t>(6.5 * rate) && side(6.0, 6.5) == 0,
+          "it is silent from 6.0 s on: the pass ended on the file's last block");
+    check(loudest(heard, origin, rate, 0.0, 6.5, false) > 0, "the hat cued on another voice while LONG plays sounds");
 
     std::printf("\ndone%s\n", failures == 0 ? "" : " — with failures");
     return failures == 0 ? 0 : 1;
@@ -280,7 +356,7 @@ int main(int argc, char** argv) {
                                            TileCell{.atlas = faceAtlas, .tile = 0, .palette = facePalId});
 
     // ── The audio: the samples on the library, one SNES system to cue them on ──────────────────────
-    const std::array<Sample, 5> samples = registerSamples();
+    const std::array<Sample, 6> samples = registerSamples();
     AudioSystem::SNES           music{AudioKind::Chiptune};
 
     PanelState               state;
@@ -435,7 +511,8 @@ int main(int argc, char** argv) {
         "play(id, Cue{.voice, .effect}). 1-8 strike a voice (or click its pad), again to stop it; SPACE stops\n"
         "all; LEFT/RIGHT select; UP/DOWN pitch; -/= volume; [/] pan; E an echo; R a reverb — each follows the\n"
         "voice as it plays; TAB the voice's sample and M its mode (continuous, once, repeat at 9/0's tempo),\n"
-        "taken at its next strike; drag the bars with the mouse; F fullscreen; close to quit.\n\n");
+        "taken at its next strike; drag the bars with the mouse; F fullscreen; close to quit. LONG is a\n"
+        "six-second file, longer than the sound chip's RAM, streamed through the voice as it plays.\n\n");
 
     WindowedHost host{loop, platform};
     host.run();

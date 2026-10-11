@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Author the engine's tiny, license-clean PNG fixtures + the demo asset.
+"""Author the engine's tiny, license-clean PNG and audio fixtures + the demo asset.
 
 The headless image-decode tests need committed PNGs with a KNOWN pixel/index plane so they can
 assert exact values, plus a small indexed tileset with index-0 holes for the window demo's
@@ -18,7 +18,9 @@ Run from the engine repo root:  python3 tests/fixtures/gen_fixtures.py
 
 from __future__ import annotations
 
+import math
 import struct
+import wave
 import zlib
 from pathlib import Path
 
@@ -210,8 +212,51 @@ def demo_tiles_indices() -> list[list[int]]:
     return rows
 
 
+def write_wav8_mono(path: Path, rate: int, samples: list[int]) -> None:
+    """8-bit mono WAV: unsigned samples, 128 the midpoint."""
+    with wave.open(str(path), "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(1)
+        w.setframerate(rate)
+        w.writeframes(bytes(max(0, min(255, 128 + s)) for s in samples))
+
+
+def sweep(rate: int, seconds: float, start_hz: float, end_hz: float) -> list[int]:
+    """A sine whose pitch moves linearly from start_hz to end_hz, its level rising from a third of full
+    scale to all of it — so no stretch of it repeats another, in pitch, phase or level."""
+    count = int(rate * seconds)
+    out = []
+    phase = 0.0
+    for i in range(count):
+        t = i / count
+        phase += 2.0 * math.pi * (start_hz + (end_hz - start_hz) * t) / rate
+        level = 40.0 + 80.0 * t
+        out.append(int(round(level * math.sin(phase))))
+    return out
+
+
+def write_long_brr(path: Path, blocks: int) -> None:
+    """A sample already in the SNES sound chip's format: `blocks` nine-byte blocks on filter 0 at shift 11,
+    each block's eight data bytes derived from its index so no two blocks are alike, the last block
+    carrying END without LOOP."""
+    out = bytearray()
+    for i in range(blocks):
+        header = 0xB0 | (0x01 if i == blocks - 1 else 0x00)
+        data = [(i & 0xFF), (i >> 8) & 0xFF] + [((i * 37 + k * 59) ^ (k << 4)) & 0xFF for k in range(6)]
+        out.append(header)
+        out.extend(data)
+    path.write_bytes(bytes(out))
+
+
 def main() -> None:
     ASSETS.mkdir(parents=True, exist_ok=True)
+
+    # Audio for the SNES sampler's streaming cases: a 6 s sweep, encoded far larger than audio RAM; a 1 s
+    # sweep, larger than a streamed file's window and small enough to load whole; and a 600-block sample in
+    # the chip's own format that ends without looping.
+    write_wav8_mono(HERE / "long.wav", 11025, sweep(11025, 6.0, 110.0, 2200.0))
+    write_wav8_mono(HERE / "mid.wav", 11025, sweep(11025, 1.0, 1800.0, 300.0))
+    write_long_brr(HERE / "long.brr", 600)
 
     write_indexed8(HERE / "indexed4.png", 4, 4, DIAGONAL_4x4, PALETTE4)
     write_gray2(HERE / "gray2.png", 4, 4, DIAGONAL_4x4)

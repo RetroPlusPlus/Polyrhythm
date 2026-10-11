@@ -98,6 +98,15 @@ struct AudioSystemTestAccess {
     // registers through the Vm's own place verbs. A manual system's machines step on the calling thread,
     // which is the only kind this reaches into.
     static Vm& voiceMachine(AudioSystem& sys, std::size_t index);
+
+    // The encoded size above which an audio file cued through the SNES's sound chip streams, on this
+    // system alone — so one file can be loaded whole on one system and streamed on another. Set before
+    // the file is first cued; a file the system has already taken keeps its route.
+    static void streamThreshold(AudioSystem& sys, std::size_t bytes);
+
+    // A bit per voice of the sound chip that has a streamed file's delivery, 0 before anything is cued.
+    // Reads the sampler machine's own state, so it belongs to a manual system.
+    static std::uint8_t streamedVoices(AudioSystem& sys);
 };
 
 }  // namespace retropp::detail

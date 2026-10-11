@@ -475,6 +475,7 @@ plays:
 auto& lib = retropp::AudioLibrary::instance();
 const retropp::AudioId kick   = lib.registerAudio("audio/kick.wav", retropp::AudioType::Sfx);   // converted for the chip
 const retropp::AudioId square = lib.registerAudio("audio/square.brr", retropp::AudioType::Sfx); // already in its format
+const retropp::AudioId phrase = lib.registerAudio("audio/phrase.wav", retropp::AudioType::Sfx); // six seconds: streamed
 
 retropp::AudioSystem::SNES music{retropp::AudioKind::Chiptune};
 
@@ -484,6 +485,7 @@ music.play(kick, retropp::Cue{.voice = 3, .mode = retropp::PlayMode::once(),
 music.play(kick, retropp::Cue{.voice = 4, .mode = retropp::PlayMode::repeat(120)});   // struck twice a second
 music.play(square, retropp::Cue{.voice = 1,
                                 .effect = retropp::AudioEffect{.echo = retropp::Echo{.delay = 0.128f, .feedback = 0.25f, .level = 0.5f}}});
+music.play(phrase, retropp::Cue{.voice = 5, .mode = retropp::PlayMode::once()});       // a long file: the same call
 music.effect(1, retropp::AudioEffect{.pitch = 2.0f});              // the voice as it plays: an octave up, the echo gone
 music.stop(1);                                                      // that voice keys off
 music.stop();                                                       // every voice keys off
@@ -502,8 +504,9 @@ shape of the animation player's playback mode: `PlayMode::continuous()` (the def
 round from its start until the voice is stopped; `PlayMode::once()` plays one pass, then the voice keys
 itself off; `PlayMode::repeat(perMinute)` plays one pass and strikes the voice again at a tempo, in
 strikes a minute as a metronome counts (a repeat with no tempo throws `std::invalid_argument`). A pass is
-the file: a `.wav` / `.ogg` / `.flac` / `.mp3` is encoded to loop round from its start, and a `.brr` loops or ends as its own last
-block says. `stop(voice)` and `stop()` end a mode along with the sound.
+the file, from its first sample to its last: a pass played once or struck at a tempo ends on the file's
+last sample, and `continuous()` carries on from the file's start. A `.brr` whose own last block ends without
+looping ends there in every mode. `stop(voice)` and `stop()` end a mode along with the sound.
 
 **`AudioEffect` is the effects vocabulary** (`retropp/audio_effect.h`): what a game asks of a sound, in
 audio terms, the same struct on every system — each system realizes the fields its hardware has and
@@ -525,15 +528,31 @@ out of the path.
 
 **What the system does underneath.** The first audio file cued hosts the engine's own sound driver on the
 system — a 65816 init and tick with an SPC700 program the init uploads to the audio unit; you never name
-it, and a driver of your own hosts beside it through `host()` as before. Each file is loaded into audio
-RAM once per system: a `.wav` / `.ogg` / `.flac` / `.mp3` is decoded at the chip's rate (32 kHz), folded
-to mono and encoded into the chip's format, looping round from its start; a `.brr` is loaded as it is (a
-nonzero multiple of nine bytes whose last block carries END, or `std::invalid_argument`). The chip's directory holds **64 samples**, and
-the samples share audio RAM with the program and the echo buffer — about 63 KB without an echo; a file
-that does not fit throws `std::length_error` saying how much room was left. The echo buffer is placed at
-the top of audio RAM the first time a cue engages the path, sized for that delay (2 KB per 16 ms); the
-samples loaded after it stay below it, and a later cue asking a longer delay than the buffer holds is
-refused. A cue is performed at the driver's next tick, one frame of the console's clock after the call.
+it, and a driver of your own hosts beside it through `host()` as before. Each file is converted once per
+system, the first time it is cued: a `.wav` / `.ogg` / `.flac` / `.mp3` is decoded at the chip's rate
+(32 kHz), folded to mono and encoded into the chip's format — nine bytes for every sixteen samples, 18 KB a
+second; a `.brr` is taken as it is (a nonzero multiple of nine bytes whose last block carries END, or
+`std::invalid_argument`). **A file whose encoded size is 4,095 bytes or less — about a quarter of a second —
+is loaded into audio RAM whole.** It plays from there, round from its start or through to its end as the
+cue's mode says. **A longer file is streamed:** the system keeps it encoded and delivers it into a window
+of audio RAM — 4,095 bytes the cue's voice takes the first time it streams and keeps for the system's
+life — a few blocks at a time, as the voice plays through them, in the machine's own time. Every play mode
+and `effect()` applies the same way to either: a streamed file played once ends when the chip reaches
+its last block, one struck at a tempo is struck again from the file's start, and one played
+continuously carries on from its start; a pitch change moves the voice through the file faster or slower,
+and the delivery follows it. `stop(voice)` ends the delivery with the sound; the next cue on that voice,
+streamed or not, starts afresh in the same window. A long file costs 4 KB of audio RAM per voice that
+streams, whatever its length — the example's six-second phrase would take 108 KB loaded whole, more than
+the chip has.
+
+The samples, the windows, the program and the echo buffer share audio RAM — about 63 KB without an echo.
+A whole sample that does not fit, or a window that does not, throws `std::length_error` saying how much
+room was left. The chip's directory holds **64 entries**: a sample loaded whole takes one, and a second the
+first time it is played once or at a tempo; a voice that streams takes one for its window. The echo
+buffer is placed at the top of audio RAM the first time a cue engages the path, sized for that delay
+(2 KB per 16 ms); the samples and windows placed after it stay below it, and a later cue asking a longer
+delay than the buffer holds is refused. A cue is performed at the driver's next tick, one frame of the
+console's clock after the call.
 
 The chip's eight voices come out of one mix, on the **`VMDriver`** bus. `stop()` keys every voice off and
 mutes the echo path's output (its buffer circulates a residue of the chip's integer arithmetic that would
@@ -541,9 +560,9 @@ otherwise never reach zero); the next cue that engages the path sets its level a
 loaded. A system whose console has no sample player — a Game Boy system, a `Pcm` or `HostDriven` one —
 throws `std::logic_error` from all three verbs; a voice the chip does not have throws `std::out_of_range`.
 
-The `snes_sampler` example (`examples/snes/sampler/`) is this surface on a panel: eight voices, five
-samples, a play mode and tempo, pitch, volume, pan and an echo or a reverb per voice, each change of
-sound reaching the voice as it plays.
+The `snes_sampler` example (`examples/snes/sampler/`) is this surface on a panel: eight voices, six
+samples — one of them a six-second phrase, longer than the chip's RAM — a play mode and tempo, pitch,
+volume, pan and an echo or a reverb per voice, each change of sound reaching the voice as it plays.
 
 ## Volume: the `AudioMixer`
 

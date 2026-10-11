@@ -1,8 +1,9 @@
 ; The default sound driver's tick, called once a frame. It turns the two mailboxes into voice commands,
 ; hands every voice's waiting command to the sound program over the ports, plays each voice's mode out —
 ; a voice playing once is keyed off at the end of its sample, a repeating one struck again when its
-; period runs out — and copies what the program reports into the bytes the game reads back. The work RAM
-; it reads is laid out in init.asm.
+; period runs out and keyed off at the end of its sample between strikes, or, in the fourth mode, left to
+; the end its sample carries — and copies what the program reports into the bytes the game reads back.
+; The work RAM it reads is laid out in init.asm.
 ;
 ; A voice's block asks for a key-on (1), a key-off (2) or a change to the voice as it plays (3) — its
 ; volume and pitch, with no key-on. A command on the ports is its arguments in ports 1 to 3, then the
@@ -99,8 +100,8 @@ modes:  LDA $26,X
         BNE nomode              ; keyed on this frame
         LDA $26,X
         CMP #$02
-        BNE ended
-        PHX                     ; a repeat: count the frames down to its next strike
+        BCC ended               ; once
+        PHX                     ; a repeat, either kind: count the frames down to its next strike
         TXA
         LSR A
         LSR A
@@ -121,6 +122,9 @@ modes:  LDA $26,X
 waiting: SEP #$20
         A8
         PLX
+        LDA $26,X
+        CMP #$03
+        BEQ nomode              ; a repeat whose end is its sample's own: never keyed off here
 ended:  LDA $63
         AND $66
         BEQ nomode              ; still playing

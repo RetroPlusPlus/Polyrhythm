@@ -1332,6 +1332,10 @@ Vm vm::VmCoreAccess::makeAudioUnit(detail::CoreFactory core, VMPlatform platform
     return machine;
 }
 
+std::uint16_t vm::VmCoreAccess::sampleDecoderAddress(const Vm& machine, std::uint8_t voice) {
+    return machine.impl_->backend->sampleDecoderAddress(voice);
+}
+
 void Vm::batterySave(std::string_view name) {
     impl_->requireNotRunning("batterySave");
     requireFlatName(name, "the battery save's name");

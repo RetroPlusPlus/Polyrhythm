@@ -464,7 +464,9 @@ music.effect(2, AudioEffect{.pitch = 1.5f});   // the voice as it plays
 music.stop(2);
 ```
 
-Any other crossing of kinds throws at `play()` — a system produces only what its hardware makes.
+A file of any length plays this way — a long one is streamed through the chip as the voice plays
+([audio.md](audio.md#audio-files-through-the-sness-sound-chip)). Any other crossing of kinds throws at
+`play()` — a system produces only what its hardware makes.
 
 ## Make something glow <a id="make-something-glow"></a>
 

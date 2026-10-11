@@ -29,7 +29,9 @@ struct Slots {
 [[nodiscard]] DriverId<Slots> defaultDriver();
 
 // Audio RAM as the driver lays it out: the sound program at $0200, the sample directory at page $03 (64
-// entries of four bytes), the samples from $0400 up to the boot window.
+// entries of four bytes), the samples from $0400 up to the boot window. A streamed file's window
+// (sample_stream.h) is a sample like any other here: 4095 bytes from the same allocation, with a directory
+// entry of its own.
 inline constexpr std::uint16_t kDirectory    = 0x0300;
 inline constexpr std::uint8_t  kDirectorySlots = 64;
 inline constexpr std::uint16_t kSamplesStart = 0x0400;
@@ -53,8 +55,10 @@ inline constexpr std::uint8_t  kVoices      = 8;
 [[nodiscard]] constexpr std::uint32_t voicePeriod(std::uint8_t voice) noexcept { return kPeriods + voice * 2u; }
 [[nodiscard]] constexpr std::uint32_t voiceCountdown(std::uint8_t voice) noexcept { return kCountdowns + voice * 2u; }
 
-// The play mode byte of a voice's block, as the tick reads it.
-enum class Mode : std::uint8_t { Continuous = 0, Once = 1, Repeat = 2 };
+// The play mode byte of a voice's block, as the tick reads it. RepeatSelfEnding strikes the voice again at
+// its period as Repeat does and leaves its end to the sample: a streamed voice reaches an end block on every
+// lap of its window's loop, so the tick does not key it off at the end of its sample.
+enum class Mode : std::uint8_t { Continuous = 0, Once = 1, Repeat = 2, RepeatSelfEnding = 3 };
 
 // A voice's block for a key-on — the command, the sample's directory entry, the pitch, the two volumes
 // and the mode — packed low byte first into the one value an eight-byte Instruction::write carries.

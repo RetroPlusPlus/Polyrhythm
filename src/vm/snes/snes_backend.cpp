@@ -94,6 +94,19 @@ void SnesBackend::hostAudioUnit() {
     }
 }
 
+std::uint16_t SnesBackend::sampleDecoderAddress(std::uint8_t voice) const {
+    if (voice > 7) {
+        throw std::out_of_range("sampleDecoderAddress: the sound chip has eight voices, 0 to 7");
+    }
+    if (apu_) {
+        return apu_->state().dsp.voices[voice].decoderAddress;
+    }
+    if (!snes_) {
+        throw std::logic_error("sampleDecoderAddress: this machine holds nothing yet — no sound chip runs");
+    }
+    return snes_->state().apu.dsp.voices[voice].decoderAddress;
+}
+
 void SnesBackend::reset() {
     if (apu_) {
         // The console's reset of its audio unit: the machine's own reset, then the sound CPU back into
