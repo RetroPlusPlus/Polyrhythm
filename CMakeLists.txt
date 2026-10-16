@@ -2015,15 +2015,19 @@ if(RETROPP_BUILD_TESTS)
         retropp_set_warnings(compile_${_case})
     endforeach()
 
+    # The consteval refusal's wording differs by compiler: Clang and clang-cl say the call "is not a
+    # constant expression"; GCC names the inner call instead — "call to non-'constexpr' function". The
+    # needle is a regex over both, so a failure for any other reason still fails the row.
+    set(_retropp_consteval_diagnostic "constant expression|call to non-.*constexpr.* function")
     add_test(NAME VoiceLiteral.PastTheCountDoesNotCompile
              COMMAND ${CMAKE_COMMAND} -DBINARY_DIR=${CMAKE_BINARY_DIR}
                      -DTARGET=compile_voice_past_the_count -DCONFIG=$<CONFIG>
-                     -DEXPECT=fails "-DDIAGNOSTIC=constant expression"
+                     -DEXPECT=fails "-DDIAGNOSTIC=${_retropp_consteval_diagnostic}"
                      -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_outcome.cmake)
     add_test(NAME VoiceLiteral.ARuntimeValueDoesNotCompile
              COMMAND ${CMAKE_COMMAND} -DBINARY_DIR=${CMAKE_BINARY_DIR}
                      -DTARGET=compile_voice_runtime_value -DCONFIG=$<CONFIG>
-                     -DEXPECT=fails "-DDIAGNOSTIC=constant expression"
+                     -DEXPECT=fails "-DDIAGNOSTIC=${_retropp_consteval_diagnostic}"
                      -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_outcome.cmake)
     add_test(NAME VoiceLiteral.ASevenCompiles
              COMMAND ${CMAKE_COMMAND} -DBINARY_DIR=${CMAKE_BINARY_DIR}
