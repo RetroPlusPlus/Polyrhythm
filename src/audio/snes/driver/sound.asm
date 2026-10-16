@@ -151,4 +151,9 @@ dsp:    DB $6C,$20              ; FLG: unmuted, echo writes off
         DB $5D,$03              ; DIR: the sample directory is page $03
 dspEnd:
 
+; The silent sample a once pass ends on: one BRR block — shift 0 and filter 0, so every sample is zero,
+; flagged END+LOOP so it loops onto itself — the voice sits silent on it until the driver keys it off. A
+; pass-ending directory entry continues a sample into this block (default_driver.h kSilenceBlock, $02F0).
+        DS $02F0-*
+silence: DB $03,$00,$00,$00,$00,$00,$00,$00,$00
         DS $0300-*              ; the program is one page: the upload sends exactly $0100 bytes

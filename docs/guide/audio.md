@@ -190,11 +190,22 @@ void AudioSystem::play(AudioId id, CueMode mode = CueMode::Layer);
                                       // start producing it as a NEW voice beside whatever is already sounding
 void AudioSystem::stop();             // silence the system: every voice stops; the output drains (the audio stays registered)
 
-// An audio file through the console's sound chip (an SNES chiptune system):
-void AudioSystem::play(AudioId id, const Cue& cue);                     // on the chip's voice the cue names, in its mode, with its effect
-void AudioSystem::effect(std::uint8_t voice, const AudioEffect& effect); // change the voice as it plays
-void AudioSystem::stop(std::uint8_t voice);                              // key that one voice off
+// A system whose sound is a fixed set of voices a game addresses by number implements VoiceSystem<N> —
+// the SNES's sound chip, with eight; a system with one effect path implements EffectSystem.
+// AudioSystem::SNES implements both:
+void AudioSystem::SNES::play(AudioId id, const Cue& cue);   // on the voice the cue names, in its mode, with its effect
+void AudioSystem::SNES::effect(Voice voice, const AudioEffect& effect);  // change the voice as it plays
+void AudioSystem::SNES::stop(Voice voice);                  // key that one voice off
+void AudioSystem::SNES::echo(const Echo& echo);             // set the system's effect path as an echo …
+void AudioSystem::SNES::echo(const Reverb& reverb);         // … or a reverb
 ```
+
+`play(id)`, `play(id, CueMode)` and `stop()` are the call surface every audio system shares. Beyond them,
+the SNES's sound chip plays registered audio files through its eight voices (the `VoiceSystem<8>` surface)
+and has one echo-or-reverb path (the `EffectSystem` surface) — [Audio files through the SNES's sound
+chip](#audio-files-through-the-sness-sound-chip) covers both. A voice is named by a literal the compiler
+checks against the eight (`{.voice = 3}`, `effect(5, …)`, `stop(7)`); hUGEDriver's Game Boy voices would
+implement the same voice surface.
 
 You cue an `AudioId` minted by the library. **Under the fixed `Layer` default, `play()` never cuts off
 audio that is already playing** — every cued sound is its own *voice*, and the system mixes all of its
@@ -219,8 +230,7 @@ sfx.play(shot, retropp::CueMode::Retrigger);  // a repeat fire restarts the effe
 
 `stop()` is system-wide (one-shot `Sfx` voices also close themselves when their sound finishes). On an
 SNES system, `stop(voice)` keys one of the sound chip's voices off — the voices of [Audio files through
-the SNES's sound chip](#audio-files-through-the-sness-sound-chip); per-voice control of the other kinds
-arrives with the planned `play()` voice-handle surface.
+the SNES's sound chip](#audio-files-through-the-sness-sound-chip).
 
 **A closing voice never clicks.** Cutting a waveform at amplitude is an audible click, so any close that
 isn't already at silence rides a short (~8 ms) release fade to zero: the voice a `Retrigger` replaces,
@@ -477,92 +487,97 @@ const retropp::AudioId kick   = lib.registerAudio("audio/kick.wav", retropp::Aud
 const retropp::AudioId square = lib.registerAudio("audio/square.brr", retropp::AudioType::Sfx); // already in its format
 const retropp::AudioId phrase = lib.registerAudio("audio/phrase.wav", retropp::AudioType::Sfx); // six seconds: streamed
 
-retropp::AudioSystem::SNES music{retropp::AudioKind::Chiptune};
+retropp::AudioSystem::SNES snes{retropp::AudioKind::Chiptune};
 
-music.play(kick);                                                   // voice 0, round until stopped, as recorded, full, in the middle
-music.play(kick, retropp::Cue{.voice = 3, .mode = retropp::PlayMode::once(),
-                              .effect = retropp::AudioEffect{.pitch = 1.5f, .volume = 0.8f, .pan = -0.25f}});
-music.play(kick, retropp::Cue{.voice = 4, .mode = retropp::PlayMode::repeat(120)});   // struck twice a second
-music.play(square, retropp::Cue{.voice = 1,
-                                .effect = retropp::AudioEffect{.echo = retropp::Echo{.delay = 0.128f, .feedback = 0.25f, .level = 0.5f}}});
-music.play(phrase, retropp::Cue{.voice = 5, .mode = retropp::PlayMode::once()});       // a long file: the same call
-music.effect(1, retropp::AudioEffect{.pitch = 2.0f});              // the voice as it plays: an octave up, the echo gone
-music.stop(1);                                                      // that voice keys off
-music.stop();                                                       // every voice keys off
+snes.echo(retropp::Echo{.delay = 0.128f, .feedback = 0.25f, .level = 0.5f});  // set the system's effect path
+
+snes.play(kick);                                                   // voice 0, round until stopped, as recorded, full, in the middle
+snes.play(kick, {.voice = 3, .mode = retropp::PlayMode::once(),
+                 .effect = retropp::AudioEffect{.pitch = 1.5f, .volume = 0.8f, .pan = -0.25f}});
+snes.play(kick, {.voice = 4, .mode = retropp::PlayMode::repeat(120)});   // struck twice a second
+snes.play(square, {.voice = 1, .effect = retropp::AudioEffect{.echo = true}});   // this voice feeds the path
+snes.play(phrase, {.voice = 5, .mode = retropp::PlayMode::once()});      // a long file: the same call
+snes.effect(1, retropp::AudioEffect{.pitch = 2.0f});              // the voice as it plays: an octave up, out of the path
+snes.stop(1);                                                      // that voice keys off
+snes.stop();                                                       // every voice keys off
 ```
 
 ```cpp
-struct Cue {
-    std::uint8_t voice = 0;   // which of the chip's eight voices; a cue on a sounding voice takes it over
-    PlayMode     mode{};      // how long it plays, and whether it is struck again
-    AudioEffect  effect{};    // how it sounds
+struct AudioSystem::SNES::Cue {
+    Voice       voice{0};   // which of the chip's eight voices; a cue on a sounding voice takes it over
+    PlayMode    mode{};     // how long it plays, and whether it is struck again
+    AudioEffect effect{};   // how it sounds
 };
 ```
+
+A voice is a literal the compiler checks against the eight — `{.voice = 3}`, `effect(5, …)`, `stop(7)`; a
+number past the chip's eight, or one the program knows only as it runs, does not compile.
+`AudioSystem::SNES::voices` is the eight in order, to loop over.
 
 **`PlayMode` is how a cued sample plays** — a decision made at the cue, never baked into the file, in the
 shape of the animation player's playback mode: `PlayMode::continuous()` (the default) plays the sample
 round from its start until the voice is stopped; `PlayMode::once()` plays one pass, then the voice keys
 itself off; `PlayMode::repeat(perMinute)` plays one pass and strikes the voice again at a tempo, in
-strikes a minute as a metronome counts (a repeat with no tempo throws `std::invalid_argument`). A pass is
-the file, from its first sample to its last: a pass played once or struck at a tempo ends on the file's
-last sample, and `continuous()` carries on from the file's start. A `.brr` whose own last block ends without
-looping ends there in every mode. `stop(voice)` and `stop()` end a mode along with the sound.
+strikes a minute as a metronome counts. A pass is the file, from its first sample to its last: a pass
+played once or struck at a tempo ends on the file's last sample, and `continuous()` carries on from the
+file's start. A `.brr` whose own last block ends without looping ends there in every mode. `stop(voice)`
+and `stop()` end a mode along with the sound.
 
-**`AudioEffect` is the effects vocabulary** (`retropp/audio_effect.h`): what a game asks of a sound, in
-audio terms, the same struct on every system — each system realizes the fields its hardware has and
-throws `std::invalid_argument` naming a field it cannot. Every field defaults to no change, so a cue names
-only what it changes, and a default-constructed `AudioEffect` is the identity:
+**`AudioEffect` is the effects vocabulary** (`retropp/audio_effect.h`): the per-voice shaping a cue
+carries, the same struct on every system that has effects — the SNES's sound chip realizes it today, and
+the PCM system is the next to. Every field defaults to no change, so a cue names only what it changes, and
+a default-constructed `AudioEffect` leaves the voice as recorded:
 
 | Field | Meaning | On the S-DSP |
 |---|---|---|
 | `pitch` (1) | the playback rate: 1 as recorded, 2 an octave up, 0.5 an octave down | the voice's pitch register |
 | `volume` (1) | 0 silent to 1 full | the voice's left and right volume |
 | `pan` (0) | −1 the left side only, 0 the middle, 1 the right side only; the middle is full on both sides and panning takes from the far side | the two volumes set unequally |
-| `echo` | `Echo{.delay, .feedback, .level}`: a delayed copy fed back on itself — the time between repeats in seconds, how much of each repeat feeds the next (0 one repeat, 1 forever), how loud the repeats are | the chip's echo path, its filter passing the sound straight; the voice feeds the path |
-| `reverb` | `Reverb{.decay, .level}`: a diffuse tail — how long it hangs on (0 none, 1 the longest the hardware gives), how loud it is | the same path, short and fed back through a filter that darkens each pass |
+| `echo` (false) | the voice feeds the system's effect path | the voice's bit in the chip's echo-enable register |
+| `reverb` (false) | the voice feeds the system's effect path | the same bit |
 
-`echo` and `reverb` are optionals: absent is no effect, present the caller says what it sounds like. **The
-chip has one echo path**, so a cue engages one of the two (both together throw), and the most recent cue
-or `effect()` that engages it sets the path for every voice feeding it; a cue with neither takes its voice
-out of the path.
+**The chip has one effect path, set for the whole system through `echo()`.** `echo(Echo{.delay, .feedback,
+.level})` shapes it as an echo — a delayed copy fed back on itself, the time between repeats in seconds,
+how much of each repeat feeds the next (0 one repeat, 1 forever), how loud the repeats are;
+`echo(Reverb{.decay, .level})` shapes it as a reverb — the same path short and darkened each pass, how long
+the tail hangs on and how loud it is. The most recent call sets the path, for every voice feeding it; a
+cue's `.echo` or `.reverb` says only whether that voice feeds it. Changing the path under a voice that is
+feeding it never cuts the voice off.
 
 **What the system does underneath.** The first audio file cued hosts the engine's own sound driver on the
 system — a 65816 init and tick with an SPC700 program the init uploads to the audio unit; you never name
-it, and a driver of your own hosts beside it through `host()` as before. Each file is converted once per
-system, the first time it is cued: a `.wav` / `.ogg` / `.flac` / `.mp3` is decoded at the chip's rate
-(32 kHz), folded to mono and encoded into the chip's format — nine bytes for every sixteen samples, 18 KB a
-second; a `.brr` is taken as it is (a nonzero multiple of nine bytes whose last block carries END, or
-`std::invalid_argument`). **A file whose encoded size is 4,095 bytes or less — about a quarter of a second —
-is loaded into audio RAM whole.** It plays from there, round from its start or through to its end as the
-cue's mode says. **A longer file is streamed:** the system keeps it encoded and delivers it into a window
-of audio RAM — 4,095 bytes the cue's voice takes the first time it streams and keeps for the system's
-life — a few blocks at a time, as the voice plays through them, in the machine's own time. Every play mode
-and `effect()` applies the same way to either: a streamed file played once ends when the chip reaches
-its last block, one struck at a tempo is struck again from the file's start, and one played
-continuously carries on from its start; a pitch change moves the voice through the file faster or slower,
-and the delivery follows it. `stop(voice)` ends the delivery with the sound; the next cue on that voice,
-streamed or not, starts afresh in the same window. A long file costs 4 KB of audio RAM per voice that
-streams, whatever its length — the example's six-second phrase would take 108 KB loaded whole, more than
-the chip has.
+it, and a driver of your own hosts beside it through `host()`. Each file is read and converted once per
+system, at the call that first cues it, on your thread: a `.wav` / `.ogg` / `.flac` / `.mp3` is decoded at
+the chip's rate (32 kHz), folded to mono and encoded into the chip's format — nine bytes for every sixteen
+samples, 18 KB a second; a `.brr` is taken as it is. A file that cannot be read or decoded throws there, at
+the call.
 
-The samples, the windows, the program and the echo buffer share audio RAM — about 63 KB without an echo.
-A whole sample that does not fit, or a window that does not, throws `std::length_error` saying how much
-room was left. The chip's directory holds **64 entries**: a sample loaded whole takes one, and a second the
-first time it is played once or at a tempo; a voice that streams takes one for its window. The echo
-buffer is placed at the top of audio RAM the first time a cue engages the path, sized for that delay
-(2 KB per 16 ms); the samples and windows placed after it stay below it, and a later cue asking a longer
-delay than the buffer holds is refused. A cue is performed at the driver's next tick, one frame of the
+**A file that fits is kept whole in a cache the sampler manages**, and plays from audio RAM — round from
+its start or through to its end as the cue's mode says. **A file the cache cannot make room for, or one over
+about a quarter of a second, is delivered through the voice's window instead:** the system keeps it encoded
+and feeds it into 4,095 bytes of audio RAM the cue's voice keeps, a few blocks at a time as the voice plays,
+with the same sound. Every play mode and `effect()` applies the same way to either — a pitch change moves
+the voice through the file faster or slower, and a streamed delivery follows it. When the cache has no room
+for a new whole sample, the samples no voice is playing give way, the stalest first, so a voice always
+plays; a sample a voice is playing is kept until a later cue on its voice, a stop, or the end of a pass
+played once.
+
+The program, the directory, the eight stream windows, the sample cache and the echo ring share audio RAM.
+The directory holds the chip's 256 sample entries. The echo ring sits at the top and grows downward into
+the cache as the delay lengthens; when the ring would grow over a sample a voice is playing, it waits
+until that voice releases, then moves. A cue is performed at the driver's next tick, one frame of the
 console's clock after the call.
 
 The chip's eight voices come out of one mix, on the **`VMDriver`** bus. `stop()` keys every voice off and
-mutes the echo path's output (its buffer circulates a residue of the chip's integer arithmetic that would
-otherwise never reach zero); the next cue that engages the path sets its level again. The samples stay
-loaded. A system whose console has no sample player — a Game Boy system, a `Pcm` or `HostDriven` one —
-throws `std::logic_error` from all three verbs; a voice the chip does not have throws `std::out_of_range`.
+mutes the effect path's output (its ring circulates a residue of the chip's integer arithmetic that would
+otherwise never reach zero); the next cue or change that feeds the path sets its level again. The samples
+stay loaded. The voice surface and the effect path are the SNES system's: a cue plays through the engine's
+sound driver, which runs on a system of the `Chiptune` kind.
 
 The `snes_sampler` example (`examples/snes/sampler/`) is this surface on a panel: eight voices, six
 samples — one of them a six-second phrase, longer than the chip's RAM — a play mode and tempo, pitch,
-volume, pan and an echo or a reverb per voice, each change of sound reaching the voice as it plays.
+volume and pan per voice, each voice's send into the system's path, and the path switched between an echo
+and a reverb, each change of sound reaching the voice as it plays.
 
 ## Volume: the `AudioMixer`
 
@@ -689,7 +704,7 @@ system has no VM and ignores them, using only `sampleRate` as its decode target.
 | PCM audio-pack backend (register + play a `.wav` / `.ogg` / `.flac` / `.mp3` file on an `AudioKind::Pcm` system) | available |
 | `AudioMixer` volume levels (Master + Music/Sfx/Vocals, perceptual slider, default unity) | available |
 | Hosting a sound driver on the SNES (`AudioSystem::SNES`, `snes::LoRom` / `snes::HiRom`, an SPC700 image beside the 65816 code) | available |
-| Audio files through the SNES's sound chip (`play(id, Cue{.voice, .mode, .effect})`, `effect(voice, …)`, `stop(voice)`; `.brr` samples; `PlayMode` continuous / once / repeat at a tempo; the `AudioEffect` vocabulary — pitch, volume, pan, echo, reverb — realized on the S-DSP) | available |
+| Audio files through the SNES's sound chip (`play(id, {.voice, .mode, .effect})`, `effect(voice, …)`, `stop(voice)`, `echo(Echo{…})` / `echo(Reverb{…})`; `.brr` samples; `PlayMode` continuous / once / repeat at a tempo; the `AudioEffect` vocabulary — pitch, volume, pan, and a send into the system's one effect path — realized on the S-DSP) | available |
 | Per-voice gain + pan/balance on the other kinds (developer-owned, the `play()` voice handle) | planned |
 | Anti-channel-stealing (splitting ONE driver's channel writes across parallel sound chips, so a driver whose own allocation steals channels stops stealing them) | planned |
 

@@ -103,8 +103,8 @@ std::map<Block, std::size_t> indexOf(const std::vector<std::uint8_t>& file) {
     return index;
 }
 
-std::unique_ptr<AudioSystem> snesSystem(test::CaptureAudioSink& sink) {
-    return Access::makeManual(AudioKind::Chiptune, sink, VMPlatform::Snes, TimingProfile::Snes);
+std::unique_ptr<AudioSystem::SNES> snesSystem(test::CaptureAudioSink& sink) {
+    return Access::makeManualSnes(AudioKind::Chiptune, sink);
 }
 
 Vm& sampler(AudioSystem& sys) { return Access::voiceMachine(sys, 0); }
@@ -228,13 +228,13 @@ TEST(SnesStream, ALongFileCuedPlaysFromAFixedWindow) {
     const auto             file = encoded("tests/fixtures/long.wav");
     ASSERT_GT(file.size(), std::size_t{sd::kSamplesEnd - sd::kSamplesStart}) << "larger than all of audio RAM";
 
-    ASSERT_NO_THROW(sys->play(longFile(), Cue{.voice = 0}));
+    ASSERT_NO_THROW(sys->play(longFile(), {.voice = 0}));
     EXPECT_EQ(Access::streamedVoices(*sys), 0x01u);
 
     // The window's directory entry: the opening, where a key-on starts; the loop, where the chip goes round.
     const DirectoryEntry window = entry(*sys, 0);
-    EXPECT_EQ(window.start, sd::kSamplesStart);
-    EXPECT_EQ(window.loop, sd::kSamplesStart + ss::kStreamOpeningBlocks * brr::kBlockBytes);
+    EXPECT_EQ(window.start, sd::kWindows);
+    EXPECT_EQ(window.loop, sd::kWindows + ss::kStreamOpeningBlocks * brr::kBlockBytes);
 
     // The opening holds the file's first 176 blocks with their end bits clear; the loop's last block ends
     // and loops.
@@ -247,9 +247,10 @@ TEST(SnesStream, ALongFileCuedPlaysFromAFixedWindow) {
     EXPECT_EQ(last[0] & 0x03, 0x03);
     EXPECT_EQ(unflagged(last), unflagged(blockOf(file, ss::kStreamWindowBlocks - 1)));
 
-    // The window took 4095 bytes of audio RAM and one directory entry: the next sample goes right after it.
-    sys->play(toneFile(), Cue{.voice = 1});
-    EXPECT_EQ(entry(*sys, 1).start, sd::kSamplesStart + ss::kStreamWindowBytes);
+    // The tone cued after it is a whole sample: it loads in the cache at kSamplesStart with entry 8, not
+    // in a window.
+    sys->play(toneFile(), {.voice = 1});
+    EXPECT_EQ(entry(*sys, 8).start, sd::kSamplesStart);
     EXPECT_EQ(ss::kStreamWindowBytes, 4095u);
 
     // And the voice sounds.
@@ -269,25 +270,25 @@ TEST(SnesStream, TheThresholdIsTheWindowsSize) {
     test::CaptureAudioSink wholeSink;
     auto                   whole = snesSystem(wholeSink);
     Access::streamThreshold(*whole, file.size());
-    whole->play(midFile(), Cue{.voice = 0});
+    whole->play(midFile(), {.voice = 0});
     EXPECT_EQ(Access::streamedVoices(*whole), 0x00u);
-    EXPECT_EQ(entry(*whole, 0).start, sd::kSamplesStart);
-    EXPECT_EQ(entry(*whole, 0).loop, sd::kSamplesStart);
+    EXPECT_EQ(entry(*whole, 8).start, sd::kSamplesStart);
+    EXPECT_EQ(entry(*whole, 8).loop, sd::kSamplesStart);
     EXPECT_EQ(audioRam(*whole, sd::kSamplesStart, static_cast<std::uint32_t>(file.size())), file);
 
     // One byte under its size, it streams.
     test::CaptureAudioSink streamSink;
     auto                   streamed = snesSystem(streamSink);
     Access::streamThreshold(*streamed, file.size() - 1);
-    streamed->play(midFile(), Cue{.voice = 0});
+    streamed->play(midFile(), {.voice = 0});
     EXPECT_EQ(Access::streamedVoices(*streamed), 0x01u);
-    EXPECT_EQ(entry(*streamed, 0).loop, sd::kSamplesStart + ss::kStreamOpeningBlocks * brr::kBlockBytes);
+    EXPECT_EQ(entry(*streamed, 0).loop, sd::kWindows + ss::kStreamOpeningBlocks * brr::kBlockBytes);
 }
 
 TEST(SnesStream, TheDecoderAlwaysFindsTheFilesNextBlocks) {
     test::CaptureAudioSink sink;
     auto                   sys = snesSystem(sink);
-    sys->play(longFile(), Cue{.voice = 0});
+    sys->play(longFile(), {.voice = 0});
     requireDeliveryKeepsUp(*sys, sink, 0, encoded("tests/fixtures/long.wav"), 400, kLeastAsRecorded,
                            kMostAsRecorded);
 }
@@ -298,8 +299,8 @@ TEST(SnesStream, AStreamedFileProducesTheFramesOfTheSameFileLoadedWhole) {
     auto                   streamed = snesSystem(streamSink);
     const auto             file     = encoded("tests/fixtures/mid.wav");
     Access::streamThreshold(*whole, file.size());  // loads whole here, streams on the other
-    whole->play(midFile(), Cue{.voice = 0, .mode = PlayMode::continuous()});
-    streamed->play(midFile(), Cue{.voice = 0, .mode = PlayMode::continuous()});
+    whole->play(midFile(), {.voice = 0, .mode = PlayMode::continuous()});
+    streamed->play(midFile(), {.voice = 0, .mode = PlayMode::continuous()});
     ASSERT_EQ(Access::streamedVoices(*whole), 0x00u);
     ASSERT_EQ(Access::streamedVoices(*streamed), 0x01u);
 
@@ -327,7 +328,7 @@ TEST(SnesStream, AStreamedFileProducesTheFramesOfTheSameFileLoadedWhole) {
 TEST(SnesStream, TheHighestPitchStillFindsItsBlocks) {
     test::CaptureAudioSink sink;
     auto                   sys = snesSystem(sink);
-    sys->play(longFile(), Cue{.voice = 0, .effect = AudioEffect{.pitch = 4.0f}});
+    sys->play(longFile(), {.voice = 0, .effect = AudioEffect{.pitch = 4.0f}});
     // $3FFF plays 2130 of the chip's samples a frame: 133 blocks, a block either way.
     requireDeliveryKeepsUp(*sys, sink, 0, encoded("tests/fixtures/long.wav"), 400, 132, 135);
 }
@@ -336,7 +337,7 @@ TEST(SnesStream, APitchChangeWhileItPlaysKeepsTheBlocksInOrder) {
     test::CaptureAudioSink sink;
     auto                   sys  = snesSystem(sink);
     const auto             file = encoded("tests/fixtures/long.wav");
-    sys->play(longFile(), Cue{.voice = 0});
+    sys->play(longFile(), {.voice = 0});
     requireDeliveryKeepsUp(*sys, sink, 0, file, 30, kLeastAsRecorded, kMostAsRecorded);
     sys->effect(0, AudioEffect{.pitch = 4.0f});
     requireDeliveryKeepsUp(*sys, sink, 0, file, 60, kLeastAsRecorded, 135);
@@ -369,7 +370,7 @@ TEST(SnesStream, OnceEndsOnTheFilesLastBlock) {
     test::CaptureAudioSink sink;
     auto                   sys  = snesSystem(sink);
     const auto             file = encoded("tests/fixtures/long.wav");
-    sys->play(longFile(), Cue{.voice = 0, .mode = PlayMode::once()});
+    sys->play(longFile(), {.voice = 0, .mode = PlayMode::once()});
 
     // The file is 12'000 blocks; at 33 a frame its pass is a little over 360 frames.
     std::size_t sounding = 0;
@@ -396,7 +397,7 @@ TEST(SnesStream, ContinuousCarriesOnFromTheFilesFirstBlock) {
     const auto             file   = encoded("tests/fixtures/long.wav");
     const auto             index  = indexOf(file);
     const std::size_t      blocks = file.size() / brr::kBlockBytes;
-    sys->play(longFile(), Cue{.voice = 0, .mode = PlayMode::continuous()});
+    sys->play(longFile(), {.voice = 0, .mode = PlayMode::continuous()});
 
     // Frame by frame until the file's last block is in reach of the decoder: the block after it is the
     // file's first.
@@ -429,7 +430,7 @@ TEST(SnesStream, ARepeatStrikesFromTheOpeningAndTheLoopFollows) {
     auto                   sys  = snesSystem(sink);
     const auto             file = encoded("tests/fixtures/long.wav");
     // 30 a minute: a strike every 120 frames, about a third of the way through the file.
-    sys->play(longFile(), Cue{.voice = 0, .mode = PlayMode::repeat(30.0f)});
+    sys->play(longFile(), {.voice = 0, .mode = PlayMode::repeat(30.0f)});
     const DirectoryEntry window = voiceEntry(*sys, 0);
     const auto inOpening = [&](std::uint16_t at) { return at >= window.start && at < window.loop; };
 
@@ -467,7 +468,7 @@ TEST(SnesStream, ABrrFileStreamsWithItsOwnEnding) {
     const auto             file = encoded("tests/fixtures/long.brr");
     ASSERT_EQ(file.size(), 600u * brr::kBlockBytes);
     ASSERT_EQ(file[599 * brr::kBlockBytes] & 0x03, 0x01) << "the file's own last block ends without looping";
-    sys->play(longBrrFile(), Cue{.voice = 0, .mode = PlayMode::continuous()});
+    sys->play(longBrrFile(), {.voice = 0, .mode = PlayMode::continuous()});
     ASSERT_EQ(Access::streamedVoices(*sys), 0x01u);
 
     std::size_t sounding = 0;
@@ -488,15 +489,15 @@ TEST(SnesStream, TwoVoicesStreamOneFileEachAtItsOwnPlace) {
     test::CaptureAudioSink sink;
     auto                   sys  = snesSystem(sink);
     const auto             file = encoded("tests/fixtures/long.wav");
-    sys->play(longFile(), Cue{.voice = 1});
+    sys->play(longFile(), {.voice = 1});
     for (int f = 0; f < 40; ++f) {
         frame(*sys, sink);
     }
-    sys->play(longFile(), Cue{.voice = 2});
+    sys->play(longFile(), {.voice = 2});
     EXPECT_EQ(Access::streamedVoices(*sys), 0x06u);
     frame(*sys, sink);  // the key-on, which sets the voice's sample
-    EXPECT_EQ(voiceEntry(*sys, 1).start, sd::kSamplesStart);
-    EXPECT_EQ(voiceEntry(*sys, 2).start, sd::kSamplesStart + ss::kStreamWindowBytes);
+    EXPECT_EQ(voiceEntry(*sys, 1).start, sd::kWindows + 1 * ss::kStreamWindowBytes);
+    EXPECT_EQ(voiceEntry(*sys, 2).start, sd::kWindows + 2 * ss::kStreamWindowBytes);
 
     // Each voice finds the file's next blocks in its own window, the two forty frames apart.
     const std::map<Block, std::size_t> index = indexOf(file);
@@ -514,15 +515,20 @@ TEST(SnesStream, TwoVoicesStreamOneFileEachAtItsOwnPlace) {
 TEST(SnesStream, EightVoicesStreamAndAShortSampleStillLoads) {
     test::CaptureAudioSink sink;
     auto                   sys = snesSystem(sink);
-    for (std::uint8_t v = 0; v < sd::kVoices; ++v) {
-        sys->play(longFile(), Cue{.voice = v});
-    }
+    sys->play(longFile(), {.voice = 0});  // a voice is a compile-time literal, so the eight are explicit
+    sys->play(longFile(), {.voice = 1});
+    sys->play(longFile(), {.voice = 2});
+    sys->play(longFile(), {.voice = 3});
+    sys->play(longFile(), {.voice = 4});
+    sys->play(longFile(), {.voice = 5});
+    sys->play(longFile(), {.voice = 6});
+    sys->play(longFile(), {.voice = 7});
     EXPECT_EQ(Access::streamedVoices(*sys), 0xFFu);
     EXPECT_EQ(8 * ss::kStreamWindowBytes, 32'760u);
 
-    // The short tone loads whole after the eight windows, and sounds.
-    sys->play(toneFile(), Cue{.voice = 3});
-    EXPECT_EQ(entry(*sys, 8).start, sd::kSamplesStart + 8 * ss::kStreamWindowBytes);
+    // The short tone loads whole in the cache above the eight windows, and sounds.
+    sys->play(toneFile(), {.voice = 3});
+    EXPECT_EQ(entry(*sys, 8).start, sd::kSamplesStart);
     EXPECT_EQ(Access::streamedVoices(*sys), 0xF7u) << "voice 3 plays the tone, loaded whole";
     std::size_t sounding = 0;
     for (int f = 0; f < 4; ++f) {
@@ -531,22 +537,21 @@ TEST(SnesStream, EightVoicesStreamAndAShortSampleStillLoads) {
     EXPECT_GT(sounding, 1000u);
 
     // Another long file on a voice that has its window streams there: nothing more of audio RAM is taken.
-    sys->play(longBrrFile(), Cue{.voice = 5});
-    sys->play(midFile(), Cue{.voice = 3});  // streams in voice 3's window, taken when it first streamed
+    sys->play(longBrrFile(), {.voice = 5});
+    sys->play(midFile(), {.voice = 3});  // streams in voice 3's window, taken when it first streamed
     sys->play(AudioLibrary::instance().registerAudio("tests/fixtures/tone.ogg", AudioType::Sfx, AssetPolicy::Embed),
-              Cue{.voice = 6});
+              {.voice = 6});
     frame(*sys, sink);  // the key-ons, which set the voices' samples
-    EXPECT_EQ(voiceEntry(*sys, 5).start, sd::kSamplesStart + 5 * ss::kStreamWindowBytes);
-    EXPECT_EQ(voiceEntry(*sys, 3).start, sd::kSamplesStart + 3 * ss::kStreamWindowBytes);
-    EXPECT_EQ(voiceEntry(*sys, 6).start,
-              sd::kSamplesStart + 8 * ss::kStreamWindowBytes + encoded("tests/fixtures/tone.wav").size())
-        << "the next sample goes right after the tone";
+    EXPECT_EQ(voiceEntry(*sys, 5).start, sd::kWindows + 5 * ss::kStreamWindowBytes);
+    EXPECT_EQ(voiceEntry(*sys, 3).start, sd::kWindows + 3 * ss::kStreamWindowBytes);
+    EXPECT_EQ(voiceEntry(*sys, 6).start, sd::kSamplesStart + encoded("tests/fixtures/tone.wav").size())
+        << "the next whole sample goes right after the tone";
 }
 
-TEST(SnesStream, StopEndsTheDeliveryAndAWindowThatDoesNotFitIsRefused) {
+TEST(SnesStream, StopEndsTheDelivery) {
     test::CaptureAudioSink sink;
     auto                   sys = snesSystem(sink);
-    sys->play(longFile(), Cue{.voice = 4});
+    sys->play(longFile(), {.voice = 4});
     for (int f = 0; f < 20; ++f) {
         frame(*sys, sink);
     }
@@ -558,18 +563,6 @@ TEST(SnesStream, StopEndsTheDeliveryAndAWindowThatDoesNotFitIsRefused) {
         frame(*sys, sink);
     }
     EXPECT_EQ(windowBytes(*sys, 4), stopped);
-
-    // Audio RAM filled with whole samples until a window does not fit: the cue that needs one is refused.
-    test::CaptureAudioSink fullSink;
-    auto                   full = snesSystem(fullSink);
-    Access::streamThreshold(*full, 1u << 16);  // the 1 s sweep loads whole
-    for (int i = 0; i < 3; ++i) {
-        full->play(AudioLibrary::instance().registerAudio("tests/fixtures/mid.wav", AudioType::Sfx, AssetPolicy::Embed),
-                   Cue{.voice = 0});
-    }
-    full->play(longFile(), Cue{.voice = 1});
-    full->play(longFile(), Cue{.voice = 2});
-    EXPECT_THROW(full->play(longFile(), Cue{.voice = 3}), std::length_error);
 }
 
 // ── The arithmetic ──────────────────────────────────────────────────────────────────────────────────

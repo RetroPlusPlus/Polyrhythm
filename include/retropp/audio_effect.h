@@ -1,19 +1,22 @@
 #pragma once
 
-// The audio effects vocabulary: what a game asks of a sound as it cues it, in audio terms — the `.effect`
-// of a Cue (retropp/audio_system.h):
+// The audio effects vocabulary: how a sound is shaped as a game cues it. `AudioEffect` is the per-voice
+// shaping a cue carries in its `.effect` (retropp/audio_system.h) — the playback rate, the volume, the
+// stereo position, and whether the voice feeds the system's effect path:
 //
-//   music.play(kick, Cue{.voice = 3, .effect = AudioEffect{.pitch = 1.5f,
-//                        .echo = Echo{.delay = 0.128f, .feedback = 0.25f, .level = 0.5f}}});
+//   snes.play(kick, {.voice = 3, .effect = {.pitch = 1.5f, .echo = true}});
 //
-// One vocabulary for every system; each system realizes the fields its sound hardware has and throws
-// std::invalid_argument naming a field it cannot, so an effect is never silently dropped.
+// `Echo` and `Reverb` are the shape of that path itself — its delay, feedback and levels — set once for
+// the system through its effect surface (AudioSystem::SNES::echo), for every voice that feeds it. One
+// vocabulary for every system that has effects; the SNES's sound chip realizes it today, and the PCM
+// system is the next to. A system with one effect path (the SNES's sound chip) routes a voice's `echo`
+// and its `reverb` to that single path, which sounds as the system's most recent echo() set it; a system
+// with paths of its own kind routes each to its own.
 //
-// Every field has a default that changes nothing, so a default-constructed AudioEffect is the identity —
-// a cue names only the fields it changes. The struct grows by fields; a call site that names what it uses
-// is untouched when a field is added.
-
-#include <optional>
+// Every field has a default that changes nothing, so a default-constructed AudioEffect leaves the voice as
+// recorded — a cue names only the fields it changes. The struct grows by fields; a call site that names
+// what it uses is untouched when a field is added. AudioEffect is trivially copyable, so it rides the cue
+// channel as it is.
 
 namespace retropp {
 
@@ -34,11 +37,11 @@ struct Reverb {
 };
 
 struct AudioEffect {
-    float                 pitch  = 1.0f;  // the playback rate: 1 as recorded, 2 an octave up, 0.5 an octave down
-    float                 volume = 1.0f;  // 0 silent to 1 full
-    float                 pan    = 0.0f;  // -1 the left side only, 0 the middle, 1 the right side only
-    std::optional<Echo>   echo{};
-    std::optional<Reverb> reverb{};
+    float pitch  = 1.0f;   // the playback rate: 1 as recorded, 2 an octave up, 0.5 an octave down
+    float volume = 1.0f;   // 0 silent to 1 full
+    float pan    = 0.0f;   // -1 the left side only, 0 the middle, 1 the right side only
+    bool  echo   = false;  // the voice feeds the system's effect path
+    bool  reverb = false;  // the voice feeds the system's effect path
 };
 
 }  // namespace retropp

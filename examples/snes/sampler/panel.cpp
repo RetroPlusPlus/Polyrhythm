@@ -163,6 +163,8 @@ std::vector<Sprite> textSprites(const PanelState& s, const Fonts& fonts) {
 
     center({0, 10, kViewW, kGlyphPx}, "SNES SAMPLER", fonts.active, "title");
     center({0, 30, kViewW, kGlyphPx}, "AUDIO FILES THROUGH THE SOUND CHIP", fonts.dim, "sub");
+    // The system's one effect path, above the voices; the voices feeding it show their send below.
+    center({0, 46, kViewW, kGlyphPx}, std::string("PATH ") + std::string(s.systemPath), fonts.active, "path");
 
     for (int v = 0; v < kVoices; ++v) {
         const std::string n   = std::to_string(v);
@@ -176,8 +178,8 @@ std::vector<Sprite> textSprites(const PanelState& s, const Fonts& fonts) {
         center({c.x, 440, c.w, kGlyphPx}, s.mode[v], fonts.dim, "mode" + n + "_");
     }
     // Two prefixes a digit can never run together into one key: "hintA" + "20" and "hintB" + "0" stay apart.
-    center({0, 470, kViewW, kGlyphPx}, "1-8 STRIKE  SPACE STOP  ARROWS SELECT PITCH  M MODE", fonts.text, "hintA");
-    center({0, 492, kViewW, kGlyphPx}, "TAB SAMPLE  E ECHO  R REVERB  9 0 TEMPO  MOUSE BARS", fonts.text, "hintB");
+    center({0, 470, kViewW, kGlyphPx}, "1-8 STRIKE  SPACE STOP  ARROWS SELECT AND PITCH", fonts.text, "hintA");
+    center({0, 492, kViewW, kGlyphPx}, "TAB SAMPLE  M MODE  9 0 TEMPO  E SEND  R PATH", fonts.text, "hintB");
     return out;
 }
 

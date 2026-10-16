@@ -35,7 +35,7 @@ macOS arm64:
 
 | Artifact | Size |
 |---|---|
-| The platform library (`retroppengine`) | ~1.7 MB |
+| The platform library (`retroppengine`) | ~1.8 MB |
 | A shipped binary, floor, no VM core | ~2.5 MB |
 | … with the Game Boy core | ~2.7 MB |
 | … with the SNES core | ~3.2 MB |
@@ -77,7 +77,8 @@ Active development. The core is in place and exercised end to end by a real cons
 
   Under all three: a mixed multi-voice chain with per-type levels, production off the game's
   thread with a thread per sounding machine, and the `AudioEffect` vocabulary — pitch, volume,
-  pan, echo, reverb — realized by whichever hardware plays the sound.
+  pan, and a per-voice send into the system's one effect path (an echo or a reverb) — realized by
+  whichever hardware plays the sound.
 - **VM host** — a system-agnostic VM that runs surgically-extracted original-hardware routines
   (authored as `.asm`, assembled in-process) as ordinary typed C++ functions, on the Game Boy family
   and the SNES. Two cores back it — SameBoy for the Game Boy / Game Boy Color and Snaggletooth for the

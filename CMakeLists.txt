@@ -1454,6 +1454,7 @@ add_library(retroppengine STATIC
     src/audio/gb_audio.cpp
     src/audio/snes/brr.cpp
     src/audio/snes/default_driver.cpp
+    src/audio/snes/sample_cache.cpp
     src/audio/snes/sample_stream.cpp
     src/vm/gameboy/sameboy_machine.cpp
     src/vm/gameboy/sameboy_backend.cpp
@@ -1735,6 +1736,8 @@ if(RETROPP_BUILD_TESTS)
         tests/snes_audio_unit_test.cpp
         tests/snes_sampler_test.cpp
         tests/snes_stream_test.cpp
+        tests/snes_sample_cache_test.cpp
+        tests/snes_no_refusal_test.cpp
         tests/net_socket_test.cpp
         tests/net_tls_test.cpp
         tests/vm_frame_sink_test.cpp
@@ -1999,6 +2002,39 @@ if(RETROPP_BUILD_TESTS)
                      "-DNEEDLE=${_retropp_vm_gameboy_needle}"
                      -DPROBE=${_retropp_net_probe}
                      -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/vm_linkage.cmake)
+
+    # ── A voice is a compile-time literal ─────────────────────────────────────────────────────────────
+    # Three object libraries the normal build never makes (EXCLUDE_FROM_ALL); each ctest row below builds
+    # one and asserts the outcome (tests/compile_outcome.cmake). A voice past the count and a voice from a
+    # runtime value must not compile; voice seven is the control that proves the harness compiles a
+    # well-formed voice, so a negative failing for another reason is caught.
+    foreach(_case voice_past_the_count voice_runtime_value voice_seven)
+        add_library(compile_${_case} OBJECT EXCLUDE_FROM_ALL tests/compile_fail/${_case}.cpp)
+        target_compile_features(compile_${_case} PRIVATE cxx_std_20)
+        target_link_libraries(compile_${_case} PRIVATE retropp::engine)
+        retropp_set_warnings(compile_${_case})
+    endforeach()
+
+    add_test(NAME VoiceLiteral.PastTheCountDoesNotCompile
+             COMMAND ${CMAKE_COMMAND} -DBINARY_DIR=${CMAKE_BINARY_DIR}
+                     -DTARGET=compile_voice_past_the_count -DCONFIG=$<CONFIG>
+                     -DEXPECT=fails "-DDIAGNOSTIC=constant expression"
+                     -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_outcome.cmake)
+    add_test(NAME VoiceLiteral.ARuntimeValueDoesNotCompile
+             COMMAND ${CMAKE_COMMAND} -DBINARY_DIR=${CMAKE_BINARY_DIR}
+                     -DTARGET=compile_voice_runtime_value -DCONFIG=$<CONFIG>
+                     -DEXPECT=fails "-DDIAGNOSTIC=constant expression"
+                     -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_outcome.cmake)
+    add_test(NAME VoiceLiteral.ASevenCompiles
+             COMMAND ${CMAKE_COMMAND} -DBINARY_DIR=${CMAKE_BINARY_DIR}
+                     -DTARGET=compile_voice_seven -DCONFIG=$<CONFIG>
+                     -DEXPECT=builds
+                     -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_outcome.cmake)
+    # One build tree, so the three never run two concurrent builds in it at once.
+    set_tests_properties(VoiceLiteral.PastTheCountDoesNotCompile
+                         VoiceLiteral.ARuntimeValueDoesNotCompile
+                         VoiceLiteral.ASevenCompiles
+                         PROPERTIES RESOURCE_LOCK retropp_build_tree)
 endif()
 
 # ── Runnable example hosts (mode 1 only by default) ──────────────────────────────

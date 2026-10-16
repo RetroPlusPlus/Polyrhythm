@@ -458,10 +458,10 @@ a chiptune driver. The same file also plays through the SNES's sound chip, on an
 cued by voice, play mode and effect:
 
 ```cpp
-AudioSystem::SNES music{AudioKind::Chiptune};
-music.play(chime, Cue{.voice = 2, .mode = PlayMode::once(), .effect = AudioEffect{.pan = -0.5f}});
-music.effect(2, AudioEffect{.pitch = 1.5f});   // the voice as it plays
-music.stop(2);
+AudioSystem::SNES snes{AudioKind::Chiptune};
+snes.play(chime, {.voice = 2, .mode = PlayMode::once(), .effect = AudioEffect{.pan = -0.5f}});
+snes.effect(2, AudioEffect{.pitch = 1.5f});   // the voice as it plays
+snes.stop(2);
 ```
 
 A file of any length plays this way — a long one is streamed through the chip as the voice plays

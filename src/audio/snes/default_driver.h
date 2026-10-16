@@ -7,8 +7,8 @@
 // to the audio unit and a 65816 tick hands it commands over the ports each frame; the sources are under
 // src/audio/snes/driver/ and the build assembles them.
 //
-// The game never names this driver. It registers audio files and plays them with play(id, SampleCue);
-// what is here is the registration the system hosts and the work-RAM layout its gestures write.
+// The game never names this driver. It registers audio files and plays them with play(id, Cue); what is
+// here is the registration the system hosts and the work-RAM layout its gestures write.
 //
 // INTERNAL — under src/audio/, never include/retropp/.
 
@@ -28,14 +28,21 @@ struct Slots {
 // The driver's registration on the library — made on the first call, the same id after.
 [[nodiscard]] DriverId<Slots> defaultDriver();
 
-// Audio RAM as the driver lays it out: the sound program at $0200, the sample directory at page $03 (64
-// entries of four bytes), the samples from $0400 up to the boot window. A streamed file's window
-// (sample_stream.h) is a sample like any other here: 4095 bytes from the same allocation, with a directory
-// entry of its own.
-inline constexpr std::uint16_t kDirectory    = 0x0300;
-inline constexpr std::uint8_t  kDirectorySlots = 64;
-inline constexpr std::uint16_t kSamplesStart = 0x0400;
-inline constexpr std::uint16_t kSamplesEnd   = 0xFFC0;
+// Audio RAM as the driver lays it out, bottom to top: the sound program fills the first page from $0200,
+// and the silent sample a once pass ends on sits inside it at $02F0 (nine bytes); the sample directory is
+// page $03, 256 entries of four bytes, up to $0700; the eight stream windows follow, one per voice of the
+// chip, 4095 bytes each (sample_stream.h), up to $86F8; the sample cache fills from there up to the echo
+// ring, which is anchored at $FF00 and grows downward as the delay lengthens — $FFC0 is the cache's top
+// when no echo path is set. A whole sample lives in the cache with a directory entry of its own; a streamed
+// file is delivered through its voice's window.
+inline constexpr std::uint16_t kProgram       = 0x0200;
+inline constexpr std::uint16_t kSilenceBlock  = 0x02F0;
+inline constexpr std::uint16_t kDirectory     = 0x0300;
+inline constexpr std::uint16_t kDirectorySlots = 256;
+inline constexpr std::uint16_t kWindows       = 0x0700;
+inline constexpr std::uint16_t kSamplesStart  = 0x86F8;
+inline constexpr std::uint16_t kSamplesEnd    = 0xFFC0;
+inline constexpr std::uint16_t kRingEnd       = 0xFF00;
 
 // The driver's bytes in work RAM: a block per voice, the two mailboxes the handle's verbs write, the two
 // bytes it reports, and a repeat's period and countdown per voice, in frames.

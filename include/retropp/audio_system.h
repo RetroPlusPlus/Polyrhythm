@@ -27,6 +27,7 @@
 //
 // pimpl'd so this public header pulls no VM or ring-buffer type.
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -84,17 +85,79 @@ struct PlayMode {
     }
 };
 
-// A registered audio file cued through a console's sound chip — play(id, Cue{…}) on a system whose
-// console has a sample player (the SNES's S-DSP, eight voices). `voice` is which of the chip's voices
-// plays it; a cue on a voice that is sounding takes it over. `mode` is how long it plays and whether it
-// is struck again; `effect` is how it sounds (retropp/audio_effect.h) — left at their defaults the file
-// plays round until stopped, as recorded, full, in the middle.
+namespace detail {
+// Declared and never defined: a consteval body that reaches it is not a constant expression, which is how
+// a voice number the system does not have refuses to compile.
+void aVoiceIsOneTheSystemHas();
+}  // namespace detail
+
+// One of a voice system's voices, named by a literal: {.voice = 3}, effect(5, …), stop(7). The number is
+// checked as the program compiles against the system's voice count — a number past it, or one the program
+// knows only as it runs, does not compile. A loop over a system's voices indexes its `voices`.
+template <unsigned kVoiceCount>
+class Voice {
+public:
+    consteval Voice(int number)  // NOLINT(google-explicit-constructor) — a literal converts to a voice
+        : index_(static_cast<std::uint8_t>(number)) {
+        if (number < 0 || number >= static_cast<int>(kVoiceCount)) {
+            detail::aVoiceIsOneTheSystemHas();
+        }
+    }
+    [[nodiscard]] constexpr std::uint8_t index() const noexcept { return index_; }
+
+private:
+    std::uint8_t index_;
+};
+
+// A system whose sound is made by a fixed set of voices a game addresses by number — the SNES's sound
+// chip, with eight. A system states its count where it implements this, and `Voice`, `Cue` and `voices`
+// follow from it. A registered audio file is cued on a voice with a Cue — the voice, how it plays, how it
+// sounds — changed as it plays with effect(), and keyed off with stop(voice). hUGEDriver's Game Boy
+// voices and a Genesis's would implement this too; a system's own play(id) / stop() stay beside these.
 //
-//   music.play(kick, Cue{.voice = 3, .mode = PlayMode::repeat(120), .effect = AudioEffect{.pitch = 1.5f}});
-struct Cue {
-    std::uint8_t voice = 0;
-    PlayMode     mode{};
-    AudioEffect  effect{};
+//   snes.play(kick, {.voice = 3, .mode = PlayMode::repeat(120), .effect = {.pitch = 1.5f}});
+template <unsigned kVoiceCount>
+class VoiceSystem {
+public:
+    static constexpr unsigned kVoices = kVoiceCount;
+    using Voice                       = retropp::Voice<kVoiceCount>;
+
+    // A registered audio file cued on one of the system's voices: which voice plays it (a cue on a voice
+    // that is sounding takes it over), how long it plays and whether it is struck again, and how it sounds.
+    // Left at their defaults the file plays round until stopped, as recorded, full, in the middle, out of
+    // the effect path.
+    struct Cue {
+        Voice       voice{0};
+        PlayMode    mode{};
+        AudioEffect effect{};
+    };
+
+    // The voices in order, for a loop: for (Voice v : voices) …, or voices[i].
+    static constexpr std::array<Voice, kVoiceCount> voices =
+        []<std::size_t... I>(std::index_sequence<I...>) {
+            return std::array<Voice, kVoiceCount>{Voice{static_cast<int>(I)}...};
+        }(std::make_index_sequence<kVoiceCount>{});
+
+    virtual void play(AudioId id, const Cue& cue)               = 0;
+    virtual void effect(Voice voice, const AudioEffect& effect) = 0;
+    virtual void stop(Voice voice)                              = 0;
+
+protected:
+    ~VoiceSystem() = default;
+};
+
+// A system with one effect path a game configures for the whole system — an echo (the sound repeated
+// after a delay, each repeat feeding the next) or a reverb (the same path short, each pass darkened). The
+// most recent call sets the path, for every voice feeding it; a cue's effect says whether its voice feeds
+// it (AudioEffect::echo / ::reverb). The SNES's sound chip has one such path; the PCM system is the next
+// to implement this.
+class EffectSystem {
+public:
+    virtual void echo(const Echo& echo)     = 0;
+    virtual void echo(const Reverb& reverb) = 0;
+
+protected:
+    ~EffectSystem() = default;
 };
 
 // How an AudioSystem's output is doing, gathered in one read (AudioSystem::audioStats()).
@@ -189,34 +252,14 @@ public:
     // sounds simply layer.
     void play(AudioId id, CueMode mode = CueMode::Layer);
 
-    // Cue a registered audio file through the console's sound chip, on the voice the cue names, with its
-    // effect. On an SNES system of the Chiptune kind the file is converted to the chip's sample format
-    // and loaded into audio RAM the first time it is cued here (a `.brr` file is loaded as it is), and
-    // the voice is keyed on at the cue's pitch, volume and pan, through the sound driver the system
-    // hosts for this by itself, and plays the way the cue's mode says — round until stopped, once, or
-    // struck again at a tempo; `play(id)` on such a file is this cue with every default. The chip's
-    // eight voices come out of one mix, on the VMDriver bus. An effect the chip does not have, and a
-    // repeat with no tempo, throw std::invalid_argument naming it; a system whose console has no sample
-    // player throws std::logic_error.
-    void play(AudioId id, const Cue& cue);
-
-    // Change a voice as it plays: its pitch, volume, pan and echo path follow `effect` now, with no new
-    // key-on. The sample itself is read at the key-on, so a different file takes a play(id, Cue{…}),
-    // and the next play(id, Cue{…}) on this voice brings its own effect. Same refusals as play(id, Cue{…}).
-    void effect(std::uint8_t voice, const AudioEffect& effect);
-
-    // Key one of the chip's voices off: the sound a play(id, Cue{.voice = voice}) started releases.
-    // Throws std::logic_error on a system whose console has no sample player.
-    void stop(std::uint8_t voice);
-
     // Silence the system: every voice rides a short release fade (~8 ms) to zero and closes — a hard
     // cut at amplitude would click — and the output drains to silence. Registered audio stays
     // registered — play() again to cue afresh. (One-shot Sfx voices also close themselves when their
-    // sound finishes, already at silence; per-voice control arrives with the play() voice-handle
-    // surface.) A HOSTED RESIDENT DRIVER is NOT silenced by stop() — it is always-running and closes only
-    // through its own handle (HostedDriver::close) or this system's destruction, so stop() never destroys
-    // mid-game driver RAM (a song position). stop() release-fades the cued voices around it. The sound
-    // chip's voices a play(id, Cue{…}) keyed on are keyed off, every one; the samples stay loaded.
+    // sound finishes, already at silence.) A HOSTED RESIDENT DRIVER is NOT silenced by stop() — it is
+    // always-running and closes only through its own handle (HostedDriver::close) or this system's
+    // destruction, so stop() never destroys mid-game driver RAM (a song position). stop() release-fades
+    // the cued voices around it. On an SNES system the sound chip's voices are keyed off, every one, and
+    // the samples stay loaded.
     void stop();
 
     // ── Hosted resident driver ────────────────────────────────────────────────────────────────────
@@ -345,9 +388,12 @@ public:
                       TimingProfile::GameBoyColor, sampleRate) {}
 };
 
-// A hosted driver here runs on the SNES core: its binding says `.isa = Isa::Wdc65816` and names an
-// snes:: mapper, and each step of the production thread is one frame of the console's own clock.
-class AudioSystem::SNES : public AudioSystem {
+// The SNES audio system. Its play(id) / play(id, CueMode) / stop() are AudioSystem's, the same call
+// surface as every other system; beyond them it plays registered audio files through the sound chip's
+// eight voices (VoiceSystem<8>) and has one echo-or-reverb path (EffectSystem). A hosted driver here runs
+// on the SNES core: its binding says `.isa = Isa::Wdc65816` and names an snes:: mapper, and each step of
+// the production thread is one frame of the console's own clock.
+class AudioSystem::SNES final : public AudioSystem, public VoiceSystem<8>, public EffectSystem {
 public:
     explicit SNES(AudioKind kind, unsigned sampleRate = kAudioSampleRate)
         : AudioSystem(&detail::snesCore, kind, VMPlatform::Snes, TimingProfile::Snes, sampleRate) {}
@@ -356,6 +402,36 @@ public:
     SNES(AudioKind kind, std::unique_ptr<AudioSink> sink, unsigned sampleRate = kAudioSampleRate)
         : AudioSystem(&detail::snesCore, kind, std::move(sink), VMPlatform::Snes, TimingProfile::Snes,
                       sampleRate) {}
+
+    using AudioSystem::play;  // play(id), play(id, CueMode)
+    using AudioSystem::stop;  // stop()
+
+    // Cue a registered audio file on one of the chip's eight voices, with its mode and effect. The file is
+    // converted to the chip's sample format the first time it is cued here (a `.brr` file as it is) — kept
+    // in audio RAM when it fits, delivered through the voice's window when it does not, with the same
+    // sound — and the voice is keyed on at the cue's pitch, volume and pan through the sound driver the
+    // system hosts for this by itself. The chip's eight voices come out of one mix, on the VMDriver bus.
+    void play(AudioId id, const Cue& cue) override;
+
+    // Change a voice as it plays: its pitch, volume, pan and whether it feeds the effect path follow
+    // `effect` now, with no new key-on. The sample itself is read at the key-on, so a different file takes
+    // a play(id, {…}), and the next play(id, {…}) on this voice brings its own effect.
+    void effect(Voice voice, const AudioEffect& effect) override;
+
+    // Key one of the chip's voices off: the sound a play(id, {.voice = voice}) started releases.
+    void stop(Voice voice) override;
+
+    // Configure the chip's one effect path, for the whole system — as an echo (echo(Echo{…})) or a reverb
+    // (echo(Reverb{…})). The most recent call sets the path, for every voice feeding it; a cue's effect
+    // (AudioEffect::echo / ::reverb) says whether its voice does.
+    void echo(const Echo& echo) override;
+    void echo(const Reverb& reverb) override;
+
+private:
+    SNES(ManualTag, AudioKind kind, AudioSink& sink, unsigned sampleRate)
+        : AudioSystem(ManualTag{}, &detail::snesCore, kind, sink, VMPlatform::Snes, TimingProfile::Snes,
+                      sampleRate) {}
+    friend struct detail::AudioSystemTestAccess;
 };
 
 // ── HostedDriver<SlotsStruct> — the durable typed handle ───────────────────────────────────────────

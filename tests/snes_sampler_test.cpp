@@ -1,4 +1,4 @@
-// A registered audio file through the SNES's sound chip: play(id, Cue{…}) on an AudioSystem::SNES of the
+// A registered audio file through the SNES's sound chip: play(id, {…}) on an AudioSystem::SNES of the
 // Chiptune kind. The system hosts the engine's default sound driver by itself, converts the file to the
 // chip's sample format and loads it once, keys the cue's voice on with the cue's effect, changes the voice
 // as it plays on effect(voice, …), and keys it off on stop(voice) or stop(). A `.brr` file loads as it is and streams on a Pcm system through the format's
@@ -49,8 +49,8 @@ AudioId loopFile() {
     return id;
 }
 
-std::unique_ptr<AudioSystem> snesSystem(test::CaptureAudioSink& sink) {
-    return Access::makeManual(AudioKind::Chiptune, sink, VMPlatform::Snes, TimingProfile::Snes);
+std::unique_ptr<AudioSystem::SNES> snesSystem(test::CaptureAudioSink& sink) {
+    return Access::makeManualSnes(AudioKind::Chiptune, sink);
 }
 
 // One production pass, and everything it buffered.
@@ -89,7 +89,7 @@ TEST(SnesSampler, AnAudioFileCuedHostsTheSamplerAndLoadsItConverted) {
     auto                   sys = snesSystem(sink);
     EXPECT_EQ(Access::voiceCount(*sys), 0u);
 
-    sys->play(toneFile(), Cue{.voice = 2});
+    sys->play(toneFile(), {.voice = 2});
     stepAndDrain(*sys, sink);
     EXPECT_EQ(Access::voiceCount(*sys), 1u);  // the sampler, and nothing else
 
@@ -103,33 +103,34 @@ TEST(SnesSampler, AnAudioFileCuedHostsTheSamplerAndLoadsItConverted) {
         MemoryRegion{.at = snes::audioRam(sd::kSamplesStart), .size = static_cast<std::uint32_t>(expected.size())});
     EXPECT_EQ(loaded, expected);
 
-    // Its directory entry: the sample's start, and its start again as where a looping one continues.
-    EXPECT_EQ(audioRam(*sys, sd::kDirectory + 0), 0x00u);
-    EXPECT_EQ(audioRam(*sys, sd::kDirectory + 1), 0x04u);
-    EXPECT_EQ(audioRam(*sys, sd::kDirectory + 2), 0x00u);
-    EXPECT_EQ(audioRam(*sys, sd::kDirectory + 3), 0x04u);
+    // Its directory entry — the first the cache hands out, eight — holds the sample's start, and its start
+    // again as where a looping one continues.
+    EXPECT_EQ(audioRam(*sys, sd::kDirectory + 4 * sd::kVoices + 0), 0xF8u);
+    EXPECT_EQ(audioRam(*sys, sd::kDirectory + 4 * sd::kVoices + 1), 0x86u);
+    EXPECT_EQ(audioRam(*sys, sd::kDirectory + 4 * sd::kVoices + 2), 0xF8u);
+    EXPECT_EQ(audioRam(*sys, sd::kDirectory + 4 * sd::kVoices + 3), 0x86u);
 
-    // The voice plays entry 0, as recorded, full on both sides.
-    EXPECT_EQ(dsp(*sys, 0x24), 0x00u);  // V2SRCN
+    // The voice plays entry 8, as recorded, full on both sides.
+    EXPECT_EQ(dsp(*sys, 0x24), 0x08u);  // V2SRCN
     EXPECT_EQ(dsp(*sys, 0x22), 0x00u);  // V2PITCHL
     EXPECT_EQ(dsp(*sys, 0x23), 0x10u);  // V2PITCHH
     EXPECT_EQ(dsp(*sys, 0x20), 0x7Fu);  // V2VOLL
     EXPECT_EQ(dsp(*sys, 0x21), 0x7Fu);  // V2VOLR
 
     // Cued again it is not loaded again: the next sample would go right after it.
-    sys->play(toneFile(), Cue{.voice = 3});
-    sys->play(loopFile(), Cue{.voice = 4});
+    sys->play(toneFile(), {.voice = 3});
+    sys->play(loopFile(), {.voice = 4});
     stepAndDrain(*sys, sink);
-    EXPECT_EQ(audioRam(*sys, sd::kDirectory + 4), static_cast<std::uint8_t>((sd::kSamplesStart + 360) & 0xFF));
-    EXPECT_EQ(audioRam(*sys, sd::kDirectory + 5), static_cast<std::uint8_t>((sd::kSamplesStart + 360) >> 8));
-    EXPECT_EQ(dsp(*sys, 0x44), 0x01u);  // V4SRCN: the second entry
+    EXPECT_EQ(audioRam(*sys, sd::kDirectory + 4 * 9), static_cast<std::uint8_t>((sd::kSamplesStart + 360) & 0xFF));
+    EXPECT_EQ(audioRam(*sys, sd::kDirectory + 4 * 9 + 1), static_cast<std::uint8_t>((sd::kSamplesStart + 360) >> 8));
+    EXPECT_EQ(dsp(*sys, 0x44), 0x09u);  // V4SRCN: the second entry
 }
 
 TEST(SnesSampler, AnOggFileCuedLoadsConvertedAndSounds) {
     test::CaptureAudioSink sink;
     auto                   sys = snesSystem(sink);
     sys->play(AudioLibrary::instance().registerAudio("tests/fixtures/tone.ogg", AudioType::Sfx, AssetPolicy::Embed),
-              Cue{.voice = 6});
+              {.voice = 6});
     EXPECT_GT(nonSilentCount(stepAndDrain(*sys, sink)), 100u);
 
     // The file, as the engine converted it: decoded at the chip's rate, folded to mono, encoded.
@@ -140,16 +141,16 @@ TEST(SnesSampler, AnOggFileCuedLoadsConvertedAndSounds) {
     const std::vector<std::uint8_t> loaded = Access::voiceMachine(*sys, 0).read(
         MemoryRegion{.at = snes::audioRam(sd::kSamplesStart), .size = static_cast<std::uint32_t>(expected.size())});
     EXPECT_EQ(loaded, expected);
-    EXPECT_EQ(audioRam(*sys, sd::kDirectory + 0), 0x00u);
-    EXPECT_EQ(audioRam(*sys, sd::kDirectory + 1), 0x04u);
-    EXPECT_EQ(dsp(*sys, 0x64), 0x00u);  // V6SRCN
+    EXPECT_EQ(audioRam(*sys, sd::kDirectory + 4 * sd::kVoices + 0), 0xF8u);
+    EXPECT_EQ(audioRam(*sys, sd::kDirectory + 4 * sd::kVoices + 1), 0x86u);
+    EXPECT_EQ(dsp(*sys, 0x64), 0x08u);  // V6SRCN
 }
 
 TEST(SnesSampler, TheKeyedVoiceSoundsAndStopVoiceKeysItOff) {
     test::CaptureAudioSink sink;
     auto                   sys = snesSystem(sink);
 
-    sys->play(loopFile(), Cue{.voice = 1});
+    sys->play(loopFile(), {.voice = 1});
     EXPECT_GT(nonSilentCount(stepAndDrain(*sys, sink)), 100u);
     EXPECT_GT(nonSilentCount(stepAndDrain(*sys, sink)), 100u);  // a looping sample keeps sounding
 
@@ -164,7 +165,7 @@ TEST(SnesSampler, PlayWithoutACueIsVoiceZeroAsRecorded) {
     auto                   sys = snesSystem(sink);
     sys->play(loopFile());
     EXPECT_GT(nonSilentCount(stepAndDrain(*sys, sink)), 100u);
-    EXPECT_EQ(dsp(*sys, 0x04), 0x00u);  // V0SRCN
+    EXPECT_EQ(dsp(*sys, 0x04), 0x08u);  // V0SRCN: the cache's first entry
     EXPECT_EQ(dsp(*sys, 0x02), 0x00u);  // V0PITCHL
     EXPECT_EQ(dsp(*sys, 0x03), 0x10u);  // V0PITCHH
     EXPECT_EQ(dsp(*sys, 0x00), 0x7Fu);  // V0VOLL
@@ -174,7 +175,7 @@ TEST(SnesSampler, PlayWithoutACueIsVoiceZeroAsRecorded) {
 TEST(SnesSampler, TheEffectReachesTheVoicesRegisters) {
     test::CaptureAudioSink sink;
     auto                   sys = snesSystem(sink);
-    sys->play(loopFile(), Cue{.voice = 5, .effect = AudioEffect{.pitch = 2.0f, .volume = 0.5f, .pan = -1.0f}});
+    sys->play(loopFile(), {.voice = 5, .effect = AudioEffect{.pitch = 2.0f, .volume = 0.5f, .pan = -1.0f}});
     stepAndDrain(*sys, sink);
     EXPECT_EQ(dsp(*sys, 0x52), 0x00u);  // V5PITCHL: an octave up is $2000
     EXPECT_EQ(dsp(*sys, 0x53), 0x20u);  // V5PITCHH
@@ -182,7 +183,7 @@ TEST(SnesSampler, TheEffectReachesTheVoicesRegisters) {
     EXPECT_EQ(dsp(*sys, 0x51), 0u);     // V5VOLR: the far side, silent at the edge
 
     // The middle is full on both sides; panning right takes from the left.
-    sys->play(loopFile(), Cue{.voice = 6, .effect = AudioEffect{.pan = 0.5f}});
+    sys->play(loopFile(), {.voice = 6, .effect = AudioEffect{.pan = 0.5f}});
     stepAndDrain(*sys, sink);
     EXPECT_EQ(dsp(*sys, 0x60), 64u);    // V6VOLL
     EXPECT_EQ(dsp(*sys, 0x61), 0x7Fu);  // V6VOLR
@@ -199,8 +200,8 @@ TEST(SnesSampler, OncePlaysOnePassAndKeysTheVoiceOff) {
     test::CaptureAudioSink sink;
     auto                   sys = snesSystem(sink);
     // The 20 ms tone, round from its start: continuous, it keeps going; once, it ends after its pass.
-    sys->play(toneFile(), Cue{.voice = 0, .mode = PlayMode::continuous()});
-    sys->play(toneFile(), Cue{.voice = 1, .mode = PlayMode::once()});
+    sys->play(toneFile(), {.voice = 0, .mode = PlayMode::continuous()});
+    sys->play(toneFile(), {.voice = 1, .mode = PlayMode::once()});
     Access::step(*sys);  // the key-ons
     std::uint8_t kof = 0;
     for (int frame = 0; frame < 6; ++frame) {
@@ -216,7 +217,7 @@ TEST(SnesSampler, APassEndsOnTheSamplesLastSampleAndIsSilentUntilTheKeyOff) {
     auto                   sys = snesSystem(sink);
     // The 20 ms tone, once: its 640 samples, then nothing — not its start again in the frame before the
     // driver keys the voice off.
-    sys->play(toneFile(), Cue{.voice = 0, .mode = PlayMode::once()});
+    sys->play(toneFile(), {.voice = 0, .mode = PlayMode::once()});
     std::vector<AudioFrame> frames;
     for (int step = 0; step < 6; ++step) {
         const std::vector<AudioFrame> f = stepAndDrain(*sys, sink);
@@ -243,36 +244,35 @@ TEST(SnesSampler, APassEndsOnTheSamplesLastSampleAndIsSilentUntilTheKeyOff) {
     EXPECT_LT(last, fileEnd + 2 * kAudioSampleRate / 1000) << "sounded " << (last - fileEnd) * 1000.0 / kAudioSampleRate
                                                            << " ms past the file's end";
 
-    // The pass plays through a second directory entry: the sample's own start, continuing into one block
-    // of silence placed right after it, which ends and loops on itself.
-    const std::uint16_t silence = sd::kSamplesStart + 360;
-    EXPECT_EQ(dsp(*sys, 0x04), 0x01u);  // V0SRCN
-    EXPECT_EQ(audioRam(*sys, sd::kDirectory + 4), 0x00u);
-    EXPECT_EQ(audioRam(*sys, sd::kDirectory + 5), 0x04u);
-    EXPECT_EQ(audioRam(*sys, sd::kDirectory + 6), static_cast<std::uint8_t>(silence & 0xFF));
-    EXPECT_EQ(audioRam(*sys, sd::kDirectory + 7), static_cast<std::uint8_t>(silence >> 8));
+    // The pass plays through a second directory entry — entry nine — the sample's own start, continuing
+    // into the silent sample the sound program carries at kSilenceBlock, which ends and loops on itself.
+    EXPECT_EQ(dsp(*sys, 0x04), 0x09u);  // V0SRCN: the ending entry
+    EXPECT_EQ(audioRam(*sys, sd::kDirectory + 4 * 9 + 0), static_cast<std::uint8_t>(sd::kSamplesStart & 0xFF));
+    EXPECT_EQ(audioRam(*sys, sd::kDirectory + 4 * 9 + 1), static_cast<std::uint8_t>(sd::kSamplesStart >> 8));
+    EXPECT_EQ(audioRam(*sys, sd::kDirectory + 4 * 9 + 2), static_cast<std::uint8_t>(sd::kSilenceBlock & 0xFF));
+    EXPECT_EQ(audioRam(*sys, sd::kDirectory + 4 * 9 + 3), static_cast<std::uint8_t>(sd::kSilenceBlock >> 8));
     const std::vector<std::uint8_t> block = Access::voiceMachine(*sys, 0).read(
-        MemoryRegion{.at = snes::audioRam(silence), .size = static_cast<std::uint32_t>(brr::kBlockBytes)});
+        MemoryRegion{.at = snes::audioRam(sd::kSilenceBlock), .size = static_cast<std::uint32_t>(brr::kBlockBytes)});
     EXPECT_EQ(block, (std::vector<std::uint8_t>{0x03, 0, 0, 0, 0, 0, 0, 0, 0}));
 
     // A repeat plays the same ending entry; continuous plays the sample round through its own; the next
-    // sample loads after the block of silence.
-    sys->play(toneFile(), Cue{.voice = 1, .mode = PlayMode::repeat(120.0f)});
-    sys->play(toneFile(), Cue{.voice = 2, .mode = PlayMode::continuous()});
-    sys->play(loopFile(), Cue{.voice = 3});
+    // sample loads right after the tone — the silent sample is in the program page, not among the samples.
+    sys->play(toneFile(), {.voice = 1, .mode = PlayMode::repeat(120.0f)});
+    sys->play(toneFile(), {.voice = 2, .mode = PlayMode::continuous()});
+    sys->play(loopFile(), {.voice = 3});
     stepAndDrain(*sys, sink);
-    EXPECT_EQ(dsp(*sys, 0x14), 0x01u);  // V1SRCN
-    EXPECT_EQ(dsp(*sys, 0x24), 0x00u);  // V2SRCN
-    EXPECT_EQ(dsp(*sys, 0x34), 0x02u);  // V3SRCN
-    EXPECT_EQ(audioRam(*sys, sd::kDirectory + 8), static_cast<std::uint8_t>((silence + 9) & 0xFF));
-    EXPECT_EQ(audioRam(*sys, sd::kDirectory + 9), static_cast<std::uint8_t>((silence + 9) >> 8));
+    EXPECT_EQ(dsp(*sys, 0x14), 0x09u);  // V1SRCN: the ending entry
+    EXPECT_EQ(dsp(*sys, 0x24), 0x08u);  // V2SRCN: the sample's own entry
+    EXPECT_EQ(dsp(*sys, 0x34), 0x0Au);  // V3SRCN: a new sample
+    EXPECT_EQ(audioRam(*sys, sd::kDirectory + 4 * 10 + 0), static_cast<std::uint8_t>((sd::kSamplesStart + 360) & 0xFF));
+    EXPECT_EQ(audioRam(*sys, sd::kDirectory + 4 * 10 + 1), static_cast<std::uint8_t>((sd::kSamplesStart + 360) >> 8));
 }
 
 TEST(SnesSampler, RepeatStrikesTheVoiceAgainAtItsTempo) {
     test::CaptureAudioSink sink;
     auto                   sys = snesSystem(sink);
     // 601 a minute is one strike every six frames of the console's 60.0988 Hz; the tone's pass is two.
-    sys->play(toneFile(), Cue{.voice = 2, .mode = PlayMode::repeat(601.0f)});
+    sys->play(toneFile(), {.voice = 2, .mode = PlayMode::repeat(601.0f)});
     Access::step(*sys);  // the key-on
     std::vector<std::uint8_t> kofs;
     for (int frame = 0; frame < 20; ++frame) {
@@ -296,13 +296,12 @@ TEST(SnesSampler, RepeatStrikesTheVoiceAgainAtItsTempo) {
     for (int frame = 0; frame < 14; ++frame) {
         EXPECT_EQ(keyedOffAfterAFrame(*sys) & 0x04, 0x04);
     }
-    EXPECT_THROW(sys->play(toneFile(), Cue{.voice = 2, .mode = PlayMode::repeat(0.0f)}), std::invalid_argument);
 }
 
 TEST(SnesSampler, EffectChangesAVoiceAsItPlaysWithNoNewKeyOn) {
     test::CaptureAudioSink sink;
     auto                   sys = snesSystem(sink);
-    sys->play(loopFile(), Cue{.voice = 4});
+    sys->play(loopFile(), {.voice = 4});
     stepAndDrain(*sys, sink);
     EXPECT_EQ(dsp(*sys, 0x43), 0x10u);  // V4PITCHH, as recorded
 
@@ -312,34 +311,34 @@ TEST(SnesSampler, EffectChangesAVoiceAsItPlaysWithNoNewKeyOn) {
     EXPECT_EQ(dsp(*sys, 0x43), 0x08u);  // V4PITCHH: an octave down
     EXPECT_EQ(dsp(*sys, 0x40), 0u);     // V4VOLL: panned to the right edge
     EXPECT_EQ(dsp(*sys, 0x41), 64u);    // V4VOLR
-    EXPECT_EQ(dsp(*sys, 0x44), 0x00u);  // V4SRCN: the same sample
+    EXPECT_EQ(dsp(*sys, 0x44), 0x08u);  // V4SRCN: the same sample
 
-    // The echo path follows too.
-    sys->effect(4, AudioEffect{.echo = Echo{.delay = 0.064f, .feedback = 0.0f, .level = 1.0f}});
+    // The effect path follows too — set once for the system, the voice fed into it by its send.
+    sys->echo(Echo{.delay = 0.064f, .feedback = 0.0f, .level = 1.0f});
+    sys->effect(4, AudioEffect{.echo = true});
     stepAndDrain(*sys, sink);
-    EXPECT_EQ(dsp(*sys, 0x4D), 0x10u);  // EON: voice 4
+    EXPECT_EQ(dsp(*sys, 0x4D), 0x10u);  // EON: voice 4 feeds the path
     EXPECT_EQ(dsp(*sys, 0x7D), 4u);     // EDL: 64 ms
-    EXPECT_EQ(dsp(*sys, 0x2C), 127u);   // EVOLL
-    sys->effect(4, AudioEffect{});
+    EXPECT_EQ(dsp(*sys, 0x2C), 127u);   // EVOLL: the path's level
+    sys->effect(4, AudioEffect{.echo = false});
     stepAndDrain(*sys, sink);
-    EXPECT_EQ(dsp(*sys, 0x4D), 0x00u);
+    EXPECT_EQ(dsp(*sys, 0x4D), 0x00u);  // out of the path
 
-    // stop() mutes the echo path's output along with the voices; the next echo cue sets its level again.
-    sys->effect(4, AudioEffect{.echo = Echo{.delay = 0.064f, .feedback = 0.0f, .level = 1.0f}});
+    // stop() mutes the path's output along with the voices; the next voice fed brings the level back.
+    sys->effect(4, AudioEffect{.echo = true});
     sys->stop();
     stepAndDrain(*sys, sink);
     EXPECT_EQ(dsp(*sys, 0x2C), 0u);
     EXPECT_EQ(dsp(*sys, 0x3C), 0u);
-    sys->play(loopFile(), Cue{.voice = 4, .effect = AudioEffect{.echo = Echo{.delay = 0.064f, .feedback = 0.0f, .level = 0.5f}}});
+    sys->play(loopFile(), {.voice = 4, .effect = AudioEffect{.echo = true}});
     stepAndDrain(*sys, sink);
-    EXPECT_EQ(dsp(*sys, 0x2C), 64u);
+    EXPECT_EQ(dsp(*sys, 0x2C), 127u);  // the path's configured level again
 
     // Before anything is cued there is no voice to change, and the call is taken quietly.
     test::CaptureAudioSink other;
     auto                   fresh = snesSystem(other);
     EXPECT_NO_THROW(fresh->effect(0, AudioEffect{.pitch = 2.0f}));
     EXPECT_EQ(Access::voiceCount(*fresh), 0u);
-    EXPECT_THROW(fresh->effect(8, AudioEffect{}), std::out_of_range);
 }
 
 TEST(SnesSampler, AChangeWhileARepeatPlaysLeavesItsSampleForTheNextStrike) {
@@ -348,17 +347,17 @@ TEST(SnesSampler, AChangeWhileARepeatPlaysLeavesItsSampleForTheNextStrike) {
     // Two samples loaded, so the repeating voice's entry is not the first — the loop's, the tone's, and
     // the tone's entry for a pass played through; a change made while it plays, and the strikes that
     // follow still key on its own sample, at the changed pitch.
-    sys->play(loopFile(), Cue{.voice = 0});
-    sys->play(toneFile(), Cue{.voice = 2, .mode = PlayMode::repeat(601.0f)});  // a strike every six frames
+    sys->play(loopFile(), {.voice = 0});
+    sys->play(toneFile(), {.voice = 2, .mode = PlayMode::repeat(601.0f)});  // a strike every six frames
     stepAndDrain(*sys, sink);
-    EXPECT_EQ(dsp(*sys, 0x24), 0x02u);  // V2SRCN: the tone, played through
+    EXPECT_EQ(dsp(*sys, 0x24), 0x0Au);  // V2SRCN: the tone, played through — its ending entry, ten
     sys->effect(2, AudioEffect{.pitch = 2.0f, .volume = 0.5f});
     stepAndDrain(*sys, sink);
-    EXPECT_EQ(workRam(*sys, sd::voiceBlock(2) + 1), 0x02u) << "the block's entry after the change";
+    EXPECT_EQ(workRam(*sys, sd::voiceBlock(2) + 1), 0x0Au) << "the block's entry after the change";
     EXPECT_EQ(dsp(*sys, 0x23), 0x20u);  // V2PITCHH: an octave up, as changed
     for (int frame = 0; frame < 14; ++frame) {  // across at least two strikes
         Access::stepVoice(*sys, 0);
-        EXPECT_EQ(dsp(*sys, 0x24), 0x02u) << "V2SRCN at frame " << frame;
+        EXPECT_EQ(dsp(*sys, 0x24), 0x0Au) << "V2SRCN at frame " << frame;
     }
     EXPECT_EQ(dsp(*sys, 0x23), 0x20u);  // the strike keys on at the changed pitch
     EXPECT_EQ(dsp(*sys, 0x20), 64u);    // V2VOLL: half, as changed
@@ -367,22 +366,24 @@ TEST(SnesSampler, AChangeWhileARepeatPlaysLeavesItsSampleForTheNextStrike) {
 TEST(SnesSampler, TwoVoicesCuedInOneTickBothReachTheChip) {
     test::CaptureAudioSink sink;
     auto                   sys = snesSystem(sink);
-    sys->play(loopFile(), Cue{.voice = 0});
-    sys->play(toneFile(), Cue{.voice = 1, .effect = AudioEffect{.pitch = 0.5f}});
+    sys->play(loopFile(), {.voice = 0});
+    sys->play(toneFile(), {.voice = 1, .effect = AudioEffect{.pitch = 0.5f}});
     EXPECT_GT(nonSilentCount(stepAndDrain(*sys, sink)), 100u);
-    EXPECT_EQ(dsp(*sys, 0x04), 0x00u);  // V0SRCN: the loop
-    EXPECT_EQ(dsp(*sys, 0x14), 0x01u);  // V1SRCN: the tone
+    EXPECT_EQ(dsp(*sys, 0x04), 0x08u);  // V0SRCN: the loop
+    EXPECT_EQ(dsp(*sys, 0x14), 0x09u);  // V1SRCN: the tone
     EXPECT_EQ(dsp(*sys, 0x13), 0x08u);  // V1PITCHH: an octave down
 }
 
-TEST(SnesSampler, EchoPlacesItsBufferAndReverbIsTheSamePathDarkened) {
+TEST(SnesSampler, EchoSetsThePathOnceAndACueSaysWhetherItsVoiceFeedsIt) {
     test::CaptureAudioSink sink;
     auto                   sys = snesSystem(sink);
 
-    sys->play(loopFile(), Cue{.voice = 2, .effect = AudioEffect{.echo = Echo{.delay = 0.128f, .feedback = 0.25f, .level = 0.5f}}});
+    // The path is set once for the system; a cue's send says whether its voice feeds it.
+    sys->echo(Echo{.delay = 0.128f, .feedback = 0.25f, .level = 0.5f});
+    sys->play(loopFile(), {.voice = 2, .effect = AudioEffect{.echo = true}});
     stepAndDrain(*sys, sink);
     EXPECT_EQ(dsp(*sys, 0x7D), 8u);     // EDL: 128 ms is eight 16 ms steps
-    EXPECT_EQ(dsp(*sys, 0x6D), 0xBFu);  // ESA: the 16 KB buffer ends at the boot window
+    EXPECT_EQ(dsp(*sys, 0x6D), 0xBFu);  // ESA: the 16 KB ring reaches down from the top
     EXPECT_EQ(dsp(*sys, 0x0D), 32u);    // EFB
     EXPECT_EQ(dsp(*sys, 0x2C), 64u);    // EVOLL
     EXPECT_EQ(dsp(*sys, 0x3C), 64u);    // EVOLR
@@ -390,62 +391,64 @@ TEST(SnesSampler, EchoPlacesItsBufferAndReverbIsTheSamePathDarkened) {
     EXPECT_EQ(dsp(*sys, 0x1F), 0x00u);  // C1
     EXPECT_EQ(dsp(*sys, 0x6C), 0x00u);  // FLG: echo writes on
     EXPECT_EQ(dsp(*sys, 0x4D), 0x04u);  // EON: voice 2 feeds the path
-    EXPECT_EQ(audioRam(*sys, 0xBF00), 0x00u);  // the buffer, cleared
 
-    // A cue without an effect leaves its own voice out of the path and the others in.
-    sys->play(loopFile(), Cue{.voice = 3});
+    // A cue without a send leaves its own voice out of the path and the others in.
+    sys->play(loopFile(), {.voice = 3});
     stepAndDrain(*sys, sink);
     EXPECT_EQ(dsp(*sys, 0x4D), 0x04u);
 
-    // A reverb: the same path, shorter, fed back, through the darkening filter.
-    sys->play(loopFile(), Cue{.voice = 3, .effect = AudioEffect{.reverb = Reverb{.decay = 1.0f, .level = 0.25f}}});
+    // A reverb re-sets the same path, shorter and darkened — a shrink: the new size at once, the base
+    // once the old ring's length has elapsed.
+    sys->echo(Reverb{.decay = 1.0f, .level = 0.25f});
     stepAndDrain(*sys, sink);
-    EXPECT_EQ(dsp(*sys, 0x7D), 2u);     // EDL
+    EXPECT_EQ(dsp(*sys, 0x7D), 2u);     // EDL, at once
+    EXPECT_EQ(dsp(*sys, 0x6D), 0xBFu);  // ESA still the old base
     EXPECT_EQ(dsp(*sys, 0x0D), 100u);   // EFB at full decay
     EXPECT_EQ(dsp(*sys, 0x2C), 32u);    // EVOLL
     EXPECT_EQ(dsp(*sys, 0x0F), 0x3Au);  // C0
     EXPECT_EQ(dsp(*sys, 0x1F), 0x20u);  // C1
-    EXPECT_EQ(dsp(*sys, 0x4D), 0x0Cu);  // EON: voices 2 and 3
+    for (int f = 0; f < 12; ++f) {
+        stepAndDrain(*sys, sink);
+    }
+    EXPECT_EQ(dsp(*sys, 0x6D), 0xEFu);  // ESA: the shrunk ring's base, 0xFF00 - 2048*2
 
-    // A cue on voice 2 with no effect takes it out of the path.
-    sys->play(loopFile(), Cue{.voice = 2});
-    stepAndDrain(*sys, sink);
-    EXPECT_EQ(dsp(*sys, 0x4D), 0x08u);
-
-    // The buffer was placed for 128 ms: a longer echo is refused; echo and reverb together, and a voice
-    // the chip does not have, are refused at the call.
-    EXPECT_THROW(sys->play(loopFile(), Cue{.voice = 4, .effect = AudioEffect{.echo = Echo{.delay = 0.24f}}}),
-                 std::invalid_argument);
-    EXPECT_THROW(sys->play(loopFile(), Cue{.voice = 4, .effect = AudioEffect{.echo = Echo{}, .reverb = Reverb{}}}),
-                 std::invalid_argument);
-    EXPECT_THROW(sys->play(loopFile(), Cue{.voice = 8}), std::out_of_range);
-    EXPECT_THROW(sys->stop(8), std::out_of_range);
+    // Two voices feed the one path at once — a send on each, the same bit; the path sounds as the most
+    // recent echo() (the reverb) set it.
+    sys->play(loopFile(), {.voice = 2});  // take voice 2 out of the path
+    sys->play(loopFile(), {.voice = 1, .effect = AudioEffect{.echo = true}});
+    sys->play(loopFile(), {.voice = 3, .effect = AudioEffect{.reverb = true}});
+    std::size_t sounding = 0;
+    for (int f = 0; f < 6; ++f) {
+        sounding += nonSilentCount(stepAndDrain(*sys, sink));
+    }
+    EXPECT_EQ(dsp(*sys, 0x4D), 0x0Au);  // EON: voices 1 and 3
+    EXPECT_GT(sounding, 100u);          // both voices sound through the path
 }
 
 TEST(SnesSampler, AnEchoEngagedAfterAKeyOnLeavesTheKeyedVoiceAlone) {
-    // The chip's first echo write after the buffer is placed lands at the ring's address before the
-    // placement. A voice keyed on and then an echo cued on another, at every frame between the two across
-    // forty frames: each voice plays the sample its own cue named.
+    // A voice keyed on, then the effect path engaged and a send on another voice, at every frame between
+    // the two across forty frames: engaging the path leaves the keyed voice playing the sample its own cue
+    // named.
     for (int gap = 0; gap < 40; ++gap) {
         test::CaptureAudioSink sink;
         auto                   sys = snesSystem(sink);
-        sys->play(toneFile(), Cue{.voice = 0, .mode = PlayMode::continuous()});
+        sys->play(toneFile(), {.voice = 0, .mode = PlayMode::continuous()});
         for (int frame = 0; frame < gap; ++frame) {
             Access::stepVoice(*sys, 0);
         }
-        sys->play(loopFile(),
-                  Cue{.voice = 1, .effect = AudioEffect{.echo = Echo{.delay = 0.128f, .feedback = 0.25f, .level = 0.5f}}});
+        sys->echo(Echo{.delay = 0.128f, .feedback = 0.25f, .level = 0.5f});
+        sys->play(loopFile(), {.voice = 1, .effect = AudioEffect{.echo = true}});
         Access::stepVoice(*sys, 0);
-        EXPECT_EQ(dsp(*sys, 0x04), 0x00u) << "V0SRCN, the tone's entry, with the echo cued " << gap << " frames after it";
-        EXPECT_EQ(dsp(*sys, 0x14), 0x01u) << "V1SRCN, the loop's entry, with the echo cued " << gap << " frames after it";
+        EXPECT_EQ(dsp(*sys, 0x04), 0x08u) << "V0SRCN, the tone's entry, with the echo engaged " << gap << " frames after it";
+        EXPECT_EQ(dsp(*sys, 0x14), 0x09u) << "V1SRCN, the loop's entry, with the echo engaged " << gap << " frames after it";
     }
 }
 
 TEST(SnesSampler, StopKeysEveryVoiceOffAndKeepsTheSampler) {
     test::CaptureAudioSink sink;
     auto                   sys = snesSystem(sink);
-    sys->play(loopFile(), Cue{.voice = 0});
-    sys->play(loopFile(), Cue{.voice = 7});
+    sys->play(loopFile(), {.voice = 0});
+    sys->play(loopFile(), {.voice = 7});
     EXPECT_GT(nonSilentCount(stepAndDrain(*sys, sink)), 100u);
 
     sys->stop();
@@ -456,27 +459,28 @@ TEST(SnesSampler, StopKeysEveryVoiceOffAndKeepsTheSampler) {
     EXPECT_TRUE(sys->isPlaying());
 
     // The samples stay loaded: a cue after stop() sounds again, with nothing loaded anew.
-    sys->play(loopFile(), Cue{.voice = 0});
+    sys->play(loopFile(), {.voice = 0});
     EXPECT_GT(nonSilentCount(stepAndDrain(*sys, sink)), 100u);
-    EXPECT_EQ(dsp(*sys, 0x04), 0x00u);
+    EXPECT_EQ(dsp(*sys, 0x04), 0x08u);
 }
 
-TEST(SnesSampler, ASystemWhoseConsoleHasNoSamplePlayerRefusesACue) {
+TEST(SnesSampler, ANonChiptuneSnesRefusesTheVoiceVerbsAndAChiptuneIsNotAFile) {
     test::CaptureAudioSink sink;
-    auto gb = Access::makeManual(AudioKind::Chiptune, sink);
-    EXPECT_THROW(gb->play(loopFile(), Cue{}), std::logic_error);
-    EXPECT_THROW(gb->effect(0, AudioEffect{}), std::logic_error);
-    EXPECT_THROW(gb->stop(0), std::logic_error);
-    auto pcm = Access::makeManual(AudioKind::Pcm, sink, VMPlatform::Snes, TimingProfile::Snes);
-    EXPECT_THROW(pcm->play(loopFile(), Cue{}), std::logic_error);
-    auto unit = Access::makeManual(AudioKind::HostDriven, sink, VMPlatform::Snes, TimingProfile::Snes);
-    EXPECT_THROW(unit->play(loopFile(), Cue{}), std::logic_error);
+    // The voice verbs play through the engine's sound driver, which an SNES system of the Chiptune kind
+    // hosts; a Pcm or HostDriven SNES refuses them at the call. (A Game Boy system has no voice verbs at
+    // all — that refusal is the compiler's, and snes_no_refusal_test pins it.)
+    auto pcm = Access::makeManualSnes(AudioKind::Pcm, sink);
+    EXPECT_THROW(pcm->play(loopFile(), {.voice = 0}), std::logic_error);
+    EXPECT_THROW(pcm->effect(0, AudioEffect{}), std::logic_error);
+    EXPECT_THROW(pcm->stop(0), std::logic_error);
+    auto unit = Access::makeManualSnes(AudioKind::HostDriven, sink);
+    EXPECT_THROW(unit->play(loopFile(), {.voice = 0}), std::logic_error);
 
-    // And a chiptune is not an audio file: a Cue cannot play one.
+    // And a chiptune is not an audio file: a cue cannot play one — refused at the call.
     auto sys = snesSystem(sink);
     const AudioId tune = AudioLibrary::instance().uploadAudio(std::vector<std::uint8_t>{0x60}, AudioType::Music,
                                                               Isa::Wdc65816);
-    EXPECT_THROW(sys->play(tune, Cue{}), std::runtime_error);
+    EXPECT_THROW(sys->play(tune, {.voice = 0}), std::runtime_error);
 }
 
 TEST(SnesSampler, ABrrFileStreamsOnAPcmSystem) {
@@ -495,20 +499,26 @@ TEST(SnesSampler, ABrrFileStreamsOnAPcmSystem) {
     EXPECT_EQ(frames[0].left, -frames[12].left);  // the square's two levels, +7 and -7 at shift 12
 }
 
-TEST(SnesSampler, TheDirectoryHoldsSixtyFourSamples) {
+TEST(SnesSampler, TheDirectoryIsTheChipsTwoHundredAndFiftySix) {
     test::CaptureAudioSink sink;
     auto                   sys = snesSystem(sink);
-    for (int i = 0; i < 64; ++i) {  // sixty-four registrations of the one file: sixty-four samples
+    EXPECT_EQ(sd::kDirectorySlots, 256u) << "the chip's SRCN names 256 sample entries";
+    const int              cacheEntries = sd::kDirectorySlots - sd::kVoices;  // the entries the cache hands out
+    for (int i = 0; i < cacheEntries; ++i) {  // a registration each: entries 8..255 taken in order
         sys->play(AudioLibrary::instance().registerAudio("tests/fixtures/loop.brr", AudioType::Sfx, AssetPolicy::Embed),
-                  Cue{.voice = 0});
+                  {.voice = 0});
     }
     stepAndDrain(*sys, sink);
-    EXPECT_EQ(audioRam(*sys, sd::kDirectory + 63 * 4), static_cast<std::uint8_t>((sd::kSamplesStart + 63 * 9) & 0xFF));
-    // A manual system applies the cue at the call, so the refusal lands there.
-    EXPECT_THROW(sys->play(AudioLibrary::instance().registerAudio("tests/fixtures/loop.brr", AudioType::Sfx,
-                                                                  AssetPolicy::Embed),
-                           Cue{.voice = 0}),
-                 std::length_error);
+    // The last entry, 255, plays the 248th sample — read its start back.
+    const std::uint16_t last = static_cast<std::uint16_t>(sd::kSamplesStart + (cacheEntries - 1) * 9);
+    EXPECT_EQ(audioRam(*sys, sd::kDirectory + (sd::kDirectorySlots - 1) * 4),
+              static_cast<std::uint8_t>(last & 0xFF));
+    EXPECT_EQ(audioRam(*sys, sd::kDirectory + (sd::kDirectorySlots - 1) * 4 + 1),
+              static_cast<std::uint8_t>(last >> 8));
+    // One more is cued and plays: the stalest unheld sample gives way and its entry is reused — no throw.
+    sys->play(AudioLibrary::instance().registerAudio("tests/fixtures/loop.brr", AudioType::Sfx, AssetPolicy::Embed),
+              {.voice = 1});
+    EXPECT_GT(nonSilentCount(stepAndDrain(*sys, sink)), 50u);
 }
 
 // ── The sample format ───────────────────────────────────────────────────────────────────────────
