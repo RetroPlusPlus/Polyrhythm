@@ -14,7 +14,8 @@
 ; Work RAM, reached through the direct page:
 ;   $20-$5F  a block per voice, eight bytes each: the command (0 none, 1 key-on, 2 key-off, 3 change), the
 ;            sample's directory entry, the pitch (low byte, high byte), the left volume, the right volume,
-;            the play mode (0 continuous, 1 once, 2 repeat), one byte unused
+;            the play mode (0 continuous, 1 once, 2 repeat, 3 repeat with the end left to the sample), one
+;            byte unused
 ;   $60      the play mailbox: a directory entry to key on voice 0, $FF when none
 ;   $61      the stop mailbox: non-zero keys every voice off
 ;   $62      the toggle bit the tick flips on every command, $00 or $10

@@ -31,11 +31,12 @@ struct PanelState {
     std::array<bool, kVoices>             keyed{};     // sounding
     std::array<std::uint16_t, kVoices>    pitch{};     // the voice's pitch register, $0000-$3FFF
     std::array<std::string_view, kVoices> wave{};      // the name of the sample it plays
-    std::array<std::string_view, kVoices> effect{};    // the effect on its cue: echo, reverb or none
+    std::array<std::string_view, kVoices> effect{};    // SEND when the voice feeds the effect path, else blank
     std::array<std::string, kVoices>      mode{};      // how its cue plays: CONT, ONCE, or REP and a tempo
     std::array<std::uint8_t, kVoices>     volume{};    // $00-$7F
     std::array<int, kVoices>              pan{};       // -8 (left) to 8 (right), 0 the middle
     int                                   selected = 0;
+    std::string_view                      systemPath;  // the system's one effect path: an echo or a reverb
 };
 
 // What the mouse is on: a voice's pad, its pitch bar, its volume bar, its pan track or its wave name. The

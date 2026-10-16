@@ -19,6 +19,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 
 #include "retropp/audio.h"          // AudioSink, kAudioSampleRate
 #include "retropp/audio_system.h"
@@ -40,6 +41,16 @@ struct AudioSystemTestAccess {
                                                    unsigned      sampleRate = kAudioSampleRate) {
         return std::unique_ptr<AudioSystem>(
             new AudioSystem(AudioSystem::ManualTag{}, kind, sink, platform, timing, sampleRate));
+    }
+
+    // Build a manual-mode AudioSystem::SNES (borrowing `sink`), the complete type — so a test can name the
+    // chip's voice surface (play(id, Cue), effect, stop(voice)) and its effect path (echo). The production
+    // thread is NOT started; play()/stop() and the voice verbs apply their cue inline on the calling thread.
+    static std::unique_ptr<AudioSystem::SNES> makeManualSnes(AudioKind  kind,
+                                                             AudioSink& sink,
+                                                             unsigned   sampleRate = kAudioSampleRate) {
+        return std::unique_ptr<AudioSystem::SNES>(
+            new AudioSystem::SNES(AudioSystem::ManualTag{}, kind, sink, sampleRate));
     }
 
     // One production iteration on the calling thread: drain any pending cues, then, if playing, run one
@@ -98,6 +109,31 @@ struct AudioSystemTestAccess {
     // registers through the Vm's own place verbs. A manual system's machines step on the calling thread,
     // which is the only kind this reaches into.
     static Vm& voiceMachine(AudioSystem& sys, std::size_t index);
+
+    // The encoded size above which an audio file cued through the SNES's sound chip streams, on this
+    // system alone — so one file can be loaded whole on one system and streamed on another. Set before
+    // the file is first cued; a file the system has already taken keeps its route.
+    static void streamThreshold(AudioSystem& sys, std::size_t bytes);
+
+    // A bit per voice of the sound chip that has a streamed file's delivery, 0 before anything is cued.
+    // Reads the sampler machine's own state, so it belongs to a manual system.
+    static std::uint8_t streamedVoices(AudioSystem& sys);
+
+    // The top of the sample cache: the echo ring's base once a path is set, or the no-path ceiling before
+    // then. Whole samples live below this; a test asserts where the ring's growth and shrink move it.
+    static std::uint16_t cacheLimit(AudioSystem& sys);
+
+    // Where audio file `id`'s whole sample sits in the cache, or none if it is not held whole (never cued,
+    // streamed, or evicted). Reads the sampler's bookkeeping, so it belongs to a manual system.
+    static std::optional<std::uint16_t> placementOf(AudioSystem& sys, AudioId id);
+
+    // A bit per voice holding a whole sample in the cache — the voices whose sample the cache may not
+    // evict or let the ring grow over.
+    static std::uint8_t heldVoices(AudioSystem& sys);
+
+    // Whether an echo() setting is waiting on a held sample in the ring's way, deferred until the voice
+    // playing there releases.
+    static bool echoPending(AudioSystem& sys);
 };
 
 }  // namespace retropp::detail

@@ -6,9 +6,20 @@ license for noncommercial use, and a paid commercial license for every commercia
 ## 1. Noncommercial license — PolyForm Noncommercial 1.0.0
 
 For noncommercial use, Polyrhythm is available under the **PolyForm Noncommercial License 1.0.0**
-(see [`LICENSE`](LICENSE)). Under it you may use, modify, and share the engine for any noncommercial
-purpose — personal projects, study, research, teaching, and use by nonprofit and public
-institutions. This license grants no rights for commercial use.
+(see [`LICENSE`](LICENSE)). Under it you may, for any noncommercial purpose:
+
+- read and study the source;
+- use Polyrhythm and build with it;
+- modify it;
+- fork it, and share your copy or your changes, as long as the license and the copyright notice
+  travel with them.
+
+That covers personal projects, study, research, teaching, and use by nonprofit and public
+institutions.
+
+This license grants no rights for commercial use — of Polyrhythm, of a fork of it, or of anything
+built on either. Publishing your own source code does not change that: a commercial use needs the
+commercial license whether or not the product's source is open.
 
 ## 2. Commercial license
 

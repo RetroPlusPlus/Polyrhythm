@@ -7,8 +7,8 @@
 // to the audio unit and a 65816 tick hands it commands over the ports each frame; the sources are under
 // src/audio/snes/driver/ and the build assembles them.
 //
-// The game never names this driver. It registers audio files and plays them with play(id, SampleCue);
-// what is here is the registration the system hosts and the work-RAM layout its gestures write.
+// The game never names this driver. It registers audio files and plays them with play(id, Cue); what is
+// here is the registration the system hosts and the work-RAM layout its gestures write.
 //
 // INTERNAL — under src/audio/, never include/retropp/.
 
@@ -28,12 +28,21 @@ struct Slots {
 // The driver's registration on the library — made on the first call, the same id after.
 [[nodiscard]] DriverId<Slots> defaultDriver();
 
-// Audio RAM as the driver lays it out: the sound program at $0200, the sample directory at page $03 (64
-// entries of four bytes), the samples from $0400 up to the boot window.
-inline constexpr std::uint16_t kDirectory    = 0x0300;
-inline constexpr std::uint8_t  kDirectorySlots = 64;
-inline constexpr std::uint16_t kSamplesStart = 0x0400;
-inline constexpr std::uint16_t kSamplesEnd   = 0xFFC0;
+// Audio RAM as the driver lays it out, bottom to top: the sound program fills the first page from $0200,
+// and the silent sample a once pass ends on sits inside it at $02F0 (nine bytes); the sample directory is
+// page $03, 256 entries of four bytes, up to $0700; the eight stream windows follow, one per voice of the
+// chip, 4095 bytes each (sample_stream.h), up to $86F8; the sample cache fills from there up to the echo
+// ring, which is anchored at $FF00 and grows downward as the delay lengthens — $FFC0 is the cache's top
+// when no echo path is set. A whole sample lives in the cache with a directory entry of its own; a streamed
+// file is delivered through its voice's window.
+inline constexpr std::uint16_t kProgram       = 0x0200;
+inline constexpr std::uint16_t kSilenceBlock  = 0x02F0;
+inline constexpr std::uint16_t kDirectory     = 0x0300;
+inline constexpr std::uint16_t kDirectorySlots = 256;
+inline constexpr std::uint16_t kWindows       = 0x0700;
+inline constexpr std::uint16_t kSamplesStart  = 0x86F8;
+inline constexpr std::uint16_t kSamplesEnd    = 0xFFC0;
+inline constexpr std::uint16_t kRingEnd       = 0xFF00;
 
 // The driver's bytes in work RAM: a block per voice, the two mailboxes the handle's verbs write, the two
 // bytes it reports, and a repeat's period and countdown per voice, in frames.
@@ -53,8 +62,10 @@ inline constexpr std::uint8_t  kVoices      = 8;
 [[nodiscard]] constexpr std::uint32_t voicePeriod(std::uint8_t voice) noexcept { return kPeriods + voice * 2u; }
 [[nodiscard]] constexpr std::uint32_t voiceCountdown(std::uint8_t voice) noexcept { return kCountdowns + voice * 2u; }
 
-// The play mode byte of a voice's block, as the tick reads it.
-enum class Mode : std::uint8_t { Continuous = 0, Once = 1, Repeat = 2 };
+// The play mode byte of a voice's block, as the tick reads it. RepeatSelfEnding strikes the voice again at
+// its period as Repeat does and leaves its end to the sample: a streamed voice reaches an end block on every
+// lap of its window's loop, so the tick does not key it off at the end of its sample.
+enum class Mode : std::uint8_t { Continuous = 0, Once = 1, Repeat = 2, RepeatSelfEnding = 3 };
 
 // A voice's block for a key-on — the command, the sample's directory entry, the pitch, the two volumes
 // and the mode — packed low byte first into the one value an eight-byte Instruction::write carries.
@@ -69,12 +80,15 @@ inline constexpr int kKeyOnWidth = 8;
 // A voice's block for a key-off: the command alone, the rest of the block unread.
 inline constexpr std::uint64_t kKeyOffBlock = 2;
 
-// A voice's block for a change to the voice as it plays — its pitch and volumes, no key-on; the mode
-// byte past these six is left as it is.
-[[nodiscard]] constexpr std::uint64_t changeBlock(std::uint16_t pitch, std::uint8_t left, std::uint8_t right) noexcept {
-    return std::uint64_t{3} | (std::uint64_t{pitch} << 16) | (std::uint64_t{left} << 32) | (std::uint64_t{right} << 40);
+// A change to the voice as it plays — its pitch and volumes, no key-on — lands in two writes that leave
+// the block's sample entry and mode as they are, since a repeat's next strike keys the voice on from that
+// entry: the four bytes of pitch and volumes at the block's third byte, then the command byte.
+[[nodiscard]] constexpr std::uint32_t changeFields(std::uint16_t pitch, std::uint8_t left, std::uint8_t right) noexcept {
+    return std::uint32_t{pitch} | (std::uint32_t{left} << 16) | (std::uint32_t{right} << 24);
 }
-inline constexpr int kChangeWidth = 6;
+inline constexpr std::uint32_t kChangeFieldsOffset = 2;
+inline constexpr int           kChangeFieldsWidth  = 4;
+inline constexpr std::uint64_t kChangeCommand      = 3;
 
 }  // namespace retropp::audio::snesdriver
 

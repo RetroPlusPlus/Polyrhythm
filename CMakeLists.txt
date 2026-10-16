@@ -1454,6 +1454,8 @@ add_library(retroppengine STATIC
     src/audio/gb_audio.cpp
     src/audio/snes/brr.cpp
     src/audio/snes/default_driver.cpp
+    src/audio/snes/sample_cache.cpp
+    src/audio/snes/sample_stream.cpp
     src/vm/gameboy/sameboy_machine.cpp
     src/vm/gameboy/sameboy_backend.cpp
     src/vm/snes/snes_backend.cpp
@@ -1733,6 +1735,9 @@ if(RETROPP_BUILD_TESTS)
         tests/snes_chiptune_test.cpp
         tests/snes_audio_unit_test.cpp
         tests/snes_sampler_test.cpp
+        tests/snes_stream_test.cpp
+        tests/snes_sample_cache_test.cpp
+        tests/snes_no_refusal_test.cpp
         tests/net_socket_test.cpp
         tests/net_tls_test.cpp
         tests/vm_frame_sink_test.cpp
@@ -1997,6 +2002,43 @@ if(RETROPP_BUILD_TESTS)
                      "-DNEEDLE=${_retropp_vm_gameboy_needle}"
                      -DPROBE=${_retropp_net_probe}
                      -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/vm_linkage.cmake)
+
+    # ── A voice is a compile-time literal ─────────────────────────────────────────────────────────────
+    # Three object libraries the normal build never makes (EXCLUDE_FROM_ALL); each ctest row below builds
+    # one and asserts the outcome (tests/compile_outcome.cmake). A voice past the count and a voice from a
+    # runtime value must not compile; voice seven is the control that proves the harness compiles a
+    # well-formed voice, so a negative failing for another reason is caught.
+    foreach(_case voice_past_the_count voice_runtime_value voice_seven)
+        add_library(compile_${_case} OBJECT EXCLUDE_FROM_ALL tests/compile_fail/${_case}.cpp)
+        target_compile_features(compile_${_case} PRIVATE cxx_std_20)
+        target_link_libraries(compile_${_case} PRIVATE retropp::engine)
+        retropp_set_warnings(compile_${_case})
+    endforeach()
+
+    # The consteval refusal's wording differs by compiler: Clang and clang-cl say the call "is not a
+    # constant expression"; GCC names the inner call instead — "call to non-'constexpr' function". The
+    # needle is a regex over both, so a failure for any other reason still fails the row.
+    set(_retropp_consteval_diagnostic "constant expression|call to non-.*constexpr.* function")
+    add_test(NAME VoiceLiteral.PastTheCountDoesNotCompile
+             COMMAND ${CMAKE_COMMAND} -DBINARY_DIR=${CMAKE_BINARY_DIR}
+                     -DTARGET=compile_voice_past_the_count -DCONFIG=$<CONFIG>
+                     -DEXPECT=fails "-DDIAGNOSTIC=${_retropp_consteval_diagnostic}"
+                     -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_outcome.cmake)
+    add_test(NAME VoiceLiteral.ARuntimeValueDoesNotCompile
+             COMMAND ${CMAKE_COMMAND} -DBINARY_DIR=${CMAKE_BINARY_DIR}
+                     -DTARGET=compile_voice_runtime_value -DCONFIG=$<CONFIG>
+                     -DEXPECT=fails "-DDIAGNOSTIC=${_retropp_consteval_diagnostic}"
+                     -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_outcome.cmake)
+    add_test(NAME VoiceLiteral.ASevenCompiles
+             COMMAND ${CMAKE_COMMAND} -DBINARY_DIR=${CMAKE_BINARY_DIR}
+                     -DTARGET=compile_voice_seven -DCONFIG=$<CONFIG>
+                     -DEXPECT=builds
+                     -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_outcome.cmake)
+    # One build tree, so the three never run two concurrent builds in it at once.
+    set_tests_properties(VoiceLiteral.PastTheCountDoesNotCompile
+                         VoiceLiteral.ARuntimeValueDoesNotCompile
+                         VoiceLiteral.ASevenCompiles
+                         PROPERTIES RESOURCE_LOCK retropp_build_tree)
 endif()
 
 # ── Runnable example hosts (mode 1 only by default) ──────────────────────────────
@@ -2347,10 +2389,11 @@ if(RETROPP_BUILD_EXAMPLES)
     # waves, the frames through a queue to the device, a panel of voice columns.
     retropp_add_example(snes_apu DIRECTORY snes/apu)
 
-    # The SNES sampler: audio files registered on the library — four the engine converts to the chip's
-    # sample format and one already in it — played through the console's sound chip with
-    # play(id, Cue{.voice, .effect}) on an AudioSystem::SNES; a panel of voice columns with each voice's
-    # sample, pitch, volume, pan and effect. CI runs its --verify (registered below).
+    # The SNES sampler: audio files registered on the library — five the engine converts to the chip's
+    # sample format, one of them longer than the chip's audio RAM and streamed, and one already in it —
+    # played through the console's sound chip with play(id, Cue{.voice, .effect}) on an AudioSystem::SNES;
+    # a panel of voice columns with each voice's sample, pitch, volume, pan and effect. CI runs its
+    # --verify (registered below).
     retropp_add_example(snes_sampler DIRECTORY snes/sampler)
 
     # ── Curve demo — plots a Catmull-Rom curve through waypoints, a constant-speed atDistance walker, and
@@ -2676,8 +2719,9 @@ if(RETROPP_BUILD_EXAMPLES)
 
     # The SNES sampler demo, headless on a listening sink: a one-shot audio file cued through the chip
     # sounds and plays out, the looping .brr with an echo keeps sounding until its voice is stopped, two
-    # voices cued together stop with stop(); it exits nonzero on any miss. Deterministic coverage of the
-    # same path is snes_sampler_test's.
+    # voices cued together stop with stop(), and a six-second file longer than audio RAM plays through
+    # with its silences where the file has them; it exits nonzero on any miss. Deterministic coverage of
+    # the same path is snes_sampler_test's and snes_stream_test's.
     add_test(NAME SnesSamplerExample.Verify
              COMMAND retropp-snes_sampler-demo --verify)
 

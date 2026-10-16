@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <memory>
 #include <optional>
 
@@ -17,6 +18,10 @@ struct VmCoreAccess {
     // The machine as its audio unit alone — what an AudioSystem of the HostDriven kind hosts. A core whose
     // audio is not a unit of its own throws std::logic_error here.
     [[nodiscard]] static Vm makeAudioUnit(detail::CoreFactory core, VMPlatform platform, TimingProfile timing);
+
+    // The sample block a voice of the machine's sound chip is reading (VmBackend::sampleDecoderAddress).
+    // Asked on the thread that steps the machine, between its steps.
+    [[nodiscard]] static std::uint16_t sampleDecoderAddress(const Vm& machine, std::uint8_t voice);
 
     // The clock of the machine this core builds for `platform`. The audio system sizes a voice's
     // step from it once, before any voice exists.

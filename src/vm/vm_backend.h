@@ -111,6 +111,13 @@ public:
     // that needs the console refuses. A core whose audio is not a unit of its own refuses here.
     virtual void hostAudioUnit() { throw std::logic_error("this core's audio is not a unit of its own"); }
 
+    // The address in audio RAM of the sample block a voice of the sound chip is reading, as the machine
+    // stands — where a streamed file's delivery writes behind. A core whose sound chip plays no samples
+    // from RAM refuses.
+    [[nodiscard]] virtual std::uint16_t sampleDecoderAddress(std::uint8_t /*voice*/) const {
+        throw std::logic_error("this core's sound chip plays no samples from audio RAM");
+    }
+
     // Advance the machine's free-running clock by `cycles` CPU cycles without executing a routine, so
     // time-based hardware registers (e.g. the Game Boy's rDIV divider) keep ticking between calls as
     // on always-running hardware. Must not disturb routine-visible state (registers/RAM the next call

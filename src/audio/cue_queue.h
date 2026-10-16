@@ -17,12 +17,23 @@
 #define RETROPP_SRC_AUDIO_CUE_QUEUE_H
 
 #include <cstdint>
+#include <type_traits>
+#include <variant>
 
+#include "retropp/audio_effect.h"   // Echo, Reverb, AudioEffect — the effect path's shape and a cue's effect
 #include "retropp/audio_library.h"  // AudioId, AudioType — the cued vocabulary + the driver play lane
-#include "retropp/audio_system.h"   // CueMode — how a Play treats voices already playing the same id
+#include "retropp/audio_system.h"   // CueMode, PlayMode — how a Play treats same-id voices; a cue's mode
 #include "src/audio/ring_buffer.h"
 
 namespace retropp::audio {
+
+// A cue through the sound chip, on the production side: the voice as the number the sampler indexes with,
+// the mode, and the effect. AudioSystem::SNES::play(id, Cue) lowers its typed Voice to this plain record.
+struct VoiceCue {
+    std::uint8_t voice = 0;
+    PlayMode     mode{};
+    AudioEffect  effect{};
+};
 
 // A cue marshaled from the game thread to the production thread. Trivially copyable so it rides the
 // existing SpscRingBuffer<T> unchanged. `id` and `mode` are meaningful only for Play (Stop ignores them);
@@ -39,17 +50,23 @@ namespace retropp::audio {
 //
 // PlayCue carries a play(id, Cue{…}) — the audio file `id` and its `cue`, a trivially copyable value;
 // EffectVoice an effect(voice, AudioEffect{…}), the voice and the effect as `cue`; StopVoice a stop(voice),
-// the voice in `value`.
+// the voice in `value`; SetEchoPath an echo(Echo{…}) / echo(Reverb{…}), the path's configuration in `path`.
 struct AudioCommand {
-    enum class Op { Play, Stop, DriverPlay, DriverStop, DriverSlot, DriverRestart, DriverClose, PlayCue, EffectVoice, StopVoice };
-    Op            op;
-    AudioId       id;
-    CueMode       mode      = CueMode::Layer;    // Play only
-    AudioType     lane      = AudioType::Music;  // DriverPlay — which play lane
-    std::uint64_t value     = 0;                 // DriverPlay: the played id; DriverSlot: the write value; StopVoice: the voice
-    std::uint32_t slotIndex = 0;                 // DriverSlot: the declared slot index
-    Cue           cue{};                         // PlayCue / EffectVoice: the voice and the effect
+    enum class Op { Play, Stop, DriverPlay, DriverStop, DriverSlot, DriverRestart, DriverClose, PlayCue, EffectVoice, StopVoice, SetEchoPath };
+    Op                         op;
+    AudioId                    id;
+    CueMode                    mode      = CueMode::Layer;    // Play only
+    AudioType                  lane      = AudioType::Music;  // DriverPlay — which play lane
+    std::uint64_t              value     = 0;                 // DriverPlay: the played id; DriverSlot: the write value; StopVoice: the voice
+    std::uint32_t              slotIndex = 0;                 // DriverSlot: the declared slot index
+    VoiceCue                   cue{};                         // PlayCue / EffectVoice: the voice and the effect
+    std::variant<Echo, Reverb> path{};                        // SetEchoPath: the effect path's configuration
 };
+
+// The ring copies its slots (ring_buffer.h), so the command it carries must be trivially copyable — the
+// one place this is checked, so a member that is not reports itself here.
+static_assert(std::is_trivially_copyable_v<AudioCommand>,
+              "AudioCommand rides the SPSC ring and must be trivially copyable");
 
 // The main→production cue channel: the same lock-free ring the PCM path uses, instantiated for commands.
 using CueQueue = SpscRingBuffer<AudioCommand>;
