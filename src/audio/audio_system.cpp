@@ -643,14 +643,14 @@ struct AudioSystem::Impl {
         audioUnit_     = machine;
         unitRunner_    = voice->runner.get();  // the voice lives as long as the system: never closed
         voice->runner->beforeFirstStep([this, vp, machine] {
-            machine->enableAudio(sampleRate, [this, vp](std::int16_t left, std::int16_t right) {
+            machine->audio(true, {.rate = sampleRate, .onSample = [this, vp](std::int16_t left, std::int16_t right) {
                 const std::uint32_t gain = AudioMixer::instance().effectiveGain(vp->type);
                 // The unit does not wait for the mix, so a lane the mix has not drained can fill; a
                 // frame it has no room for is dropped and counted, the way a full ring drops a mixed one.
                 if (!vp->lane.push(AudioFrame{applyGain(left, gain), applyGain(right, gain)})) {
                     framesDropped.fetch_add(1, std::memory_order_relaxed);
                 }
-            });
+            }});
         });
         voice->runner->onEachLook([this, machine] { serveUnitRequests(*machine); });
         if (threaded) {
@@ -1592,9 +1592,9 @@ struct AudioSystem::Impl {
 
     // Build a resident voice: give the voice its runner, resolve its images to bytes, and declare what
     // the machine's own thread does before its first step — place the images, run the declared .init
-    // once (inside hostDriver), then enable the APU into the voice's lane. enableAudio runs AFTER
-    // hostDriver because hostDriver resets the machine — the sink + rate are set once the reset is
-    // behind us. The voice rides the VMDriver bus (its `type`).
+    // once (inside hostDriver), then switch the APU's frames into the voice's lane. audio(true, …) runs
+    // AFTER hostDriver because hostDriver resets the machine — the rate and the function are set once
+    // the reset is behind us. The voice rides the VMDriver bus (its `type`).
     void initResidentVoice(Voice& v) {
         v.runner = std::make_unique<vm::VmRunner>(vm::VmCoreAccess::make(core_, platform_, timing_),
                                                   vm::VmRunner::StepKind::Resident, cyclesPerFrame,
@@ -1628,13 +1628,13 @@ struct AudioSystem::Impl {
             binding.isa       = vp->residentIsa;
             machine->hostDriver(binding);  // place + validate + run .init once (verifies the ISA vs the platform)
 
-            machine->enableAudio(sampleRate, [vp](std::int16_t left, std::int16_t right) {
+            machine->audio(true, {.rate = sampleRate, .onSample = [vp](std::int16_t left, std::int16_t right) {
                 // Scale by the VMDriver bus (a straight amplifier over the driver's own internal
                 // mixing). At the default unity gain this is the exact identity, so the laned frame is
                 // the driver's own.
                 const std::uint32_t gain = AudioMixer::instance().effectiveGain(vp->type);
                 vp->lane.push(AudioFrame{applyGain(left, gain), applyGain(right, gain)});
-            });
+            }});
         });
         // Each step publishes what that step left in the declared slots, so the game-thread handle
         // always reads a coherent set from the most recent tick, and the sampler's step then feeds every
@@ -1793,7 +1793,7 @@ struct AudioSystem::Impl {
             Voice* vp      = voice.get();
             Vm*    machine = &voice->runner->machine();
             voice->runner->beforeFirstStep([this, vp, machine, isa = entry.isa, bytes = std::move(bytes)] {
-                machine->enableAudio(sampleRate, [vp](std::int16_t left, std::int16_t right) {
+                machine->audio(true, {.rate = sampleRate, .onSample = [vp](std::int16_t left, std::int16_t right) {
                     // Auto-close bookkeeping: track the run of consecutive exact-zero output frames. A
                     // finished one-shot SFX's DAC-on tail settles to exact (0,0) (verified against the
                     // real drivers), while an active tone is high-pass-centred and oscillates through 0
@@ -1808,7 +1808,7 @@ struct AudioSystem::Impl {
                     // so the laned frame is bit-for-bit the produced one.
                     const std::uint32_t gain = AudioMixer::instance().effectiveGain(vp->type);
                     vp->lane.push(AudioFrame{applyGain(left, gain), applyGain(right, gain)});
-                });
+                }});
                 // The chiptune binding carries the machine's own ISA: SM83 on a Game Boy (unchanged), the
                 // 65816 on the SNES. Every other field is the shared chiptune binding's.
                 RoutineBinding binding = kChiptuneBinding;

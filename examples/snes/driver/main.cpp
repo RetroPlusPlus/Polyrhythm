@@ -129,7 +129,7 @@ DriverId<SoundSlots> registerSoundDriver() {
 // ── Verify mode ─────────────────────────────────────────────────────────────────────────────────
 // The windowed demo hosts the driver on AudioSystem::SNES, whose production thread steps it. Here the same
 // driver is driven synchronously on this thread through the Vm surface the AudioSystem uses underneath —
-// hostDriver / tickDriver / readSlot, with enableAudio catching the sound chip's output — so a check reads
+// hostDriver / tickDriver / readSlot, with audio(true, …) catching the sound chip's output — so a check reads
 // exactly what a given number of frames produced, with no thread and no wall-clock wait. The images are
 // the same bytes the build baked for the registration above, read back from the routine registry by path.
 
@@ -169,9 +169,9 @@ int runVerify() {
     int peak = 0;  // the loudest sample the sound chip has produced since it was last cleared
 
     Vm::SNES vm;
-    vm.enableAudio(48'000, [&peak](std::int16_t left, std::int16_t right) {
+    vm.audio(true, {.rate = 48'000, .onSample = [&peak](std::int16_t left, std::int16_t right) {
         peak = std::max({peak, std::abs(static_cast<int>(left)), std::abs(static_cast<int>(right))});
-    });
+    }});
     vm.hostDriver(binding);  // places the images and runs init — the init uploads the sound program
 
     // Run `frames` frames, with `command` handed to the sound program on the first of them (255 = none),

@@ -55,7 +55,7 @@ The seam carries everything the host needs to run a machine without knowing whic
 | whether a place is reachable, and reading and writing one | `registerRegions`, `read`, `write` |
 | a per-instruction hook and a per-access hook | `registerEscapes`, `registerWatches`, and the two tables |
 | a completed frame, with its dimensions, its pixel layout, and whether it is a whole frame or a field of an interlaced picture | `video()` as a layer's `RasterContent`, the fields woven or shown as they come |
-| the sound chip's frames, converted to the rate asked for | `enableAudio` |
+| the sound chip's frames, converted to the rate asked for | `audio(on, options)` |
 | a button word | `buttons` |
 | whether the core keeps battery-backed data, and its file extension | `VmConfig{.key}` and `batterySave` |
 
@@ -126,7 +126,7 @@ that owns it; a console page adds only what its hardware makes different.
 | `run(Advance)` · `speed(num, den)` · `stop()` · `reset()` — boot, pace, park, fresh boot | [co-execution.md § Running it](co-execution.md#running-it) |
 | `advanceTick()` — the step, on your tick | [co-execution.md § Advancing it on your own tick instead](co-execution.md#advancing-it-on-your-own-tick-instead) |
 | `video(on)` · `video(on, options)` · `video()` · `VmConfig{.video}` — the picture as a layer's content, the fields of an interlaced picture woven | [co-execution.md § Video](co-execution.md#video-showing-its-picture) |
-| `enableAudio(rate, onSample)` — the sound chip's frames at the rate you name | [co-execution.md § Sound](co-execution.md#sound-hearing-it) |
+| `audio(on)` · `audio(on, options)` · `VmConfig{.audio}` — the sound chip's frames at the rate you name, to the function you name | [co-execution.md § Sound](co-execution.md#sound-hearing-it) |
 | `buttons(held)` — the pad, a level landing at the next step boundary | [co-execution.md § Input](co-execution.md#input-playing-it) |
 | `VmConfig{.key}` · `batterySave(name)` — the guest's battery-backed data, kept for the player | [vm-and-routines.md § Keeping what the guest writes](vm-and-routines.md#keeping-what-the-guest-writes) |
 | the threading rule — a running machine belongs to the thread stepping it | [co-execution.md § While it runs](co-execution.md#while-it-runs-one-thread-owns-the-machine) |

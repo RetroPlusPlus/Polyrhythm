@@ -298,12 +298,12 @@ routine directly, the [`AudioSystem`](../audio.md) does it for you (you register
 **declared seam**: registering with it throws `std::logic_error` today and is realized with the
 anti-stealing backend. It is in the surface now so that work plugs in without an API break.
 
-The raw driver chain underneath the `AudioSystem` is three `Vm` members: `enableAudio(rate, onSample)`
-turns on the APU and routes each produced PCM frame, `startDriver(routine)` positions a `HardwareSpeed`
-routine to run continuously, and `stepDriver(cpuCycles)` advances it one cycle budget (producing audio
-into the sink). You normally let the [`AudioSystem`](../audio.md) own these; reach for them directly only
-to host a driver yourself. A hosted cartridge's own sound comes through the same `enableAudio`, on
-every console — see [co-execution.md](co-execution.md#sound-hearing-it).
+The raw driver chain underneath the `AudioSystem` is three `Vm` members: `audio(true, {.rate, .onSample})`
+switches the APU's frames on and routes each one to the function, `startDriver(routine)` positions a
+`HardwareSpeed` routine to run continuously, and `stepDriver(cpuCycles)` advances it one cycle budget
+(producing audio into that function). You normally let the [`AudioSystem`](../audio.md) own these; reach
+for them directly only to host a driver yourself. A hosted cartridge's own sound comes through the same
+`audio` switch, on every console — see [co-execution.md](co-execution.md#sound-hearing-it).
 
 ## Hosting a resident driver
 

@@ -355,22 +355,37 @@ The content type itself is in [draw-state.md](../draw-state.md#rastercontent--a-
 
 ## Sound: hearing it
 
-A hosted cartridge's sound comes out through `enableAudio` — the same call on every console, the same
-one the [`AudioSystem`](../audio.md) drives a sound driver through. Every stereo frame the machine's sound
-chip produces reaches your function, at the rate you name:
+A hosted cartridge's sound is switched on the way its picture is — the same call on every console, the
+same one the [`AudioSystem`](../audio.md) drives a sound driver through. `audio(true, options)` names the
+rate the frames are wanted at and the function that takes them; from then on every stereo frame the
+machine's sound chip produces reaches that function, at that rate:
 
 ```cpp
 vm.hostRom(rom);
-vm.enableAudio(48'000, [&](std::int16_t left, std::int16_t right) {
+vm.audio(true, {.rate = 48'000, .onSample = [&](std::int16_t left, std::int16_t right) {
     queue.push(AudioFrame{.left = left, .right = right});   // one stereo frame, at 48'000 Hz
-});
+}});
 vm.run();
 ```
 
-`enableAudio(rate, onSample)` takes the rate the frames are wanted at and the function that takes
-them, one frame at a time. Each core converts from its own chip's rate, so the frames arrive at
-`rate`, at the cartridge's pitch, whatever `rate` is. Ask on a parked machine: before `run`, or after
-`stop`. Asking again replaces the rate and the function.
+Each core converts from its own chip's rate, so the frames arrive at `rate`, at the cartridge's pitch,
+whatever `rate` is. `audio(false)` stops them and `audio(true)` starts them again; both are idempotent.
+
+**The settings are held.** What a call sets stays set, and an option left unset keeps its held value:
+`audio(true)` alone changes nothing but the switch, `audio(true, {.rate = 44'100})` keeps the function
+and changes the rate, and a setting given with the switch off waits for the next `audio(true)`. A
+machine never given a rate produces its frames at 48'000. A rate of zero throws
+`std::invalid_argument` at the call.
+
+**Declare it at construction if you know then**, which is the same setting reached the other way:
+
+```cpp
+Vm vm{VMPlatform::GameBoyColor, VmConfig{.video = true, .audio = true}};
+vm.audio(true, {.onSample = takeFrame});   // the function, at the held 48'000
+```
+
+**Asked of a running machine, the change lands at its next step boundary**, with its settings — where
+every change issued to a running machine lands.
 
 **The function runs on the thread that steps the machine** — the machine's own under
 `Advance::Continuously`, the one calling `advanceTick` under `Advance::OnTick` — from inside the step,
@@ -447,9 +462,10 @@ every verb still lands at that same boundary, on the same terms.
 | `speed(num, den)` | steers the next pacing decision; a step in flight finishes first |
 | `escapes()[key].armed(...)` / `.remove()` | crosses and lands at the next step boundary, in the order issued |
 | `watches()[key].armed(...)` / `.remove()` | crosses and lands at the next step boundary, in the order issued |
+| `video(on)` / `video(on, options)` · `audio(on)` / `audio(on, options)` | cross and land at the next step boundary, with their settings |
 | a place built **on the spot** | refused — declare it before `run()`, or `stop()` first |
 | `bindRoutine`, `registerRegions`, `registerEscapes`, `registerWatches` | refused — these settle the terms, and the terms settle before the run |
-| `reset`, `advanceClock`, `hostRom`, `enableAudio` | refused — `stop()` first |
+| `reset`, `advanceClock`, `hostRom` | refused — `stop()` first |
 | `advanceTick` | under `Advance::OnTick`, the step itself; under `Advance::Continuously`, refused — that machine keeps its own clock |
 | calling a bound `Routine` | refused — call it from a handler, or `stop()` first |
 
