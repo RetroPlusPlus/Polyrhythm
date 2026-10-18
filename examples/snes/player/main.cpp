@@ -519,17 +519,18 @@ int runVerify() {
     }
 
     // The cartridge's sound reaches a sink, headless: the frames one tick-advanced machine hands over at
-    // 48'000 Hz over 120 ticks, and how loud they get. Each SNES frame is 532 or 533 of the chip's
-    // frames, so 120 of them are 63'840..63'960, which the conversion makes 95'760..95'940; the
-    // demo's first note is playing well inside the first frame and swings past ±10'000.
-    Vm::SNES      sounding;
+    // 48'000 Hz — the rate a machine holds until told otherwise — over 120 ticks, and how loud they
+    // get. Each SNES frame is 532 or 533 of the chip's frames, so 120 of them are 63'840..63'960, which
+    // the conversion makes 95'760..95'940; the demo's first note is playing well inside the first frame
+    // and swings past ±10'000.
+    Vm::SNES      sounding{VmConfig{.audio = true}};
     std::uint64_t frames = 0;
     int           peak   = 0;
     sounding.hostRom(examples::snes::demoCartridge(snaggletooth::Region::Ntsc));
-    sounding.enableAudio(48'000, [&frames, &peak](std::int16_t left, std::int16_t right) {
+    sounding.audio(true, {.onSample = [&frames, &peak](std::int16_t left, std::int16_t right) {
         ++frames;
         peak = std::max({peak, std::abs(static_cast<int>(left)), std::abs(static_cast<int>(right))});
-    });
+    }});
     sounding.run(Vm::Advance::OnTick);
     for (int tick = 0; tick < 120; ++tick) {
         sounding.advanceTick();
@@ -698,8 +699,8 @@ int main(int argc, char** argv) {
         }
         return got;
     };
-    ticked.enableAudio(deviceRate, tickedSample);
-    freeRunning.enableAudio(deviceRate, freeSample);
+    ticked.audio(true, {.rate = deviceRate, .onSample = tickedSample});
+    freeRunning.audio(true, {.rate = deviceRate, .onSample = freeSample});
     sink.start(deviceRate, kAudioChannels, pull);
 
     // The SNES pad, bound to keys and a gamepad; editing these rows is all rebinding is. The number keys
@@ -761,8 +762,9 @@ int main(int argc, char** argv) {
             std::printf("interlaced picture: %s\n", shownName(shown));
         }
         if (input.justPressed(Player::ToggleRate)) {
-            // Both machines park, their sound is pointed at the new rate, the device reopens at it, and
-            // both run again. The queues start over so nothing made at the old rate plays at the new.
+            // Both machines park, their sound is pointed at the new rate — the function they hold stays
+            // — the device reopens at it, and both run again. The queues start over so nothing made at
+            // the old rate plays at the new.
             deviceRate = (deviceRate == 48'000u) ? 44'100u : 48'000u;
             ticked.stop();
             freeRunning.stop();
@@ -770,8 +772,8 @@ int main(int argc, char** argv) {
             tickedQueue.clear();
             freeQueue.clear();
             primed = false;
-            ticked.enableAudio(deviceRate, tickedSample);
-            freeRunning.enableAudio(deviceRate, freeSample);
+            ticked.audio(true, {.rate = deviceRate});
+            freeRunning.audio(true, {.rate = deviceRate});
             sink.start(deviceRate, kAudioChannels, pull);
             ticked.run(Vm::Advance::OnTick);
             freeRunning.run(Vm::Advance::Continuously);

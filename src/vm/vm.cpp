@@ -23,6 +23,7 @@
 
 #include "retropp/asset_policy.h"      // resolveAssetPolicy
 #include "retropp/asset_registry.h"    // assetRoot — the single project-relative resource root (no routine root)
+#include "retropp/audio.h"             // kAudioSampleRate — the held rate a machine starts with
 #include "retropp/routine_registry.h"  // detail::findEmbeddedRoutine
 #include "retropp/user_files.h"        // UserFiles — where a keyed machine's own files live
 #include "src/vm/run_governor.h"       // RunGovernor — what a running cartridge owes the wall clock
@@ -325,6 +326,22 @@ struct Vm::Impl {
     };
     Video video;
 
+    struct {
+        std::mutex mx;
+        // An audio(bool, options) issued while the machine runs, waiting for a step boundary to be
+        // applied on the machine's own thread. Guarded by `mx`. Two calls before one boundary merge: a
+        // member the later call sets wins, one it leaves unset keeps the earlier call's.
+        bool         pendingChange     = false;
+        bool         pendingChangeWant = false;
+        AudioOptions pendingOptions;
+        // The switch and the held settings, as the last audio(bool, options) left them. Written only on
+        // the thread that owns the machine — the game's for a parked machine, the machine's own for a
+        // running one — and read nowhere else, so nothing guards them.
+        bool          on   = false;
+        unsigned      rate = kAudioSampleRate;
+        AudioSampleFn fn;
+    } audio;
+
     // Button state the game submitted, waiting for a step boundary. A level rather than a queue: a
     // second submission before the boundary replaces the first, because what the guest reads is what
     // is held now and never the order it was pressed in.
@@ -476,6 +493,44 @@ struct Vm::Impl {
         const std::lock_guard guard{video.mx};
         video.pendingChange  = false;
         video.pendingOptions = VideoOptions{};
+    }
+
+    // Land one audio change on the thread that owns the machine: the settings given are held, and the
+    // seam is asked for the switch. A machine switched off that was never on holds the settings and
+    // asks the seam nothing — so a core that makes no sound refuses audio(true) and accepts
+    // audio(false), as it does for video.
+    void applyAudio(bool wanted, AudioOptions options) {
+        if (options.rate) {
+            audio.rate = *options.rate;
+        }
+        if (options.onSample) {
+            audio.fn = std::move(options.onSample);
+        }
+        if (!wanted && !audio.on) {
+            return;
+        }
+        backend->enableAudio(audio.rate, wanted ? audio.fn : AudioSampleFn{});
+        audio.on = wanted;
+    }
+
+    // The step boundary's audio step: apply a change the game asked for while the machine was running,
+    // on the thread that owns the machine.
+    void drainAudioChange() {
+        bool         wanted = false;
+        AudioOptions options;
+        {
+            const std::lock_guard guard{audio.mx};
+            if (!audio.pendingChange) {
+                return;
+            }
+            wanted  = audio.pendingChangeWant;
+            options = std::move(audio.pendingOptions);
+        }
+        applyAudio(wanted, std::move(options));
+        // Cleared only AFTER the change has landed, as the video change is.
+        const std::lock_guard guard{audio.mx};
+        audio.pendingChange  = false;
+        audio.pendingOptions = AudioOptions{};
     }
 
     // Take the newest completed frame, if one is waiting. Called at the tick boundary for a machine the
@@ -1265,6 +1320,7 @@ struct Vm::Impl {
             drainEscapeChanges();
             drainWatchChanges();
             drainVideoChange();
+            drainAudioChange();
             drainButtons();
         });
         runner->afterEachStep([this] {
@@ -1323,6 +1379,9 @@ Vm::Vm(detail::CoreFactory core, VMPlatform platform, TimingProfile timing, VmCo
     // difference from asking for it later. Nothing runs yet, so each lands directly.
     if (config.video) {
         video(true);
+    }
+    if (config.audio) {
+        audio(true);
     }
 }
 
@@ -1433,12 +1492,6 @@ void Vm::advanceTick() {
     advanceTick(clock ? clock->framePeriod() : std::chrono::nanoseconds::zero());
 }
 
-void Vm::enableAudio(unsigned sampleRate,
-                     std::function<void(std::int16_t, std::int16_t)> onSample) {
-    impl_->requireNotRunning("enableAudio");
-    impl_->backend->enableAudio(sampleRate, std::move(onSample));
-}
-
 void Vm::startDriver(const Routine<void()>& driver) {
     if (driver.vm_ != this) {
         throw std::invalid_argument("startDriver: the routine was not registered on this Vm");
@@ -1527,6 +1580,31 @@ void Vm::video(bool drawing, VideoOptions options) {
     impl_->applyVideo(drawing, options);
 }
 
+void Vm::audio(bool sounding) { audio(sounding, AudioOptions{}); }
+
+void Vm::audio(bool sounding, AudioOptions options) {
+    // A value is refused here, on the caller's thread, so nothing a step boundary applies can throw.
+    if (options.rate && *options.rate == 0) {
+        throw std::invalid_argument("audio: the rate is zero");
+    }
+    if (impl_->running()) {
+        // The machine owns itself while it runs: installing the function here would be writing the
+        // very function its own thread is calling. Queue it for the next step boundary, where every
+        // other change issued to a running machine lands; the settings ride with the switch.
+        const std::lock_guard guard{impl_->audio.mx};
+        impl_->audio.pendingChange     = true;
+        impl_->audio.pendingChangeWant = sounding;
+        if (options.rate) {
+            impl_->audio.pendingOptions.rate = options.rate;
+        }
+        if (options.onSample) {
+            impl_->audio.pendingOptions.onSample = std::move(options.onSample);
+        }
+        return;
+    }
+    impl_->applyAudio(sounding, std::move(options));
+}
+
 RasterContent Vm::video() const {
     if (!impl_->videoOrAsked()) {
         throw std::logic_error("video: this machine draws nothing — video(true) first");
@@ -1574,6 +1652,7 @@ void Vm::stop() {
     impl_->drainEscapeChanges();
     impl_->drainWatchChanges();
     impl_->drainVideoChange();
+    impl_->drainAudioChange();
     impl_->flushSaveData();
 }
 

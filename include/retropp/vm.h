@@ -381,6 +381,18 @@ struct VideoOptions {
     InterlaceOptions interlacing;
 };
 
+// The function a machine's sound reaches: one stereo frame per call, on the thread that steps the
+// machine.
+using AudioSampleFn = std::function<void(std::int16_t left, std::int16_t right)>;
+
+// A machine's audio settings, beside the on/off switch: the rate its frames are wanted at and the
+// function that takes them. Unset keeps what the machine holds — the rate is 48'000 until a call says
+// otherwise, and the function is empty until one is given.
+struct AudioOptions {
+    std::optional<unsigned> rate     = std::nullopt;  // frames a second, whatever rate the chip itself runs at
+    AudioSampleFn           onSample = {};            // takes each frame; empty keeps the held one
+};
+
 // The VM host. Owns one backend machine (selected by VMPlatform); routines registered on it share
 // its memory (so RNG seed state persists across calls). Non-copyable (owns a machine); movable.
 // What a machine produces, declared at construction. A machine hosts without producing anything: it
@@ -388,8 +400,8 @@ struct VideoOptions {
 // unless it is asked for. Each output costs the machine something a machine that never uses it should
 // not pay — a raster costs cycles — so each is named and each is off until declared.
 //
-// Every output has a runtime verb of the same name (video(bool)), so a game that knows at construction
-// says so here, and one that decides later switches it there. They are the same setting.
+// Every output has a runtime verb of the same name (video(bool), audio(bool)), so a game that knows at
+// construction says so here, and one that decides later switches it there. They are the same setting.
 struct VmConfig {
     // What this machine's own files are kept under, in the player's data directory. A machine given a
     // key keeps its guest's persistent data — what a cartridge holds on to when the power goes off —
@@ -403,6 +415,7 @@ struct VmConfig {
     std::string key;
 
     bool video = false;  // the machine draws; its finished frames become a layer's content
+    bool audio = false;  // the machine sounds; each frame its sound chip finishes reaches the function audio() names
 };
 
 class Vm {
@@ -522,17 +535,9 @@ public:
     // The narrow set of original routines that produce sound run as continuously-executing DRIVERS at
     // the hardware CPU clock (Throttle::HardwareSpeed), their APU register writes synthesizing PCM at
     // the original cadence — distinct from a HostSpeed routine that is CALLED for a return value (RNG).
-    // These three members are that path: enable the APU + sink once, position the driver, then step it
-    // one cycle budget per sim tick. (The cue surface a game drives by meaning is the AudioSystem; this
-    // is the raw chain it sits on.)
-
-    // Enable the machine's sound chip and route each produced stereo PCM frame to `onSample`, called
-    // per frame on the thread that steps the machine: the AudioSystem's production thread for a driver
-    // it hosts, the machine's own or the ticking thread for a hosted cartridge. Frames arrive at
-    // `sampleRate` whatever rate the chip itself runs at. Call it on a parked machine, before the
-    // driver is driven or the cartridge is run; a second call replaces the rate and the function.
-    void enableAudio(unsigned sampleRate,
-                     std::function<void(std::int16_t left, std::int16_t right)> onSample);
+    // These two members are that path, with the sound switched on through audio(true, options) below:
+    // position the driver, then step it one cycle budget per sim tick. (The cue surface a game drives
+    // by meaning is the AudioSystem; this is the raw chain it sits on.)
 
     // Position a hardware-speed driver routine to run continuously (PC → its entry). It is not run to a
     // return for a value — stepDriver advances it. `driver` must be registered on THIS Vm with
@@ -541,7 +546,7 @@ public:
 
     // Run the started driver for `cpuCycles` CPU cycles (the TimingProfile CPU unit — pass
     // TimingProfile::cpuCyclesPerTick() once per sim tick); the APU produces ~rate/frameRate frames
-    // into the enabled sink during the run. Returns the CPU cycles actually run.
+    // to the function audio() names during the run. Returns the CPU cycles actually run.
     std::uint64_t stepDriver(std::uint64_t cpuCycles);
 
     // Host a whole cartridge image on THIS VM: hand over the image's BYTES and the machine comes up
@@ -652,6 +657,40 @@ public:
     // Throws std::logic_error unless this machine has been asked for video; a request that has not
     // reached a step boundary yet counts, and answers with the empty picture until a frame lands.
     [[nodiscard]] RasterContent video() const;
+
+    // ── Audio ───────────────────────────────────────────────────────────────────────────────────
+    // A machine hosts WITHOUT sounding: the frames its sound chip finishes go nowhere until asked for.
+    // Turn audio on and each stereo frame reaches the function the settings name, at the rate they
+    // name, on the thread that steps the machine. Declare it at construction (VmConfig) or switch it
+    // here; they are the same setting reached two ways.
+
+    // audio(true) starts the machine's frames reaching the held function, audio(false) stops them.
+    // Idempotent either way. The function runs on the thread that steps the machine — the machine's
+    // own under Advance::Continuously, the one calling advanceTick under Advance::OnTick, the
+    // AudioSystem's production thread for a driver it hosts — from inside the step, as the frames are
+    // produced.
+    //
+    // Asked of a RUNNING machine, the change lands at its next step boundary — where every change
+    // issued to a running machine lands — so the machine is never asked to install anything while its
+    // own thread is calling it.
+    //
+    // Throws std::logic_error if this machine's core produces no sound at all.
+    void audio(bool sounding);
+
+    // The same switch, with the machine's audio settings declared beside it. What is set here is held
+    // by the machine and applies to every frame from then on; an option left unset keeps its held
+    // value, so audio(true) alone changes nothing but the switch, and a machine never given a rate
+    // produces its frames at 48'000. The rate and the function are the settings:
+    //
+    //     vm.audio(true, {.rate = 48'000, .onSample = [&](std::int16_t l, std::int16_t r) { … }});
+    //     vm.audio(true, {.rate = 44'100});     // the held function, at a new rate
+    //     vm.audio(false, {.onSample = fn});    // off; fn takes the frames when next on
+    //
+    // Each core converts from its own chip's rate, so the frames arrive at `rate`, at the cartridge's
+    // pitch, whatever `rate` is. Asked of a RUNNING machine, the settings land with the switch at its
+    // next step boundary. Throws std::invalid_argument for a rate of zero, at the call — nothing is
+    // queued — and otherwise as audio(bool) does.
+    void audio(bool sounding, AudioOptions options);
 
     // Hold these buttons. The state is a level and the whole set is answered at once, so a button
     // absent from the value is released — hand over what is held now, every tick, and the guest reads

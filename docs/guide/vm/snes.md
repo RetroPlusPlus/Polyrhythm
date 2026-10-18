@@ -67,7 +67,7 @@ refuses `uploadRoutine` / `registerRoutine` / `hostDriver` (`std::logic_error` e
 |---|---|
 | `hostRom` · `run` · `speed` · `stop` · `reset` · `advanceTick` | answers |
 | `video` · `VmConfig{.video}` | answers — [Its picture](#its-picture) |
-| `enableAudio` | answers — [Its sound](#its-sound) |
+| `audio` · `VmConfig{.audio}` | answers — [Its sound](#its-sound) |
 | `buttons` | answers, both ports — [The pad, both ports](#the-pad-both-ports) |
 | `VmConfig{.key}` · `batterySave` | answers — [Its save](#its-save-srm) |
 | `registerRegions` · `read` / `write`, declared and built on the spot | answers — [`snes.h` — the vocabulary](#snesh--the-vocabulary) |
@@ -490,13 +490,14 @@ the settings — is [co-execution.md](co-execution.md#video-showing-its-picture)
 ## Its sound
 
 The sound chip produces one stereo frame every 32 cycles of its own 1'024'000 Hz clock — 32'000 frames a
-second, whatever the region. `enableAudio(rate, onSample)` converts them to `rate` on their way to your
-function, so the cartridge's pitch is the same at 48'000 Hz and at 44'100 Hz. A zero rate throws
-`std::invalid_argument`; a second call replaces both the rate and the function.
+second, whatever the region. `audio(true, {.rate, .onSample})` converts them to `rate` on their way to
+your function, so the cartridge's pitch is the same at 48'000 Hz and at 44'100 Hz; `audio(false)` stops
+them, and a setting left unset keeps the held one.
 
 The frames reach your function four times a frame, from inside the step, on the thread that steps the
 machine — the game's under `Advance::OnTick`, the machine's own under `Advance::Continuously`, and
-`advanceClock` on a routine machine. A machine with no function drops its frames as it runs. The hand-off to an
+`advanceClock` on a routine machine. A machine with audio off, or on with no function yet, drops its
+frames as it runs. The hand-off to an
 [`AudioSink`](../audio.md#output-the-audiosink) — a queue, the device pulling on its own thread — is the
 game's, and its shape is on [co-execution.md](co-execution.md#sound-hearing-it).
 

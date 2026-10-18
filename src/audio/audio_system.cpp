@@ -31,6 +31,7 @@
 #include <exception>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -309,9 +310,11 @@ struct AudioSystem::Impl {
         bool sampler = false;
 
         // What the production thread posts to this voice's machine, for the machine's thread to take at its
-        // next look, in posting order — before its next step, so a sample is in audio RAM before the
-        // gesture that keys it is performed: bytes for a place, or a streamed file's delivery started on
-        // a voice of the chip, or stopped there when it carries no stream. Guarded by the Impl's writeMtx.
+        // next look, in posting order: bytes for a place, a streamed file's delivery started on a voice of
+        // the chip (or stopped there when it carries no stream), and a gesture for the driver. A gesture
+        // travels in this one queue with the writes it follows, so a sample is in audio RAM before the
+        // gesture that keys it is performed — the look hands it to the mailbox the step that follows the
+        // look drains. Guarded by the Impl's writeMtx.
         struct PlaceWrite {
             std::uint32_t             at;
             std::vector<std::uint8_t> bytes;
@@ -320,7 +323,10 @@ struct AudioSystem::Impl {
             std::uint8_t                             voice = 0;
             std::optional<audio::snesstream::Stream> stream;
         };
-        std::vector<std::variant<PlaceWrite, StreamChange>> writes;
+        struct Gesture {
+            Instruction instruction;
+        };
+        std::vector<std::variant<PlaceWrite, StreamChange, Gesture>> writes;
 
         // The sampler's deliveries, one per voice of the chip that is streaming a file. The machine's
         // thread starts, feeds and stops them, and nothing else touches them.
@@ -637,14 +643,14 @@ struct AudioSystem::Impl {
         audioUnit_     = machine;
         unitRunner_    = voice->runner.get();  // the voice lives as long as the system: never closed
         voice->runner->beforeFirstStep([this, vp, machine] {
-            machine->enableAudio(sampleRate, [this, vp](std::int16_t left, std::int16_t right) {
+            machine->audio(true, {.rate = sampleRate, .onSample = [this, vp](std::int16_t left, std::int16_t right) {
                 const std::uint32_t gain = AudioMixer::instance().effectiveGain(vp->type);
                 // The unit does not wait for the mix, so a lane the mix has not drained can fill; a
                 // frame it has no room for is dropped and counted, the way a full ring drops a mixed one.
                 if (!vp->lane.push(AudioFrame{applyGain(left, gain), applyGain(right, gain)})) {
                     framesDropped.fetch_add(1, std::memory_order_relaxed);
                 }
-            });
+            }});
         });
         voice->runner->onEachLook([this, machine] { serveUnitRequests(*machine); });
         if (threaded) {
@@ -793,7 +799,7 @@ struct AudioSystem::Impl {
                 // and the echo path's output is muted — its buffer circulates a residue of the chip's
                 // integer arithmetic that would otherwise never reach zero — until a cue engages it again.
                 if (Voice* s = findSamplerVoice()) {
-                    s->runner->enqueue(*s->residentDef.verbs.stop);
+                    postGesture(*s, *s->residentDef.verbs.stop);
                     if (echo_.set) {
                         writeDsp(*s, kEvolL, 0);
                         writeDsp(*s, kEvolR, 0);
@@ -817,9 +823,8 @@ struct AudioSystem::Impl {
             case audio::AudioCommand::Op::StopVoice:
                 if (Voice* s = findSamplerVoice()) {
                     const auto voice = static_cast<std::uint8_t>(cmd.value);
-                    s->runner->enqueue(Instruction::write(
-                        Location::memory(audio::snesdriver::voiceBlock(voice)), 1,
-                        audio::snesdriver::kKeyOffBlock));
+                    postGesture(*s, Instruction::write(Location::memory(audio::snesdriver::voiceBlock(voice)),
+                                                       1, audio::snesdriver::kKeyOffBlock));
                     stopStream(*s, voice);
                     releaseHold(voice);
                 }
@@ -998,9 +1003,27 @@ struct AudioSystem::Impl {
         v.runner->wake();
     }
 
-    // The machine's thread, at each look: everything posted so far, in order.
+    // A gesture for the driver on a voice's machine, in posting order with the writes: performed by the
+    // step after the machine's next look on a threaded system, by the next step on a manual one, where
+    // every write before it has already landed.
+    void postGesture(Voice& v, const Instruction& instruction) {
+        if (!threaded) {
+            v.runner->enqueue(instruction);
+            return;
+        }
+        {
+            std::lock_guard<std::mutex> lock(writeMtx);
+            v.writes.emplace_back(Voice::Gesture{.instruction = instruction});
+        }
+        v.runner->wake();
+    }
+
+    // The machine's thread, at each look: everything posted so far, in order. A gesture goes into the
+    // runner's mailbox here, on the thread that drains it; one the mailbox has no room for waits, with
+    // everything posted after it, for the next look.
     void serveWrites(Voice& v, Vm& machine) {
-        std::vector<std::variant<Voice::PlaceWrite, Voice::StreamChange>> taken;
+        using Posted = std::variant<Voice::PlaceWrite, Voice::StreamChange, Voice::Gesture>;
+        std::vector<Posted> taken;
         {
             std::lock_guard<std::mutex> lock(writeMtx);
             if (v.writes.empty()) {
@@ -1008,12 +1031,18 @@ struct AudioSystem::Impl {
             }
             taken.swap(v.writes);
         }
-        for (std::variant<Voice::PlaceWrite, Voice::StreamChange>& posted : taken) {
-            if (const Voice::PlaceWrite* w = std::get_if<Voice::PlaceWrite>(&posted)) {
+        for (auto it = taken.begin(); it != taken.end(); ++it) {
+            if (const Voice::PlaceWrite* w = std::get_if<Voice::PlaceWrite>(&*it)) {
                 machine.write(MemoryRegion{.at = w->at, .size = static_cast<std::uint32_t>(w->bytes.size())},
                               std::span<const std::uint8_t>(w->bytes));
+            } else if (const Voice::Gesture* g = std::get_if<Voice::Gesture>(&*it)) {
+                if (!v.runner->enqueue(g->instruction)) {
+                    std::lock_guard<std::mutex> lock(writeMtx);
+                    v.writes.insert(v.writes.begin(), std::move_iterator(it), std::move_iterator(taken.end()));
+                    return;
+                }
             } else {
-                changeStream(v, machine, std::move(std::get<Voice::StreamChange>(posted)));
+                changeStream(v, machine, std::move(std::get<Voice::StreamChange>(*it)));
             }
         }
     }
@@ -1106,11 +1135,11 @@ struct AudioSystem::Impl {
         }
         applySend(s, cue.voice, e.echo || e.reverb);
         if (cue.mode.kind == PlayMode::Kind::Repeat) {
-            s.runner->enqueue(Instruction::write(Location::memory(sd::voicePeriod(cue.voice)), 2, period));
-            s.runner->enqueue(Instruction::write(Location::memory(sd::voiceCountdown(cue.voice)), 2, period));
+            postGesture(s, Instruction::write(Location::memory(sd::voicePeriod(cue.voice)), 2, period));
+            postGesture(s, Instruction::write(Location::memory(sd::voiceCountdown(cue.voice)), 2, period));
         }
-        s.runner->enqueue(Instruction::write(Location::memory(sd::voiceBlock(cue.voice)), sd::kKeyOnWidth,
-                                             sd::keyOnBlock(sample.entry, pitch, left, right, mode)));
+        postGesture(s, Instruction::write(Location::memory(sd::voiceBlock(cue.voice)), sd::kKeyOnWidth,
+                                          sd::keyOnBlock(sample.entry, pitch, left, right, mode)));
     }
 
     // The directory entry a cue keys its voice on with, and whether the voice streams to it.
@@ -1211,9 +1240,9 @@ struct AudioSystem::Impl {
         const auto         pitch = static_cast<std::uint16_t>(
             std::clamp<long>(std::lround(e.pitch * kPitchAsRecorded), 1, kPitchMax));
         const auto [left, right] = volumes(e.volume, e.pan);
-        s->runner->enqueue(Instruction::write(Location::memory(sd::voiceBlock(cue.voice) + sd::kChangeFieldsOffset),
-                                              sd::kChangeFieldsWidth, sd::changeFields(pitch, left, right)));
-        s->runner->enqueue(Instruction::write(Location::memory(sd::voiceBlock(cue.voice)), 1, sd::kChangeCommand));
+        postGesture(*s, Instruction::write(Location::memory(sd::voiceBlock(cue.voice) + sd::kChangeFieldsOffset),
+                                           sd::kChangeFieldsWidth, sd::changeFields(pitch, left, right)));
+        postGesture(*s, Instruction::write(Location::memory(sd::voiceBlock(cue.voice)), 1, sd::kChangeCommand));
     }
 
     // A whole sample written to the cache's placement: its bytes, and the directory entry that plays it
@@ -1563,9 +1592,9 @@ struct AudioSystem::Impl {
 
     // Build a resident voice: give the voice its runner, resolve its images to bytes, and declare what
     // the machine's own thread does before its first step — place the images, run the declared .init
-    // once (inside hostDriver), then enable the APU into the voice's lane. enableAudio runs AFTER
-    // hostDriver because hostDriver resets the machine — the sink + rate are set once the reset is
-    // behind us. The voice rides the VMDriver bus (its `type`).
+    // once (inside hostDriver), then switch the APU's frames into the voice's lane. audio(true, …) runs
+    // AFTER hostDriver because hostDriver resets the machine — the rate and the function are set once
+    // the reset is behind us. The voice rides the VMDriver bus (its `type`).
     void initResidentVoice(Voice& v) {
         v.runner = std::make_unique<vm::VmRunner>(vm::VmCoreAccess::make(core_, platform_, timing_),
                                                   vm::VmRunner::StepKind::Resident, cyclesPerFrame,
@@ -1599,13 +1628,13 @@ struct AudioSystem::Impl {
             binding.isa       = vp->residentIsa;
             machine->hostDriver(binding);  // place + validate + run .init once (verifies the ISA vs the platform)
 
-            machine->enableAudio(sampleRate, [vp](std::int16_t left, std::int16_t right) {
+            machine->audio(true, {.rate = sampleRate, .onSample = [vp](std::int16_t left, std::int16_t right) {
                 // Scale by the VMDriver bus (a straight amplifier over the driver's own internal
                 // mixing). At the default unity gain this is the exact identity, so the laned frame is
                 // the driver's own.
                 const std::uint32_t gain = AudioMixer::instance().effectiveGain(vp->type);
                 vp->lane.push(AudioFrame{applyGain(left, gain), applyGain(right, gain)});
-            });
+            }});
         });
         // Each step publishes what that step left in the declared slots, so the game-thread handle
         // always reads a coherent set from the most recent tick, and the sampler's step then feeds every
@@ -1764,7 +1793,7 @@ struct AudioSystem::Impl {
             Voice* vp      = voice.get();
             Vm*    machine = &voice->runner->machine();
             voice->runner->beforeFirstStep([this, vp, machine, isa = entry.isa, bytes = std::move(bytes)] {
-                machine->enableAudio(sampleRate, [vp](std::int16_t left, std::int16_t right) {
+                machine->audio(true, {.rate = sampleRate, .onSample = [vp](std::int16_t left, std::int16_t right) {
                     // Auto-close bookkeeping: track the run of consecutive exact-zero output frames. A
                     // finished one-shot SFX's DAC-on tail settles to exact (0,0) (verified against the
                     // real drivers), while an active tone is high-pass-centred and oscillates through 0
@@ -1779,7 +1808,7 @@ struct AudioSystem::Impl {
                     // so the laned frame is bit-for-bit the produced one.
                     const std::uint32_t gain = AudioMixer::instance().effectiveGain(vp->type);
                     vp->lane.push(AudioFrame{applyGain(left, gain), applyGain(right, gain)});
-                });
+                }});
                 // The chiptune binding carries the machine's own ISA: SM83 on a Game Boy (unchanged), the
                 // 65816 on the SNES. Every other field is the shared chiptune binding's.
                 RoutineBinding binding = kChiptuneBinding;
