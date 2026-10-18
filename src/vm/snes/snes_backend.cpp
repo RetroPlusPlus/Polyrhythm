@@ -71,9 +71,17 @@ void SnesBackend::emplaceMachine() {
 }
 
 void SnesBackend::restoreSave(std::vector<std::uint8_t> save) {
-    snaggletooth::SnesState state = snes_->state();  // the once-per-load round trip, never per step
-    state.sram = std::move(save);
-    snes_->restore(state);
+    // The once-per-load round trip, never per step. The state is a quarter megabyte and lives on the
+    // heap for the call: this runs on whichever thread resets the machine, and a thread's stack is not
+    // sized for it.
+    auto state = std::make_unique<snaggletooth::SnesState>(snes_->state());
+    state->sram = std::move(save);
+    // The machine refuses only a save of another size than its own, and every save that reaches here
+    // is the size this cartridge keeps — its own, carried across a reset, or one writeSaveData measured.
+    const bool restored = snes_->restore(*state);
+    if (!restored) {
+        throw std::logic_error("restoreSave: the machine refused a save of its own size");
+    }
     saveChanged_ = false;  // a restore reports a change; a loaded save is not one
 }
 
