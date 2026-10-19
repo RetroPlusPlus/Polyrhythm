@@ -192,6 +192,20 @@ public:
     PaletteId uploadPalette(std::span<const Rgba8> colors);
     PaletteId uploadPalette(std::span<const Rgba16> colors);
 
+    // Change an uploaded palette's colors in place. The palette keeps its PaletteId: every cell and
+    // sprite that names it draws the new colors from the next frame on, a frame whose structure has not
+    // otherwise changed included. `colors` holds exactly the palette's entry count as uploaded — a cell
+    // may index any entry, so the count is part of what the handle means. Rgba8 widens ×257 as
+    // uploadPalette does; Rgba16 is written direct. Throws std::invalid_argument, with nothing written,
+    // when `id` is not the first entry of an uploaded palette or `colors.size()` differs from that
+    // palette's count; std::runtime_error on a GPU failure.
+    //
+    // The colors travel in the next frame's copy pass, so a set of palettes changed between two frames
+    // costs one submission for the set, and the store does not grow — a palette edited live, a color at
+    // a time, is this call once per change.
+    void updatePalette(PaletteId id, std::span<const Rgba8> colors);
+    void updatePalette(PaletteId id, std::span<const Rgba16> colors);
+
     // Load a colour PNG as a palette: decode it, slice it one-pixel-per-entry in `order`, and upload the
     // entries to the palette store — the colour-store sibling of loadAtlas (which uploads to the atlas
     // store). Returns the PaletteId of the first entry; the entries are contiguous, so a cell/sprite that
@@ -525,10 +539,10 @@ private:
     // Recreate atlasRegionStore_ with a texel per atlas, allocated with room past the current count.
     void rebuildAtlasRegions();
 
-    // Write the `count` colours appended at flat offset `first` into the palette store: one upload of
-    // those colours, or two when the run crosses a row edge. A run past the allocated rows, or one long
-    // enough to cover a whole row, goes through rebuildPaletteStore.
-    void appendPaletteColors(std::size_t first, std::size_t count);
+    // Write the `count` colors at flat offset `first` of the mirror into the palette store: one upload
+    // of those colors, or two when the run crosses a row edge. A run past the allocated rows, or one
+    // long enough to cover a whole row, goes through rebuildPaletteStore, which writes the mirror whole.
+    void writePaletteColors(std::size_t first, std::size_t count);
 
     // Recreate paletteStore_ from the flat paletteData_ mirror: a kPaletteStoreWidth-wide
     // R16G16B16A16_UNORM texture holding every entry, the whole store uploaded. The texture is allocated
@@ -770,10 +784,11 @@ private:
                                                           // atlas handle
     int                      atlasRegionCap_ = 0;         // texels the region table holds; one per atlas is
                                                           // used and an upload appends into the rest
-    // What an upload has added to the CPU mirrors and not yet written to the GPU. The writes travel in the
-    // copy pass the next compose opens, so a game uploading a set of palettes pays one submission for the
-    // set rather than one apiece — and nothing reads a store outside compose, so they land before any
-    // draw that could see them. Recreating a store writes it whole and drops the notes it makes redundant.
+    // What has been written to the CPU mirrors — uploaded, or changed in place — and not yet to the GPU.
+    // The writes travel in the copy pass the next compose opens, so a game uploading a set of palettes
+    // pays one submission for the set rather than one apiece — and nothing reads a store outside compose,
+    // so they land before any draw that could see them. Recreating a store writes it whole and drops the
+    // notes it makes redundant.
     struct PendingColors {
         std::size_t first = 0;
         std::size_t count = 0;
@@ -824,6 +839,18 @@ private:
     std::uint64_t              spriteFxHash_ = 0;
     int                        spriteFxHashRows_ = 0;
     std::vector<Rgba16>      paletteData_;             // CPU mirror of the store; flat, contiguous 16-bit palette colours (PaletteId = flat offset)
+    // The entries each uploaded palette occupies, in upload order. A later upload begins where the one
+    // before it ends, so `first` ascends and a PaletteId finds its palette by binary search. An upload of
+    // no colors occupies nothing and is not recorded.
+    struct PaletteExtent {
+        std::size_t first = 0;
+        std::size_t count = 0;
+    };
+    std::vector<PaletteExtent> paletteExtents_;
+
+    // The palette `id` names, checked against the `count` colors an update brings: std::invalid_argument
+    // when no uploaded palette begins at `id`, or when `count` is not that palette's entry count.
+    [[nodiscard]] const PaletteExtent& paletteToUpdate(PaletteId id, std::size_t count) const;
     SDL_GPUTexture*          rowDataStore_ = nullptr;  // per-frame RGBA32F data store: every effect's
                                                        // paramTable stacked vertically (width 1, one Vec4
                                                        // per row); a Custom effect Loads its rows from it.
@@ -895,9 +922,10 @@ private:
     // ── Frame-level compose-skip state ───────────────────────────────────────────────────────────
     // renderFrame skips composeViewport entirely and re-blits `lastComposed_` when the submission is provably
     // bit-identical to the frame that produced it. `storeGeneration_` ticks on every out-of-frame upload the
-    // compose reads (atlas/palette store rebuild, curve-mask bake, custom-shader registration); a bump since
-    // the retained compose forces a recompose. `lastComposed_` is the retained blit source (target_ or a
-    // post-chain scratch — persistent textures, nulled on a target recreate so a stale pointer never blits).
+    // compose reads (atlas/palette store rebuild, a palette's colors changed in place, curve-mask bake,
+    // custom-shader registration); a bump since the retained compose forces a recompose. `lastComposed_` is
+    // the retained blit source (target_ or a post-chain scratch — persistent textures, nulled on a target
+    // recreate so a stale pointer never blits).
     // `lastFingerprint_` is hashFrameStructure of the last SETTLED compose; `lastComposeSettled_` records
     // whether that retained frame was composed settled — a mid-ease frame is never re-blitted as if settled.
     std::uint64_t   storeGeneration_       = 0;

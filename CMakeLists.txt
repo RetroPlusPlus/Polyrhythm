@@ -1789,6 +1789,7 @@ if(RETROPP_BUILD_TESTS)
         tests/frame_fingerprint_test.cpp
         tests/compose_skip_test.cpp
         tests/store_upload_growth_test.cpp
+        tests/palette_update_test.cpp
         tests/sprite_instancing_test.cpp
         tests/colour_parity_layer_test.cpp
         tests/sprite_blend_test.cpp
@@ -2574,6 +2575,17 @@ if(RETROPP_BUILD_EXAMPLES)
     # manual stepping. Dev-run only; the live SdlPlatform/Renderer + loadPaletteImage + both asset
     # policies are the CI compile signal (the slicer math is proven headlessly in palette_image_slice_test).
     retropp_add_example(palette_image_demo)
+
+    # ── Palette-update demo — a sunset drawn through one four-color palette, and the same colors as
+    # swatches; keys step a color's red, green and blue, each step an updatePalette under the palette's own
+    # handle. CI runs its --verify on every platform: headless on a GPU device with no window, it steps the
+    # colors with the function the keys call and requires that the still picture recomposes the next frame,
+    # reads every color back exactly in the picture and at its swatch, and that the store does not grow. On
+    # Windows on ARM, whose runner has no GPU device, it exits 77 and the case counts as skipped.
+    retropp_add_example(palette_update)
+    add_test(NAME PaletteUpdateExample.Verify
+             COMMAND retropp-palette_update-demo --verify)
+    set_tests_properties(PaletteUpdateExample.Verify PROPERTIES SKIP_RETURN_CODE 77)
 
     # ── Cracked-wall demo — a brick wall over a drifting background, coloured through three 16-bit RGBA
     # palette images (loadPaletteImage). The holes are the palette entries' own alpha: an alpha-0 entry

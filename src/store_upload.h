@@ -5,10 +5,10 @@
 // Where appended store content lands, and how much room a store texture is given.
 //
 // The renderer's palette and atlas stores each hold everything a game has uploaded so far, so an upload
-// appends to the end and writes only what it appended. These decide the destination rectangle for that
-// write, and how large a store texture is allocated when it has to be recreated. Engine-internal, and
-// pure: a wrong rectangle writes correct bytes to the wrong place without failing, so the arithmetic is
-// decided in one place and exercised on its own.
+// appends to the end, a palette's colors change over its own entries, and each writes only its own run.
+// These decide the destination rectangle for that write, and how large a store texture is allocated when
+// it has to be recreated. Engine-internal, and pure: a wrong rectangle writes correct bytes to the wrong
+// place without failing, so the arithmetic is decided in one place and exercised on its own.
 
 namespace retropp::detail {
 
@@ -21,8 +21,8 @@ struct StoreRect {
     friend bool operator==(const StoreRect&, const StoreRect&) noexcept = default;
 };
 
-// Where a run of appended palette colours lands. Colours pack flat and rows lie end to end, so a run that
-// reaches the store's right edge continues on the next row — one append, two destinations.
+// Where a run of palette colors written at a flat offset lands. Colors pack flat and rows lie end to end,
+// so a run that reaches the store's right edge continues on the next row — one run, two destinations.
 struct PaletteAppend {
     StoreRect head{};
     StoreRect wrapped{};  // w == 0 when the run fits on one row
@@ -46,7 +46,7 @@ inline constexpr int kPaletteStoreWidth = 16384;
     return rows < 1u ? 1 : static_cast<int>(rows);
 }
 
-// Whether a run of `count` colours appended at flat offset `first` lands within two rows, which is what
+// Whether a run of `count` colors written at flat offset `first` lands within two rows, which is what
 // paletteAppend describes. A run long enough to cover a whole row is written by recreating the store.
 [[nodiscard]] constexpr bool paletteAppendFitsTwoRows(std::size_t first, std::size_t count,
                                                       int width) noexcept {
@@ -54,7 +54,7 @@ inline constexpr int kPaletteStoreWidth = 16384;
     return count <= (w - first % w) + w;
 }
 
-// Where `count` colours appended at flat offset `first` land in a `width`-wide store: the run starts at
+// Where `count` colors written at flat offset `first` land in a `width`-wide store: the run starts at
 // column `first % width` of row `first / width` and continues onto the next row at column 0 when it
 // reaches the edge. Empty for an empty run.
 [[nodiscard]] constexpr PaletteAppend paletteAppend(std::size_t first, std::size_t count,

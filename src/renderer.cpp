@@ -3287,7 +3287,8 @@ PaletteId Renderer::uploadPalette(std::span<const Rgba8> colors) {
     const std::size_t first = paletteData_.size();
     paletteData_.reserve(first + colors.size());
     for (const Rgba8 c : colors) paletteData_.push_back(widen(c));
-    appendPaletteColors(first, colors.size());
+    writePaletteColors(first, colors.size());
+    if (!colors.empty()) paletteExtents_.push_back(PaletteExtent{.first = first, .count = colors.size()});
     return static_cast<PaletteId>(first);
 }
 
@@ -3295,11 +3296,44 @@ PaletteId Renderer::uploadPalette(std::span<const Rgba16> colors) {
     // A 16-bit colour source appends direct — no widening.
     const std::size_t first = paletteData_.size();
     paletteData_.insert(paletteData_.end(), colors.begin(), colors.end());
-    appendPaletteColors(first, colors.size());
+    writePaletteColors(first, colors.size());
+    if (!colors.empty()) paletteExtents_.push_back(PaletteExtent{.first = first, .count = colors.size()});
     return static_cast<PaletteId>(first);
 }
 
-void Renderer::appendPaletteColors(std::size_t first, std::size_t count) {
+const Renderer::PaletteExtent& Renderer::paletteToUpdate(PaletteId id, std::size_t count) const {
+    const std::size_t first = static_cast<std::size_t>(id);
+    const auto        at    = std::lower_bound(
+        paletteExtents_.begin(), paletteExtents_.end(), first,
+        [](const PaletteExtent& e, std::size_t f) { return e.first < f; });
+    if (at == paletteExtents_.end() || at->first != first) {
+        throw std::invalid_argument("updatePalette: no uploaded palette begins at this PaletteId");
+    }
+    if (at->count != count) {
+        throw std::invalid_argument(
+            "updatePalette: the colors must number the palette's entries as uploaded");
+    }
+    return *at;
+}
+
+void Renderer::updatePalette(PaletteId id, std::span<const Rgba8> colors) {
+    const PaletteExtent& palette = paletteToUpdate(id, colors.size());  // refused before anything is written
+    std::transform(colors.begin(), colors.end(),
+                   paletteData_.begin() + static_cast<std::ptrdiff_t>(palette.first),
+                   [](const Rgba8 c) { return widen(c); });
+    writePaletteColors(palette.first, palette.count);
+    ++storeGeneration_;  // the colors a settled frame reads changed under its handles — force the next frame to recompose
+}
+
+void Renderer::updatePalette(PaletteId id, std::span<const Rgba16> colors) {
+    const PaletteExtent& palette = paletteToUpdate(id, colors.size());
+    std::copy(colors.begin(), colors.end(),
+              paletteData_.begin() + static_cast<std::ptrdiff_t>(palette.first));
+    writePaletteColors(palette.first, palette.count);
+    ++storeGeneration_;  // the colors a settled frame reads changed under its handles — force the next frame to recompose
+}
+
+void Renderer::writePaletteColors(std::size_t first, std::size_t count) {
     const int W = kPaletteStoreWidth;
     // The store is rewritten when the entries need rows the texture does not have, and when a run is long
     // enough to cover a whole row — the rewrite is the one path that writes any shape of content.
@@ -3309,7 +3343,7 @@ void Renderer::appendPaletteColors(std::size_t first, std::size_t count) {
         rebuildPaletteStore();
         return;
     }
-    if (count == 0) return;  // nothing appended, so nothing to write
+    if (count == 0) return;  // an empty run writes nothing
     pendingPaletteWrites_.push_back(PendingColors{.first = first, .count = count});
 }
 
