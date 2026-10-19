@@ -1692,6 +1692,7 @@ if(RETROPP_BUILD_TESTS)
         tests/custom_layer_emission_test.cpp
         tests/image_test.cpp
         tests/image_rgba_decode_test.cpp
+        tests/image_subbyte_rows_test.cpp
         tests/palette_image_slice_test.cpp
         tests/transparent_indices_test.cpp
         tests/atlas_transparency_test.cpp
