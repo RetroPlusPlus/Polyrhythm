@@ -24,22 +24,25 @@ namespace {
     return static_cast<std::uint8_t>((row[byte] >> shift) & mask);
 }
 
-// Unpack a raw (unconverted) PNG scanline buffer into one index byte per pixel. `channels` is the
-// per-pixel sample count (1 for palette/grayscale, 2 for grayscale+alpha — the grey sample is the
-// first channel and the only one we keep); `bitdepth` is the per-sample bit width. Faithful: the
-// sample value IS the index, never scaled or reverse-derived from a colour.
+// Unpack a raw (unconverted) PNG buffer into one index byte per pixel. `channels` is the per-pixel
+// sample count (1 for palette/grayscale, 2 for grayscale+alpha — the grey sample is the first channel
+// and the only one we keep); `bitdepth` is the per-sample bit width. Faithful: the sample value IS the
+// index, never scaled or reverse-derived from a colour.
+//
+// The buffer is lodepng's raw output, which packs sub-byte samples tightly across the whole image: a
+// row begins where the row before it ended, not at the next byte. So a pixel's position is its flat
+// bit offset from the buffer's start. At 8 bits and above a row is whole bytes and the two agree.
 [[nodiscard]] std::vector<std::uint8_t> unpackIndices(const std::vector<unsigned char>& raw,
                                                       unsigned width, unsigned height,
                                                       unsigned channels, unsigned bitdepth) {
     const std::size_t bitsPerPixel = static_cast<std::size_t>(bitdepth) * channels;
-    const std::size_t rowBytes     = (static_cast<std::size_t>(width) * bitsPerPixel + 7) / 8;
     std::vector<std::uint8_t> indices(static_cast<std::size_t>(width) * height);
     for (unsigned y = 0; y < height; ++y) {
-        const unsigned char* row = raw.data() + static_cast<std::size_t>(y) * rowBytes;
         for (unsigned x = 0; x < width; ++x) {
             // The grey/palette sample is the pixel's first channel (alpha, if any, follows).
-            const std::size_t bitPos = static_cast<std::size_t>(x) * bitsPerPixel;
-            indices[static_cast<std::size_t>(y) * width + x] = readSample(row, bitPos, bitdepth);
+            const std::size_t pixel  = static_cast<std::size_t>(y) * width + x;
+            const std::size_t bitPos = pixel * bitsPerPixel;
+            indices[pixel] = readSample(raw.data(), bitPos, bitdepth);
         }
     }
     return indices;
@@ -57,21 +60,21 @@ namespace {
     return static_cast<std::uint16_t>((row[byte] >> shift) & mask);
 }
 
-// Unpack a raw (unconverted) PNG scanline buffer into one uint16 index per pixel — the map path's
-// widened unpackIndices. `channels` is the per-pixel sample count (1 for palette/grayscale, 2 for
-// grayscale+alpha — the grey sample is the first channel, the only one kept); `bitdepth` the per-
-// sample bit width. Faithful: the sample value IS the index, never scaled or reverse-derived.
+// Unpack a raw (unconverted) PNG buffer into one uint16 index per pixel — the map path's widened
+// unpackIndices, reading the same tightly packed buffer by the same flat bit offset. `channels` is the
+// per-pixel sample count (1 for palette/grayscale, 2 for grayscale+alpha — the grey sample is the first
+// channel, the only one kept); `bitdepth` the per-sample bit width. Faithful: the sample value IS the
+// index, never scaled or reverse-derived.
 [[nodiscard]] std::vector<std::uint16_t> unpackIndices16(const std::vector<unsigned char>& raw,
                                                          unsigned width, unsigned height,
                                                          unsigned channels, unsigned bitdepth) {
     const std::size_t bitsPerPixel = static_cast<std::size_t>(bitdepth) * channels;
-    const std::size_t rowBytes     = (static_cast<std::size_t>(width) * bitsPerPixel + 7) / 8;
     std::vector<std::uint16_t> values(static_cast<std::size_t>(width) * height);
     for (unsigned y = 0; y < height; ++y) {
-        const unsigned char* row = raw.data() + static_cast<std::size_t>(y) * rowBytes;
         for (unsigned x = 0; x < width; ++x) {
-            const std::size_t bitPos = static_cast<std::size_t>(x) * bitsPerPixel;
-            values[static_cast<std::size_t>(y) * width + x] = readSample16(row, bitPos, bitdepth);
+            const std::size_t pixel  = static_cast<std::size_t>(y) * width + x;
+            const std::size_t bitPos = pixel * bitsPerPixel;
+            values[pixel] = readSample16(raw.data(), bitPos, bitdepth);
         }
     }
     return values;
