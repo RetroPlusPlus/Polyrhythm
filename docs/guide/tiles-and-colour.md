@@ -17,6 +17,7 @@ types (`TileContent`, `Sprite`) are in [draw-state.md](draw-state.md); loading a
 - [`Rgba8` — a final output colour](#rgba8--a-final-output-colour)
 - [Uploading palettes: `uploadPalette` → `PaletteId`](#uploading-palettes-uploadpalette--paletteid)
 - [Loading a palette from an image: `loadPaletteImage` → `PaletteId`](#loading-a-palette-from-an-image-loadpaletteimage--paletteid)
+- [Changing a palette's colors: `updatePalette`](#changing-a-palettes-colors-updatepalette)
 - [Uploading art: `uploadAtlas` → the sheet](#uploading-art-uploadatlas--the-sheet)
 - [Each tile / sprite names its own sheet + palette](#each-tile--sprite-names-its-own-sheet--palette)
 - [The `tiles()` helper — a single-combo cell run](#the-tiles-helper--a-single-combo-cell-run)
@@ -125,6 +126,41 @@ std::vector<Rgba16> slicePaletteImage(const LoadedImage& img,
 
 [`examples/palette_image_demo`](../../examples/palette_image_demo/main.cpp) loads a 16-bit hue grid (Embed) and an alpha ramp (LoadFromPath), walks
 all 8 read orders, and draws the entries over a checker so the per-entry alpha reads as transparency.
+
+## Changing a palette's colors: `updatePalette`
+
+```cpp
+void Renderer::updatePalette(PaletteId id, std::span<const Rgba8>  colors);  // 8-bit colors, widened into the store
+void Renderer::updatePalette(PaletteId id, std::span<const Rgba16> colors);  // 16-bit colors, stored losslessly
+```
+
+The palette at `id` takes `colors` and keeps its handle: every cell and sprite that names it draws
+the new colors from the next frame on, with no change to the draw state. `colors` holds exactly the
+palette's entry count as uploaded — a cell may index any entry, so the count is part of what the
+handle means. `Rgba8` widens as it does on upload; `Rgba16` is stored directly.
+
+```cpp
+std::array<Rgba8, 4> ramp = {/* the scheme's four colors */};
+const PaletteId skin = renderer.uploadPalette(std::span<const Rgba8>(ramp));   // once, at load
+
+// Later, as the player edits the ramp:
+ramp[2] = Rgba8{.r = red, .g = green, .b = blue};
+renderer.updatePalette(skin, std::span<const Rgba8>(ramp));                   // the same handle, new colors
+```
+
+An update is a data change like an upload: the colors travel in the next frame's copy pass, so a
+set of palettes changed between two frames costs one submission, and the store does not grow — a
+palette edited live, a color at a time, is this call once per change. A frame whose structure has
+not otherwise changed still draws the new colors (the whole-frame skip in
+[rendering.md](rendering.md#upload-skip) reads the store's state as well as the frame's).
+
+Two calls are refused with `std::invalid_argument`, and nothing is written: an `id` that is not the
+first entry of an uploaded palette, and a `colors` whose length differs from that palette's entry
+count.
+
+[`examples/palette_update`](../../examples/palette_update/main.cpp) draws a sunset through one
+four-color palette beside the same colors as swatches; keys step a color's red, green and blue, and the
+picture takes each step on the next frame under the same handle.
 
 ## Uploading art: `uploadAtlas` → the sheet
 
@@ -256,9 +292,9 @@ description is in [draw-state.md](draw-state.md#tilecontent--a-scrolling-tile-ma
 
 - **Recolour a scene without new art:** rewrite the `palette` handle on the cells / sprites you want
   recoloured — they each name their own.
-- **Animate colour (water shimmer, palette cycling):** re-upload a palette (`uploadPalette` returns a
-  new `PaletteId`) or rewrite the `palette` handle on a cell / sprite per frame — both are data changes,
-  no shader edit.
+- **Animate color (water shimmer, palette cycling) or edit a palette live:** change the palette's
+  colors in place (`updatePalette` — the same `PaletteId`) or rewrite the `palette` handle on a cell /
+  sprite per frame — both are data changes, no shader edit.
 - **Whole-frame fades / day-night:** that's a `ColorFill` region + a blend mode
   ([draw-state.md](draw-state.md#whole-frame-colour)) grading the composited frame — distinct from the
   per-pixel palette colouring here.

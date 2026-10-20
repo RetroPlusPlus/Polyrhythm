@@ -69,6 +69,7 @@ public:
     AtlasManifest uploadAtlas(const LoadedImage&);             // always throws — load PNGs via loadAtlas()
     PaletteId uploadPalette(std::span<const Rgba8>  colors);   // 8-bit source, widened ×257 into the store
     PaletteId uploadPalette(std::span<const Rgba16> colors);   // 16-bit colour source, appended direct
+    void updatePalette(PaletteId id, std::span<const Rgba8> colors);   // the same handle, new colors (also Rgba16)
     // PNG loading + slicing (loadAtlas / loadAtlasFromMemory / loadPaletteImage) lives in
     // images-and-transparency.md and tiles-and-colour.md.
 
@@ -580,12 +581,14 @@ colour model and [images-and-transparency.md](images-and-transparency.md) for lo
   index draws) — see [images-and-transparency.md](images-and-transparency.md).
 - `uploadPalette(colors)` → `PaletteId`. One palette's colours, written to a row of the renderer-owned
   palette store.
+- `updatePalette(id, colors)`. The palette at `id` takes new colors and keeps its handle; the next frame
+  draws them.
 
-Each upload writes only what it adds, so uploading during play costs the new colours or pixels rather
-than everything already in the store; the store texture is recreated only when the content outgrows the
-room it has.
+Each upload writes only what it adds, and an update only the palette it changes, so uploading or editing
+color during play costs the new colors or pixels rather than everything already in the store; the store
+texture is recreated only when the content outgrows the room it has.
 
-Handles stay valid until the renderer is destroyed (there is no per-handle eviction yet).
+Handles stay valid until the renderer is destroyed.
 
 ## The renderer only uploads what changed <a id="upload-skip"></a>
 
@@ -600,7 +603,8 @@ nothing moved. This happens at three levels, all automatic:
   sprites re-uploads nothing. Sprites that actually move upload every frame, by correctness.
 - **The whole frame.** When a submission is bit-identical to the last one and every interpolated
   value has settled, the composite is not re-run at all — the retained output is re-blitted instead.
-  An idle screen composes zero times per second while still presenting at the refresh rate.
+  An idle screen composes zero times per second while still presenting at the refresh rate. A
+  palette's colors changed in place (`updatePalette`) recompose the next frame, handles unchanged.
 
 Each layer is tracked by its `key`, which is why the key is required and why it must be stable across
 frames: it is the identity the comparison is keyed on. A layer whose key changes every frame looks
