@@ -645,8 +645,8 @@ picks which scene that is:
   sprite, re-tinting a band of tiles.
 
 Under `Normal` at full alpha the result is the colour itself at either attachment point. A mode that
-reads its destination — `Multiply`, `Add`, `Screen`, `Subtract`, `Half` — differs between them, because
-the destination differs.
+reads its destination — `Multiply`, `Add`, `Screen`, `Subtract`, `Half`, `HalfSubtract` — differs between
+them, because the destination differs.
 
 `color_fill_demo` draws a solid fill, a stroked ring, a curved drawn line, and a translucent tint — all one
 built-in, each confined by a `Region`.

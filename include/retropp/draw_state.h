@@ -246,19 +246,20 @@ findDuplicateAnchorLabel(std::span<const Anchor> anchors) noexcept {
 // HOW MUCH the container contributes, `blend` is HOW it combines. Normal is the alpha-over of a Photoshop-
 // style layer stack (the default, and the exact output when every container is Normal); the
 // others are the standard separable blend operators a retro look reaches for — Add (glows / fire /
-// light), Subtract, Multiply (shadows / tints), Screen (bloom), and Half (a halved average,
-// (dst+src)/2, for translucency). Blend is a property of the CONTAINER that owns the pixels, never of a
-// screen-space effect: an effect is a colour SOURCE, and the region / layer / frame that holds it
-// decides how that source merges. The math is the separable operator B(dst, src) per mode applied
+// light), Subtract, Multiply (shadows / tints), Screen (bloom), Half (a halved average, (dst+src)/2, for
+// translucency), and HalfSubtract (a halved difference, (dst−src)/2, for a dimmed backdrop). Blend is a
+// property of the CONTAINER that owns the pixels, never of a screen-space effect: an effect is a color
+// SOURCE, and the region / layer / frame that holds it decides how that source merges. The math is the separable operator B(dst, src) per mode applied
 // source-alpha-weighted; retropp::applyBlendMode (postprocess.h) is the single authority the
 // compositor shaders mirror.
 enum class BlendMode : std::uint8_t {
-    Normal,    // alpha-over: (1-srcA)·dst + srcA·src — the default; at alpha 1 the source replaces
-    Add,       // additive: dst + src           (glows, fire, light)
-    Subtract,  // subtractive: dst − src
-    Multiply,  // multiplicative: dst · src      (shadows, tints)
-    Screen,    // 1 − (1−dst)(1−src) — inverse-multiply (bloom)
-    Half,      // (dst + src) / 2 — a halved average (translucency)
+    Normal,        // alpha-over: (1-srcA)·dst + srcA·src — the default; at alpha 1 the source replaces
+    Add,           // additive: dst + src           (glows, fire, light)
+    Subtract,      // subtractive: dst − src
+    Multiply,      // multiplicative: dst · src      (shadows, tints)
+    Screen,        // 1 − (1−dst)(1−src) — inverse-multiply (bloom)
+    Half,          // (dst + src) / 2 — a halved average (translucency)
+    HalfSubtract,  // (dst − src) / 2 — a halved difference (a dimmed backdrop)
 };
 
 // ── Effect region — the shape an effect is confined to ───────────────────────────────────

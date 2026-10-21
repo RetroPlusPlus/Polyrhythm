@@ -18,6 +18,7 @@ float3 blendOp(uint mode, float3 d, float3 s) {
     if (mode == 3u) return d * s;                        // Multiply
     if (mode == 4u) return 1.0 - (1.0 - d) * (1.0 - s);  // Screen
     if (mode == 5u) return (d + s) * 0.5;                // Half
+    if (mode == 6u) return (d - s) * 0.5;                // HalfSubtract
     return s;                                            // Normal
 }
 

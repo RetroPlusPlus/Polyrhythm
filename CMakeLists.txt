@@ -1793,6 +1793,7 @@ if(RETROPP_BUILD_TESTS)
         tests/sprite_instancing_test.cpp
         tests/colour_parity_layer_test.cpp
         tests/sprite_blend_test.cpp
+        tests/half_subtract_blend_test.cpp
         tests/sprite_effects_test.cpp
         tests/sprite_effects_custom_test.cpp
         tests/sprite_effects_below_test.cpp
@@ -2534,11 +2535,15 @@ if(RETROPP_BUILD_EXAMPLES)
     # row-data-store path is the CI compile signal.
     retropp_add_example(row_data_table_demo)
 
-    # ── Blend-mode demo — the container blend modes: a translucent Half layer (DrawLayer::blend), an
-    # additive glow region and a multiply shadow region (Region::blend), and a frame-level Screen overlay
-    # (FrameDrawState::blend). Slow drift only. Dev-run only; the live SdlPlatform/Renderer path is the
-    # CI compile signal for the blend composite + region-gate blend shaders.
+    # ── Blend-mode demo — the container blend modes: a translucent Half layer (DrawLayer::blend), four
+    # mode circles and a half-subtract pane (Region::blend), and a frame-level Screen overlay
+    # (FrameDrawState::blend). Static scene. CI runs its --verify on every platform: headless on a GPU
+    # device with no window, it draws the demo's own frame and checks every blended pixel against the CPU
+    # mirror. On Windows on ARM, whose runner has no GPU device, it exits 77 and the case counts as skipped.
     retropp_add_example(blend_mode_demo)
+    add_test(NAME BlendModeExample.Verify
+             COMMAND retropp-blend_mode_demo-demo --verify)
+    set_tests_properties(BlendModeExample.Verify PROPERTIES SKIP_RETURN_CODE 77)
 
     # ── Colour-effects demo — day/night, flash, fade, tints, and an exposure lift, all as ColorFill +
     # a blend mode + alpha/fillIntensity at whole-frame and per-region scope (no bespoke colour member).
@@ -2554,10 +2559,14 @@ if(RETROPP_BUILD_EXAMPLES)
     retropp_add_example(colour_parity_demo)
 
     # ── Sprite-blend demo — per-sprite Sprite::blend: a hero disc drifts across a scene carrying a Multiply
-    # shadow decal and an Add flare, and a probe disc cycles every blend mode over the same background. The
-    # live SdlPlatform/Renderer + the sprite run-split composite path is the CI compile signal (the
-    # per-sprite blend matrix is proven headlessly in sprite_blend_test).
+    # shadow decal and an Add flare, and a probe disc cycles every blend mode over the same background. CI
+    # runs its --verify on every platform: headless on a GPU device with no window, it draws the demo's own
+    # frame and checks every blended pixel against the CPU mirror. On Windows on ARM, whose runner has no
+    # GPU device, it exits 77 and the case counts as skipped.
     retropp_add_example(sprite_blend_demo)
+    add_test(NAME SpriteBlendExample.Verify
+             COMMAND retropp-sprite_blend_demo-demo --verify)
+    set_tests_properties(SpriteBlendExample.Verify PROPERTIES SKIP_RETURN_CODE 77)
     retropp_add_example(sprite_effects_demo)
 
     # ── Sprite-mask demo — a sprite's image as a mask, decoupled from its texture. A drifting sprite's

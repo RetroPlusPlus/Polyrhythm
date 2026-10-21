@@ -3,8 +3,8 @@
 A compositing **container** — a `Sprite`, a `Region`, a `DrawLayer`, or the whole `FrameDrawState` —
 carries a `BlendMode` beside its `alpha`. `alpha` is *how much* the container contributes; `blend` is *how*
 its pixels combine with what they sit on. The default, `Normal`, is the alpha-over of a layer stack; the
-other five are the standard separable blend operators a retro look reaches for — additive glows,
-multiplicative shadows, screen bloom, a halved-average translucency.
+other six are the standard separable blend operators a retro look reaches for — additive glows,
+multiplicative shadows, screen bloom, a halved-average translucency, a halved-difference dimming.
 
 Blend is a property of the **container that owns the pixels**, never of a screen-space effect. An effect is
 a colour *source*; the region / layer / frame that holds it decides how that source merges.
@@ -33,7 +33,7 @@ a colour *source*; the region / layer / frame that holds it decides how that sou
 ## The modes
 
 ```cpp
-enum class BlendMode : std::uint8_t { Normal, Add, Subtract, Multiply, Screen, Half };
+enum class BlendMode : std::uint8_t { Normal, Add, Subtract, Multiply, Screen, Half, HalfSubtract };
 ```
 
 For a source colour `src` combining over a destination `dst`, each mode applies a per-channel operator
@@ -47,6 +47,7 @@ For a source colour `src` combining over a destination `dst`, each mode applies 
 | `Multiply` | `dst · src` | shadows, tints — darkens |
 | `Screen` | `1 − (1 − dst)(1 − src)` | bloom — lifts toward light |
 | `Half` | `(dst + src) / 2` | a halved average — translucency |
+| `HalfSubtract` | `(dst − src) / 2` | a halved difference — a dimmed backdrop |
 
 The full combine, source-alpha-weighted and clamped, is:
 
@@ -111,6 +112,7 @@ pixels (`Layer`) or the composited scene (`Below`). So the same fill and mode gi
 | `Screen` | `(1−a)·dst + a·(1−(1−dst)(1−f))` — bloom |
 | `Subtract` | `(1−a)·dst + a·clamp(dst−f)` — a hard darken |
 | `Half` | `(1−a)·dst + a·((dst+f)/2)` — a halved wash |
+| `HalfSubtract` | `(1−a)·dst + a·clamp((dst−f)/2)` — a halved dimming |
 
 A transparent pixel under a `Layer` grade is left transparent (there is no own-content there to grade).
 
@@ -408,6 +410,16 @@ glassPane.key = "glassPane";
 glassPane.blend = BlendMode::Half;          // (scene + pane) / 2
 glassPane.content = /* … */;
 frame.layers.push_back(glassPane);
+```
+
+A dimmed backdrop under a menu — the scene behind it halved and darkened, one region:
+
+```cpp
+const ScreenSpaceEffect shade{.kind = ScreenSpaceEffectKind::ColorFill, .fill = Rgba8{40, 40, 40}};
+frame.regions.push_back(Region{.key     = "backdrop",
+                               .shape   = ShapePoints::rectangle(Point{16, 32}, 128, 80),
+                               .effects = {shade},
+                               .blend   = BlendMode::HalfSubtract});   // (scene − shade) / 2
 ```
 
 An additive glow and a multiply shadow, each a `Region` with a `ColorFill` source:
