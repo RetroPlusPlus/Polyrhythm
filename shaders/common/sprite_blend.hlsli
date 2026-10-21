@@ -10,13 +10,14 @@
 #define RETROPP_COMMON_SPRITE_BLEND_HLSLI
 
 // The separable blend operator B(d, s) per BlendMode (Normal 0 / Add 1 / Subtract 2 / Multiply 3 /
-// Screen 4 / Half 5). Mirrors retropp::blendChannel.
+// Screen 4 / Half 5 / HalfSubtract 6). Mirrors retropp::blendChannel.
 float blendChannel(uint mode, float d, float s) {
     if (mode == 1u) return d + s;
     if (mode == 2u) return d - s;
     if (mode == 3u) return d * s;
     if (mode == 4u) return 1.0f - (1.0f - d) * (1.0f - s);
     if (mode == 5u) return (d + s) * 0.5f;
+    if (mode == 6u) return (d - s) * 0.5f;
     return s;  // Normal
 }
 

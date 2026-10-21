@@ -805,6 +805,7 @@ struct EmissionChainPlan {
         case BlendMode::Multiply: return d * s;
         case BlendMode::Screen:   return 1.0f - (1.0f - d) * (1.0f - s);
         case BlendMode::Half:     return (d + s) * 0.5f;
+        case BlendMode::HalfSubtract: return (d - s) * 0.5f;
         case BlendMode::Normal:
         default:                  return s;
     }
@@ -846,6 +847,11 @@ static_assert(applyBlendMode(Vec4{0.5f, 0, 0, 1}, Vec4{0.5f, 0, 0, 1}, BlendMode
               "Screen: 1 - (1 - dst)(1 - src)");
 static_assert(applyBlendMode(Vec4{0.5f, 0, 0, 1}, Vec4{0.25f, 0, 0, 1}, BlendMode::Half).x == 0.375f,
               "Half: (dst + src) / 2");
+static_assert(applyBlendMode(Vec4{0.5f, 0, 0, 1}, Vec4{0.25f, 0, 0, 1}, BlendMode::HalfSubtract).x == 0.125f,
+              "HalfSubtract: (dst - src) / 2");
+// HalfSubtract floors at 0 as Subtract does: the halved difference goes negative and the combine clamps it.
+static_assert(applyBlendMode(Vec4{0.25f, 0, 0, 1}, Vec4{0.5f, 0, 0, 1}, BlendMode::HalfSubtract).x == 0.0f,
+              "HalfSubtract clamps to 0");
 // Add clamps at the top of the range (0.8 + 0.5 = 1.3 → 1).
 static_assert(applyBlendMode(Vec4{0.8f, 0, 0, 1}, Vec4{0.5f, 0, 0, 1}, BlendMode::Add).x == 1.0f,
               "Add clamps to 1");

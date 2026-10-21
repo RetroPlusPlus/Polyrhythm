@@ -9,10 +9,10 @@
 //   • RIGHT half — Below scope: the grade colours the accumulated image beneath the layer — the lattice AND
 //     the scene showing through its holes. The tint reaches through the holes; the windows are tinted too.
 //
-// Press A to cycle the blend mode (Multiply → Add → Screen → Subtract → Half → Normal) and watch the seam
-// hold: at every mode, Layer keeps the holes clear and Below grades through them. This is the layer-path
-// precedent for a per-sprite effect — a sprite is holed layer content, and its effect grades its own art
-// (Layer) or the scene beneath it (Below) the same way.
+// Press A to cycle the blend mode (Multiply → Add → Screen → Subtract → Half → HalfSubtract → Normal) and
+// watch the seam hold: at every mode, Layer keeps the holes clear and Below grades through them. This is the
+// layer-path precedent for a per-sprite effect — a sprite is holed layer content, and its effect grades its
+// own art (Layer) or the scene beneath it (Below) the same way.
 //
 // The pixel-exact blend math is the ctest suite's job (applyBlendMode / colorFillParams vs the shaders, and
 // the per-layer scope matrix in colour_parity_layer_test.cpp); this is the live GPU sanity check.
@@ -52,11 +52,12 @@ struct ModeEntry {
     BlendMode   mode;
     const char* name;
 };
-constexpr std::array<ModeEntry, 6> kModes{{{BlendMode::Multiply, "Multiply"},
+constexpr std::array<ModeEntry, 7> kModes{{{BlendMode::Multiply, "Multiply"},
                                            {BlendMode::Add, "Add"},
                                            {BlendMode::Screen, "Screen"},
                                            {BlendMode::Subtract, "Subtract"},
                                            {BlendMode::Half, "Half"},
+                                           {BlendMode::HalfSubtract, "HalfSubtract"},
                                            {BlendMode::Normal, "Normal"}}};
 
 enum class Action : std::uint8_t { CycleMode, Fullscreen };
