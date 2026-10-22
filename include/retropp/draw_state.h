@@ -1398,11 +1398,12 @@ struct DrawLayer {
 // state, not ROM data — the BoundedVec fixed-cap idiom does not apply.
 struct FrameDrawState {
     std::vector<DrawLayer>         layers;           // arbitrary N; compositor stable-sorts by z
-    // How the frame's WHOLE-FRAME postEffects / regions combine over the composited image — the container
-    // blend mode beside `Region::blend` and `DrawLayer::blend`. Normal = the alpha-over default; the other
-    // modes apply applyBlendMode. (Whole-frame colour — day/night, fades, flash, tints — is an effect:
-    // a ColorFill region with the blend mode and alpha the look wants; the frame carries no bespoke
-    // colour member.)
+    // How the frame's WHOLE-FRAME postEffects combine over the composited image — the container blend mode
+    // beside `Region::blend` and `DrawLayer::blend`. Normal = the alpha-over default; the other modes apply
+    // applyBlendMode. Each of the frame's `regions` combines under its own `Region::blend`. The postEffects
+    // apply first and the regions after them, so a region grades the image the postEffects produced.
+    // (Whole-frame color — day/night, fades, flash, tints — is an effect: a ColorFill region with the blend
+    // mode and alpha the look wants; the frame carries no bespoke color member.)
     BlendMode                      blend = BlendMode::Normal;
     std::vector<ScreenSpaceEffect> postEffects;      // frame-level WHOLE-FRAME effects on the composited image
     std::vector<Region>            regions;          // frame-level confined effects; each region's effects fill its shape (optional)

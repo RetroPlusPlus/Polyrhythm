@@ -76,10 +76,11 @@ struct FrameDrawState  { /* … */             BlendMode blend = BlendMode::Norm
   [Per-sprite blend](#per-sprite-blend)).
 - **`Region::blend`** — how the region's effects combine over the scene inside its shape.
 - **`DrawLayer::blend`** — how the whole layer composites over the layers beneath it.
-- **`FrameDrawState::blend`** — how the frame's whole-frame `postEffects` / `regions` combine over the
-  composited image.
+- **`FrameDrawState::blend`** — how the frame's whole-frame `postEffects` combine over the composited image.
 
-A frame-level region (in `FrameDrawState::regions`) uses its own `Region::blend`, like any region.
+A frame-level region (in `FrameDrawState::regions`) uses its own `Region::blend`, like any region. The
+frame's `postEffects` apply first and its `regions` after them, so a frame region grades the image the
+`postEffects` produced.
 
 ## Scope: what a grade combines over
 
@@ -98,8 +99,9 @@ Where that grade lands is the effect's `scope` (`ScreenSpaceEffectScope`, on a p
   everything beneath it, coherently, including *through* the layer's holes. A wash that sits over the world (a
   whole-scene day/night, a screen flash) while layers above the grade's z ride over it untouched.
 
-A frame-level grade (`FrameDrawState::regions` / `postEffects` under `FrameDrawState::blend`) is inherently
-whole-frame — it combines over the finished composite, the reach of a `Below` grade at the top of the stack.
+A frame-level grade (a `FrameDrawState::regions` entry under its own `Region::blend`, or a `postEffects`
+entry under `FrameDrawState::blend`) is inherently whole-frame — it combines over the finished composite,
+the reach of a `Below` grade at the top of the stack.
 
 The grade math is `applyBlendMode` at both scopes; only the **destination it reads** changes — the layer's own
 pixels (`Layer`) or the composited scene (`Below`). So the same fill and mode give, over an opaque pixel:
