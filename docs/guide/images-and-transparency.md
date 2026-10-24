@@ -5,7 +5,7 @@ the layer beneath. This feeds the indexed colour model in [tiles-and-colour.md](
 a PNG's index plane goes straight into `uploadAtlas`.
 
 ```cpp
-#include "retropp/image.h"   // ImageColorKind, LoadedImage, loadPng/loadPngFromMemory;
+#include "retropp/image.h"   // ImageColorKind, LoadedImage, loadPng/loadPngFromMemory, ImageId;
                           // ContentKind, ReadOrder, AssetSlot, sliceLayout (slicing, below)
 ```
 
@@ -14,6 +14,7 @@ a PNG's index plane goes straight into `uploadAtlas`.
 - [Loading a PNG: `loadPng`](#loading-a-png-loadpng)
   - [How sources route](#how-sources-route)
   - [Truecolour decodes to a colour plane](#truecolour-decodes-to-a-colour-plane)
+  - [A truecolor image as a layer: `loadImage`](#a-truecolor-image-as-a-layer-loadimage)
 - [Slicing an atlas into addressable assets](#slicing)
 - [Transparency: structural and material](#transparency-structural-and-material)
 - [A worked example](#a-worked-example)
@@ -74,13 +75,48 @@ corrupt PNG — throw `std::runtime_error`.
 
 A truecolour (RGB / RGBA) PNG decodes too: `loadPng` returns `kind == Rgba` and fills `pixels` with one
 **16-bit-per-channel** colour per pixel (an 8-bit source widens losslessly ×257, a 16-bit source lands
-direct), alpha included. This is the colour counterpart to the index plane — the source for building a
-**palette** from an image: `slicePaletteImage` walks a truecolour PNG one pixel per palette entry (and
+direct), alpha included. This is the colour counterpart to the index plane, and two routes consume it.
+One builds a **palette** from an image: `slicePaletteImage` walks a truecolour PNG one pixel per palette entry (and
 throws `std::runtime_error` on a non-`Rgba` source), and
 `Renderer::loadPaletteImage` chains the decode + slice + upload (see
 [tiles-and-colour.md](tiles-and-colour.md#loading-a-palette-from-an-image-loadpaletteimage--paletteid)).
+The other shows the image itself: `Renderer::loadImage` decodes a truecolor PNG and uploads it whole as
+an image a raster layer names (below).
 Atlas art stays **indexed/grayscale** — the faithful console format, where colour is an index plus a
 palette chosen at render time — so `uploadAtlas` consumes the index plane, not `pixels`.
+
+### A truecolor image as a layer: `loadImage`
+
+```cpp
+ImageId Renderer::loadImage(LiteralPath path, std::optional<AssetPolicy> policy = {});
+ImageId Renderer::loadImageFromMemory(std::span<const std::uint8_t> bytes);
+ImageId Renderer::uploadImage(std::span<const Rgba8>  pixels, int width, int height);
+ImageId Renderer::uploadImage(std::span<const Rgba16> pixels, int width, int height);
+
+enum class ImageId : std::uint32_t {};   // a handle to an uploaded image; {} names none
+```
+
+A truecolor PNG is uploaded once as an image the renderer owns, and a raster layer shows it by naming
+the handle — `RasterContent{.image = id}` — with nothing uploaded per frame
+([draw-state.md](draw-state.md#an-image-the-renderer-holds)). `loadImage` takes a literal logical path
+and the asset policy every path form takes ([assets-and-embedding.md](assets-and-embedding.md)); its
+default is `LoadFromPath`, as `loadAtlas`'s is. `loadImageFromMemory` takes the PNG's bytes;
+`uploadImage` takes pixels you hold — 8-bit, or 16-bit for a source that carries more.
+
+```cpp
+const ImageId title = renderer.loadImage("game/assets/title.png");                       // shipped beside the binary
+const ImageId badge = renderer.loadImage("game/assets/badge.png", AssetPolicy::Embed);   // baked in
+const ImageId frame = renderer.loadImageFromMemory(readFile(assetRoot() / chosen));      // a runtime file
+```
+
+The image is held at the depth its pixels need — an 8-bit PNG at 8 bits, a 16-bit PNG at 16 — and its
+alpha is carried per pixel, so the layer composites by the image's own edges. A truecolor (RGB / RGBA)
+PNG is required: an indexed or grayscale PNG is atlas art and throws `std::runtime_error` (load it
+with `loadAtlas`); a missing file or a corrupt PNG throws `std::runtime_error` as every loader does.
+`uploadImage` throws `std::invalid_argument` on a non-positive dimension or a span shorter than
+`width × height`, with nothing uploaded. Handles stay valid until the renderer is destroyed.
+
+`examples/image_layer/` registers one and shows it over a tile layer.
 
 ## Slicing an atlas into addressable assets <a id="slicing"></a>
 
@@ -246,6 +282,6 @@ const AtlasId holed  =
 - **Decode a console palette file (`.gbcpal`, etc.):** that's consumer-side — build the `Rgba8`
   palette from your asset format and `uploadPalette` it; the platform's image loader handles the index
   plane, you handle the colour table.
-- **RGBA / truecolour art:** not supported as *atlas* art — atlas art stays indexed/grayscale; a
-  truecolour PNG still decodes to a 16-bit colour plane for palette building (see
-  "Truecolour decodes to a colour plane" above).
+- **RGBA / truecolour art:** load it as an image (`loadImage`) and show it on a raster layer
+  (`RasterContent{.image = …}`); atlas art stays indexed/grayscale, and a truecolour PNG also decodes to
+  a 16-bit colour plane for palette building (see "Truecolour decodes to a colour plane" above).

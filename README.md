@@ -57,7 +57,7 @@ Active development. The core is in place and exercised end to end by a real cons
   integer/letterbox blit (nearest/bilinear), and a layered compositor:
   - arbitrary Z-sorted tile and sprite layers, indexed atlases with runtime palettes
   - per-layer and per-sprite alpha, geometric transforms (scale/rotate/skew/perspective), tilemap
-    wrap modes, PNG image ingestion
+    wrap modes, PNG image ingestion — indexed sheets, and truecolor images shown as layers
   - blend modes, a frame-level color modifier/blend, and region-confined effects with analytic
     and mask-based shapes
   - shaders generated at build time per platform — no runtime shader compiler, no committed bytecode

@@ -70,7 +70,7 @@ public:
     PaletteId uploadPalette(std::span<const Rgba8>  colors);   // 8-bit source, widened ×257 into the store
     PaletteId uploadPalette(std::span<const Rgba16> colors);   // 16-bit colour source, appended direct
     void updatePalette(PaletteId id, std::span<const Rgba8> colors);   // the same handle, new colors (also Rgba16)
-    // PNG loading + slicing (loadAtlas / loadAtlasFromMemory / loadPaletteImage) lives in
+    // PNG loading + slicing (loadAtlas / loadAtlasFromMemory / loadPaletteImage / loadImage) lives in
     // images-and-transparency.md and tiles-and-colour.md.
 
     // Bake a cubic / arbitrary curved boundary into an SDF mask a Region samples (see draw-state.md).
@@ -583,6 +583,7 @@ colour model and [images-and-transparency.md](images-and-transparency.md) for lo
   palette store.
 - `updatePalette(id, colors)`. The palette at `id` takes new colors and keeps its handle; the next frame
   draws them.
+- `uploadImage(pixels, w, h)` → `ImageId` (and `loadImage` / `loadImageFromMemory` over a PNG). A truecolor image, one renderer-owned texture at the depth the pixels need; a raster layer names it with `RasterContent{.image = …}` and uploads nothing per frame — see [draw-state.md](draw-state.md#an-image-the-renderer-holds).
 
 Each upload writes only what it adds, and an update only the palette it changes, so uploading or editing
 color during play costs the new colors or pixels rather than everything already in the store; the store
@@ -594,13 +595,14 @@ Handles stay valid until the renderer is destroyed.
 
 You describe the whole frame every time. The renderer does **not** send the whole frame to the GPU
 every time — it compares what you submitted against what it last uploaded and skips the transfer when
-nothing moved. This happens at three levels, all automatic:
+nothing moved. This happens at four levels, all automatic:
 
 - **Tile layers.** The packed cells are hashed each frame; an unchanged map costs no DMA. A huge map
   can skip even the hash by answering the question itself with `TileContent::contentChanged` — see
   [tilemaps.md](tilemaps.md#mixing-sheets-in-one-layer).
 - **Sprite layers.** The built sprite records are hashed the same way, so a layer of stationary
   sprites re-uploads nothing. Sprites that actually move upload every frame, by correctness.
+- **Raster layers.** A raster the program draws is sent when its `generation` moves and not otherwise; a raster that names an image is never sent — the image's texture is bound as it is.
 - **The whole frame.** When a submission is bit-identical to the last one and every interpolated
   value has settled, the composite is not re-run at all — the retained output is re-blitted instead.
   An idle screen composes zero times per second while still presenting at the refresh rate. A

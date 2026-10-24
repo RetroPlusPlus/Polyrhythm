@@ -817,7 +817,7 @@ function(retropp_add_example _name)
 endfunction()
 
 # Asset embed/copy — driven ENTIRELY by the code. The asset POLICY in a loadAtlas() /
-# loadMapPng() / loadPaletteImage() / registerData() call is the single source of truth, and the build
+# loadMapPng() / loadPaletteImage() / loadImage() / registerData() call is the single source of truth, and the build
 # acts on it automatically, per asset:
 #   * Embed        → the file's bytes are baked into the binary (a constexpr array + a pre-main()
 #                    registerEmbeddedAsset) and decoded from memory at runtime.
@@ -830,7 +830,7 @@ endfunction()
 # Policy resolution mirrors retropp::resolveAssetPolicy exactly, at build time — two tiers:
 #   per-call AssetPolicy:: token in the call  >  per-type default
 #   (loadMapPng = Embed, loadPaletteImage = Embed, loadAtlas = LoadFromPath,
-#    registerData = LoadFromPath).
+#    loadImage = LoadFromPath, registerData = LoadFromPath).
 #
 # Conservative by construction — the copyright hazard is baking a LoadFromPath asset, so this NEVER does:
 #   * an asset is baked ONLY when its policy clearly resolves to Embed;
@@ -926,11 +926,11 @@ function(retropp_autoembed_assets _target)
         file(READ "${_src}" _t)
         string(REGEX REPLACE "/\\*[^*]*\\*+([^/*][^*]*\\*+)*/" "" _t "${_t}")
         string(REGEX REPLACE "//[^\n]*" "" _t "${_t}")
-        foreach(_loader loadMapPng loadAtlas loadPaletteImage registerAudio registerData)
+        foreach(_loader loadMapPng loadAtlas loadImage loadPaletteImage registerAudio registerData)
             if(_loader STREQUAL "loadMapPng" OR _loader STREQUAL "loadPaletteImage")
                 set(_type_default "Embed")  # bespoke build-time data (index grid / palette colours)
             else()
-                # loadAtlas, registerAudio PCM and registerData all ship beside the binary: each is a
+                # loadAtlas, loadImage, registerAudio PCM and registerData all ship beside the binary: each is a
                 # family whose content a game may have no right to redistribute, so omitting the policy
                 # must never bake.
                 set(_type_default "LoadFromPath")
@@ -1715,6 +1715,7 @@ if(RETROPP_BUILD_TESTS)
         tests/guest_watch_test.cpp
         tests/sameboy_watch_test.cpp
         tests/raster_content_test.cpp
+        tests/image_layer_test.cpp
         tests/guest_input_test.cpp
         tests/vm_save_data_test.cpp
         tests/snaggletooth_link_test.cpp
@@ -2595,6 +2596,20 @@ if(RETROPP_BUILD_EXAMPLES)
     add_test(NAME PaletteUpdateExample.Verify
              COMMAND retropp-palette_update-demo --verify)
     set_tests_properties(PaletteUpdateExample.Verify PROPERTIES SKIP_RETURN_CODE 77)
+
+    # ── Image-layer demo — a truecolor planet, loaded once with loadImage and shown on a raster layer over
+    # a scrolling star field; keys move it, fit it to twice its size, spin it and step its alpha, so the
+    # image composites by its own alpha over whatever is beneath. CI runs its --verify on every platform:
+    # headless on a GPU device with no window, it loads the image under both policies, draws it, and
+    # requires exact texels where the image is opaque, the backdrop where it is transparent, a blend
+    # within one step at its soft edge, a fit of twice the size, no raster upload on any frame, a recompose
+    # when the layer names a different image and a skip when it names the same one, and nothing drawn for
+    # an id nobody minted. On Windows on ARM, whose runner has no GPU device, it exits 77 and the case
+    # counts as skipped.
+    retropp_add_example(image_layer)
+    add_test(NAME ImageLayerExample.Verify
+             COMMAND retropp-image_layer-demo --verify)
+    set_tests_properties(ImageLayerExample.Verify PROPERTIES SKIP_RETURN_CODE 77)
 
     # ── Cracked-wall demo — a brick wall over a drifting background, coloured through three 16-bit RGBA
     # palette images (loadPaletteImage). The holes are the palette entries' own alpha: an alpha-0 entry

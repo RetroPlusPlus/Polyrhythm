@@ -123,7 +123,7 @@ constexpr LayerContentKind contentKind(const LayerContent&) noexcept;
 ```
 
 A layer carries exactly one content alternative — a tile map, a set of sprites, or a raster of pixels
-(a hosted machine's picture, or one the program drew itself). Layers **interleave freely by `z`** in
+(a hosted machine's picture, one the program drew itself, or an image the renderer holds). Layers **interleave freely by `z`** in
 one compositing pass whatever they carry, so a sprite layer can sit between two tile layers, or a
 native layer over a machine's screen, entirely the consumer's choice.
 
@@ -225,15 +225,16 @@ struct RasterContent {
     RasterPixelFormat format = RasterPixelFormat::Rgba8888;
     PixelSize         fit{};               // the size it is shown at; {0, 0} = its own
     std::uint64_t     generation = 0;      // how many rasters the source has finished
+    ImageId           image{};             // an image the renderer holds, shown as the raster; {} = the pixels above
 };
 
 enum class RasterPixelFormat : std::uint8_t { Rgba8888 };
 constexpr std::size_t bytesPerPixel(RasterPixelFormat) noexcept;
 ```
 
-A layer whose content is a raster of pixels. Two sources hand a layer a raster in this form — the last
-complete frame a hosted machine drew, and a raster your program draws itself — and everything here
-holds for both:
+A layer whose content is a raster of pixels. Three sources hand a layer a raster in this form — the last
+complete frame a hosted machine drew, a raster your program draws itself, and a truecolor image the
+renderer holds — and everything here holds for all three:
 
 - **The renderer uploads the raster when its generation is one the layer's texture does not hold.**
   `generation` counts how many rasters the source has finished — 0 before the first. A raster
@@ -265,6 +266,12 @@ holds for both:
   ```
 - **`pixels` is read during `renderFrame`**, so it lives at least that long. A raster that changes every
   frame costs one upload of its size every frame.
+- **A raster that names an image uploads nothing.** `image` names a truecolor image registered once
+  with `loadImage` ([images-and-transparency.md](images-and-transparency.md#a-truecolor-image-as-a-layer-loadimage));
+  the renderer binds the image's own texture at the image's own size, so `pixels`, `width`, `height`,
+  `format` and `generation` are not read, and `rasterUploads` does not move for it on any frame. `fit`
+  and the layer's `scroll`, `alpha`, `blend`, `transform`, effects and regions apply as to any raster.
+  An id no `loadImage` returned draws nothing.
 
 #### A hosted machine's picture
 
@@ -322,6 +329,28 @@ Everything above holds for it, with `generation` yours to count: bump it when th
 keep it when they do not.
 
 The SNES player (`examples/snes/player/`) draws its sound scopes this way.
+
+#### An image the renderer holds
+
+A truecolor PNG — a title card, a backdrop painted in full color, a photograph — is registered once and
+named by the layer each frame. Alpha travels per pixel, so the image composites over the layers beneath
+by its own edges:
+
+```cpp
+const ImageId planet = renderer.loadImage("game/assets/planet.png");   // once, at load
+
+DrawLayer sky{.key = "planet"};
+sky.size    = PixelSize{640, 360};
+sky.scroll  = LayerScroll{-272, -132};                                   // placed like any raster
+sky.content = RasterContent{.image = planet};                            // the image is the raster
+```
+
+The image is as deep as its PNG: an 8-bit file is held at 8 bits, a 16-bit file at 16. A `fit` shows it
+at another size, texel for texel as for any raster; the layer's `transform` turns it, its `alpha` fades
+it, and its `effects` run over it.
+
+`examples/image_layer/` shows one over a drifting star field, moved, fitted, spun, faded and rippled
+from the keyboard.
 
 ## Whole-frame colour
 

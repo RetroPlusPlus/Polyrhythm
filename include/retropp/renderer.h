@@ -231,6 +231,39 @@ public:
                                int count = 0,
                                std::optional<AssetPolicy> policy = {});
 
+    // Upload one truecolor image once, returning the handle a raster layer names (RasterContent::image)
+    // to show it. The renderer owns one texture per image, at the depth the pixels need: the Rgba8 form
+    // lands in an 8-bit texture; the Rgba16 form lands in a 16-bit texture, or in an 8-bit one when every
+    // channel of every pixel is an 8-bit value widened ×257 (the depth loadPng gives an 8-bit source),
+    // which draws identically and holds half the memory. `pixels` is row-major, `width * height` entries,
+    // read during the call and not kept. Valid until the renderer is destroyed (no eviction). Throws
+    // std::invalid_argument, with nothing minted, on a non-positive dimension or a span shorter than
+    // `width * height`; std::runtime_error on a GPU failure.
+    //
+    // A raster layer that names an image uploads nothing per frame: the texture is bound as it is, so
+    // many image layers cost their composites and no transfer. A raster the program redraws stays the
+    // `pixels` form, with its generation.
+    ImageId uploadImage(std::span<const Rgba8>  pixels, int width, int height);
+    ImageId uploadImage(std::span<const Rgba16> pixels, int width, int height);
+
+    // Load a truecolor PNG as an image: decode it and upload it — the image sibling of loadPaletteImage
+    // (which slices a color PNG into palette entries) and loadAtlas (which uploads an indexed PNG as a
+    // sheet). Returns the ImageId a raster layer names. A truecolor (RGB / RGBA) PNG is required — an
+    // indexed or grayscale source is atlas art and throws std::runtime_error (load it with loadAtlas);
+    // a load / decode / GPU failure throws std::runtime_error. An 8-bit PNG lands in an 8-bit texture, a
+    // 16-bit PNG in a 16-bit one; alpha is carried per pixel and composites over the layers beneath.
+    //
+    // The path is a LITERAL, project-root-relative logical path (a string literal — the build-time scan
+    // reads it to bake or copy the asset, so a runtime/computed path is a compile error; load a runtime
+    // file with loadImageFromMemory(readFile(...)) instead). `policy` selects whether the image is read
+    // from disk (LoadFromPath) or decoded from bytes baked into the binary at build time (Embed). nullopt
+    // (the default) falls through to loadImage's per-type default (LoadFromPath — an image is art, the
+    // copyright surface, as an atlas is). A LoadFromPath asset resolves against the runtime asset root
+    // (assetRoot()); an Embed asset the build did not bake falls through to that disk read.
+    ImageId loadImage(LiteralPath path, std::optional<AssetPolicy> policy = {});
+    // Same, from an in-memory PNG byte span (headless tests, a file read at runtime).
+    ImageId loadImageFromMemory(std::span<const std::uint8_t> bytes);
+
     // Bake a closed curve boundary into a signed-distance mask once, returning a handle a region references
     // via ShapePoints::curveMask. A cubic / Catmull-Rom / arbitrary boundary has no closed-form GPU distance;
     // Curve::signedDistance is sampled over the boundary's bounding box (inflated by `padding` px so radius /
@@ -445,6 +478,15 @@ private:
         Vec2            bakeExtent{};   // bake box size (shape-local px)
         int             width = 0, height = 0;
     };
+    // An uploaded image: its own texture (R8G8B8A8_UNORM or R16G16B16A16_UNORM, whichever its pixels
+    // need), at the image's dimensions. ImageId is 1-based (0 = none); images_[id − 1] is this. A raster
+    // layer that names it binds the texture as it is — there is no transfer beside it, because nothing is
+    // uploaded after the call that made it.
+    struct ImageTex {
+        SDL_GPUTexture* texture = nullptr;
+        int             width   = 0;
+        int             height  = 0;
+    };
     // A per-layer tilemap cell texture (R32_UINT, packTileCell'd), recreated when its tile
     // dimensions change, and the state that lets the slot skip re-uploading unchanged content.
     struct TilemapTex {
@@ -511,6 +553,14 @@ private:
 
     // Core indexed-atlas upload (R32_UINT); the public uploadAtlas overloads widen into it.
     AtlasId uploadAtlas32(const std::uint32_t* indices, int width, int height, TransparentIndices transparent);
+
+    // One image texture of `format` at `width` × `height`, filled from `texels` (`bytesPerTexel` each,
+    // row-major) on its own command buffer, submitted at the call; the entry is pushed and its 1-based id
+    // returned. The upload every uploadImage form ends in.
+    ImageId uploadImageTexture(const void* texels, std::size_t bytesPerTexel, SDL_GPUTextureFormat format,
+                               int width, int height);
+    // The ImageId of a decoded PNG: refuses an indexed or grayscale image, uploads a truecolor one.
+    ImageId uploadDecodedImage(const LoadedImage& img);
 
     // Carve an uploaded atlas into its manifest and record the slice geometry on the sheet's
     // AtlasEntry (atlasSlot resolves from it) — the shared carve step every upload/load door runs.
@@ -598,6 +648,7 @@ private:
     void releaseAtlases();
     void releaseTilemaps();
     void releaseRasters();
+    void releaseImages();
     void releaseSpriteBuffers();
     void releaseCustomStages();
     void releaseBatchResources();
@@ -800,6 +851,7 @@ private:
     static const Renderer*   instance_;                // the one renderer (instance()), set at
                                                        // construction; the sprite shape query reads its atlases_
     std::vector<CurveMaskEntry> curveMasks_;           // indexed by CurveMaskId − 1 (1-based; 0 = none)
+    std::vector<ImageTex>       images_;               // indexed by ImageId − 1 (1-based; 0 = none)
     // Per-layer GPU caches keyed by the layer's ObjectKey (DrawLayer::key), not its position in
     // frame.layers — so a slot follows its layer across reorders/spawns/despawns and is reused by
     // identity. Layer counts are small (compositing planes, tens at most), so a string-keyed map is the

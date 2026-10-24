@@ -11,7 +11,7 @@
 //
 // SDL_GPU HLSL conventions (see SDL_CreateGPUShader docs): with no sampled textures, the read-only
 // storage texture takes t0 in space2; the uniform buffer is b0 in space3.
-//   - t0 space2 : the raster (RGBA8; integer Load; row-major, the source's own dimensions)
+//   - t0 space2 : the raster (RGBA8 or RGBA16 UNORM; integer Load; row-major, the source's own dimensions)
 //   - b0 space3 : per-layer uniforms
 
 Texture2D<float4> uRaster : register(t0, space2);
