@@ -310,6 +310,7 @@ template <class T>
             h = foldValue(h, gc.fit.height);
             h = foldValue(h, gc.format);
             h = foldValue(h, gc.generation);
+            h = foldValue(h, gc.image);   // an image named in place of the pixels is a different picture
             break;
         }
     }
@@ -2367,6 +2368,7 @@ int Renderer::resolveComposeScale() const {
 Renderer::~Renderer() {
     releaseSpriteBuffers();
     releaseRasters();
+    releaseImages();
     releaseTilemaps();
     releaseAtlases();
     for (CurveMaskEntry& m : curveMasks_)
@@ -2453,6 +2455,13 @@ void Renderer::releaseRasters() {
         if (entry.second.transfer) SDL_ReleaseGPUTransferBuffer(device_, entry.second.transfer);
     }
     rasters_.clear();
+}
+
+void Renderer::releaseImages() {
+    for (ImageTex& image : images_) {
+        if (image.texture) SDL_ReleaseGPUTexture(device_, image.texture);
+    }
+    images_.clear();
 }
 
 void Renderer::releaseSpriteBuffers() {
@@ -3282,6 +3291,128 @@ PaletteId Renderer::loadPaletteImage(LiteralPath path, ReadOrder order, int coun
     return uploadPalette(slicePaletteImage(img, order, count));   // slice throws on a non-RGBA source
 }
 
+ImageId Renderer::uploadImageTexture(const void* texels, std::size_t bytesPerTexel,
+                                     SDL_GPUTextureFormat format, int width, int height) {
+    // One texture per image, filled once on its own command buffer: the shape bakeCurveMask uploads its
+    // field with, read by the raster pipeline as a storage texture (one integer Load per pixel).
+    SDL_GPUTextureCreateInfo ti{};
+    ti.type                 = SDL_GPU_TEXTURETYPE_2D;
+    ti.format               = format;
+    ti.usage                = SDL_GPU_TEXTUREUSAGE_GRAPHICS_STORAGE_READ;
+    ti.width                = static_cast<Uint32>(width);
+    ti.height               = static_cast<Uint32>(height);
+    ti.layer_count_or_depth = 1;
+    ti.num_levels           = 1;
+    ti.sample_count         = SDL_GPU_SAMPLECOUNT_1;
+    SDL_GPUTexture* tex = SDL_CreateGPUTexture(device_, &ti);
+    if (!tex) fail("SDL_CreateGPUTexture (image) failed");
+
+    const Uint32 bytes = static_cast<Uint32>(static_cast<std::size_t>(width) *
+                                             static_cast<std::size_t>(height) * bytesPerTexel);
+    SDL_GPUTransferBufferCreateInfo tbInfo{};
+    tbInfo.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
+    tbInfo.size  = bytes;
+    SDL_GPUTransferBuffer* transfer = SDL_CreateGPUTransferBuffer(device_, &tbInfo);
+    if (!transfer) fail("SDL_CreateGPUTransferBuffer (image) failed");
+    void* mapped = SDL_MapGPUTransferBuffer(device_, transfer, false);
+    if (!mapped) fail("SDL_MapGPUTransferBuffer (image) failed");
+    std::memcpy(mapped, texels, bytes);
+    SDL_UnmapGPUTransferBuffer(device_, transfer);
+
+    SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(device_);
+    if (!cmd) fail("SDL_AcquireGPUCommandBuffer (image) failed");
+    SDL_GPUCopyPass* copy = SDL_BeginGPUCopyPass(cmd);
+    SDL_GPUTextureTransferInfo src{};
+    src.transfer_buffer = transfer;
+    src.offset          = 0;
+    src.pixels_per_row  = static_cast<Uint32>(width);
+    src.rows_per_layer  = static_cast<Uint32>(height);
+    SDL_GPUTextureRegion dst{};
+    dst.texture = tex;
+    dst.w       = static_cast<Uint32>(width);
+    dst.h       = static_cast<Uint32>(height);
+    dst.d       = 1;
+    SDL_UploadToGPUTexture(copy, &src, &dst, false);
+    SDL_EndGPUCopyPass(copy);
+    SDL_SubmitGPUCommandBuffer(cmd);
+    SDL_ReleaseGPUTransferBuffer(device_, transfer);
+
+    images_.push_back(ImageTex{.texture = tex, .width = width, .height = height});
+    return static_cast<ImageId>(images_.size());  // 1-based; 0 = none
+}
+
+// The one refusal of the upload forms: a dimension that is not positive, or fewer pixels than the
+// dimensions name. Checked before anything is created, so a refused call mints nothing.
+static void requireImageExtent(std::size_t pixels, int width, int height) {
+    if (width <= 0 || height <= 0) {
+        throw std::invalid_argument("uploadImage: width and height must be positive");
+    }
+    if (pixels < static_cast<std::size_t>(width) * static_cast<std::size_t>(height)) {
+        throw std::invalid_argument("uploadImage: fewer pixels than width * height");
+    }
+}
+
+ImageId Renderer::uploadImage(std::span<const Rgba8> pixels, int width, int height) {
+    requireImageExtent(pixels.size(), width, height);
+    return uploadImageTexture(pixels.data(), sizeof(Rgba8), SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM,
+                              width, height);
+}
+
+ImageId Renderer::uploadImage(std::span<const Rgba16> pixels, int width, int height) {
+    requireImageExtent(pixels.size(), width, height);
+    const std::size_t count = static_cast<std::size_t>(width) * static_cast<std::size_t>(height);
+
+    // The depth the pixels need. A channel of the form v · 257 has its high byte equal to its low byte;
+    // an image whose every channel has that form is an 8-bit image (the decoder widens an 8-bit PNG this
+    // way), so it is narrowed back — exact, (v · 257) >> 8 == v — and lands in an 8-bit texture. Any
+    // other value needs the 16 bits and the whole image keeps them.
+    const auto eightBit = [](std::uint16_t v) { return (v >> 8) == (v & 0xFF); };
+    bool fitsEightBits = true;
+    for (std::size_t i = 0; i < count && fitsEightBits; ++i) {
+        const Rgba16 c = pixels[i];
+        fitsEightBits = eightBit(c.r) && eightBit(c.g) && eightBit(c.b) && eightBit(c.a);
+    }
+    if (fitsEightBits) {
+        std::vector<Rgba8> narrow(count);
+        for (std::size_t i = 0; i < count; ++i) {
+            const Rgba16 c = pixels[i];
+            narrow[i] = Rgba8{static_cast<std::uint8_t>(c.r >> 8), static_cast<std::uint8_t>(c.g >> 8),
+                              static_cast<std::uint8_t>(c.b >> 8), static_cast<std::uint8_t>(c.a >> 8)};
+        }
+        return uploadImageTexture(narrow.data(), sizeof(Rgba8), SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM,
+                                  width, height);
+    }
+    return uploadImageTexture(pixels.data(), sizeof(Rgba16), SDL_GPU_TEXTUREFORMAT_R16G16B16A16_UNORM,
+                              width, height);
+}
+
+ImageId Renderer::uploadDecodedImage(const LoadedImage& img) {
+    if (img.kind != ImageColorKind::Rgba) {
+        throw std::runtime_error(
+            "loadImage: a truecolor PNG is required — an indexed or grayscale PNG is atlas art (loadAtlas)");
+    }
+    return uploadImage(std::span<const Rgba16>(img.pixels), img.width, img.height);
+}
+
+ImageId Renderer::loadImage(LiteralPath path, std::optional<AssetPolicy> policy) {
+    // Resolve embed-vs-load: per-call > loadImage's per-type default (LoadFromPath — an image is art, the
+    // copyright surface, as an atlas is). An Embed image decodes from the bytes the build baked in, keyed
+    // by its logical path; if none were baked we fall through to the disk read.
+    if (resolveAssetPolicy(policy, AssetPolicy::LoadFromPath) == AssetPolicy::Embed) {
+        if (const std::span<const std::uint8_t> bytes = detail::findEmbeddedAsset(path.view());
+            !bytes.empty()) {
+            return loadImageFromMemory(bytes);
+        }
+        detail::warnEmbedNotBaked("asset", path.view());
+    }
+    // LoadFromPath (or an un-baked Embed): resolve the logical path against the runtime asset root.
+    return uploadDecodedImage(loadPng(assetRoot() / path.c_str()));  // throws on missing / decode
+}
+
+ImageId Renderer::loadImageFromMemory(std::span<const std::uint8_t> bytes) {
+    return uploadDecodedImage(loadPngFromMemory(bytes));
+}
+
 PaletteId Renderer::uploadPalette(std::span<const Rgba8> colors) {
     // The store keeps 16-bit channels; an 8-bit entry widens losslessly (×257) on the way in.
     const std::size_t first = paletteData_.size();
@@ -3669,6 +3800,7 @@ SDL_GPUTexture* Renderer::composeViewport(SDL_GPUCommandBuffer* cmd, const Frame
         const DrawLayer& layer = frame.layers[idx];
         if (contentKind(layer.content) != LayerContentKind::Raster) continue;
         const RasterContent& gc = std::get<RasterContent>(layer.content);
+        if (gc.image != ImageId{}) continue;  // an image the renderer holds: bound as it is, nothing uploaded
         if (gc.width <= 0 || gc.height <= 0) continue;
         const std::size_t needed = static_cast<std::size_t>(gc.width) *
                                    static_cast<std::size_t>(gc.height) * bytesPerPixel(gc.format);
@@ -4727,10 +4859,27 @@ SDL_GPUTexture* Renderer::composeViewport(SDL_GPUCommandBuffer* cmd, const Frame
             SDL_DrawGPUPrimitives(pass, 3, 1, 0, 0);  // one fullscreen triangle
         } else if (contentKind(layer.content) == LayerContentKind::Raster) {
             const RasterContent& gc = std::get<RasterContent>(layer.content);
-            if (gc.width <= 0 || gc.height <= 0) return;
-            const RasterTex* slotP = rasterSlot[idx];
-            if (!slotP || !slotP->texture || slotP->uploadedGeneration == 0) return;  // nothing resident
-            const RasterTex& slot = *slotP;
+
+            // What is bound and how big it is: the image the layer names, or the slot its pixels landed
+            // in. An image the renderer never minted, like a slot holding nothing, draws nothing.
+            SDL_GPUTexture* texture = nullptr;
+            int             rasterW = 0;
+            int             rasterH = 0;
+            if (gc.image != ImageId{}) {
+                const std::size_t at = static_cast<std::size_t>(gc.image) - 1;
+                if (at >= images_.size()) return;
+                const ImageTex& image = images_[at];
+                texture = image.texture;
+                rasterW = image.width;
+                rasterH = image.height;
+            } else {
+                if (gc.width <= 0 || gc.height <= 0) return;
+                const RasterTex* slotP = rasterSlot[idx];
+                if (!slotP || !slotP->texture || slotP->uploadedGeneration == 0) return;  // nothing resident
+                texture = slotP->texture;
+                rasterW = gc.width;
+                rasterH = gc.height;
+            }
 
             RasterUniforms u{};
             // Scroll places at the eased float on the interpolation path, exactly as a tile layer's
@@ -4747,12 +4896,12 @@ SDL_GPUTexture* Renderer::composeViewport(SDL_GPUCommandBuffer* cmd, const Frame
             u.scrollY      = scrollY;
             u.layerW       = static_cast<float>(composeW_);   // compose grid (output res on the interp path)
             u.layerH       = static_cast<float>(composeH_);
-            u.rasterW      = static_cast<float>(gc.width);
-            u.rasterH      = static_cast<float>(gc.height);
+            u.rasterW      = static_cast<float>(rasterW);
+            u.rasterH      = static_cast<float>(rasterH);
             // The size the raster fills: what `fit` names, or the raster's own on an axis left at 0. An
             // unset fit makes the ratio the fragment scales by exactly one, so the texel is the pixel's.
-            u.fitW         = static_cast<float>(gc.fit.width  > 0 ? gc.fit.width  : gc.width);
-            u.fitH         = static_cast<float>(gc.fit.height > 0 ? gc.fit.height : gc.height);
+            u.fitW         = static_cast<float>(gc.fit.width  > 0 ? gc.fit.width  : rasterW);
+            u.fitH         = static_cast<float>(gc.fit.height > 0 ? gc.fit.height : rasterH);
             u.alpha        = clampAlpha(layer.alpha);
             u.composeScale = static_cast<float>(composeScale_);
             u.snap         = snapF;
@@ -4766,7 +4915,7 @@ SDL_GPUTexture* Renderer::composeViewport(SDL_GPUCommandBuffer* cmd, const Frame
 
             // One read-only storage texture — the raster itself — and no sampler: the fragment Loads the
             // texel its source drew.
-            SDL_GPUTexture* storageTextures[1] = {slot.texture};
+            SDL_GPUTexture* storageTextures[1] = {texture};
             SDL_BindGPUGraphicsPipeline(pass, raster_);
             SDL_BindGPUFragmentStorageTextures(pass, 0, storageTextures, 1);
             SDL_PushGPUFragmentUniformData(cmd, 0, &u, sizeof(u));

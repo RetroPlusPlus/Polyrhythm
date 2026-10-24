@@ -8,6 +8,10 @@
 // choose: a machine that draws 256×224 says 256×224, and a source whose native layout is not one of
 // the enumerators below adds one rather than paying for a conversion.
 //
+// A raster may instead be an image the renderer already holds — a truecolor PNG registered once through
+// Renderer::loadImage — named by its ImageId. The layer then carries no pixels at all: the renderer binds
+// the image's own texture, at the image's own dimensions, and nothing is uploaded for it on any frame.
+//
 // `generation` is how many rasters the source has finished. It answers the only question anything
 // downstream asks — is the raster I am holding still the current one — without asking WHEN it changed.
 // For a machine's picture the platform counts the completions the machine reported, so a machine
@@ -31,6 +35,7 @@
 #include <span>
 
 #include "retropp/geometry.h"  // PixelSize
+#include "retropp/image.h"     // ImageId
 
 namespace retropp {
 
@@ -69,6 +74,12 @@ struct RasterContent {
     // non-zero generation carry the same picture, so what is already on the GPU stays there and nothing
     // is sent again; generation 0 is sent every time.
     std::uint64_t     generation = 0;
+    // An image the renderer holds (Renderer::loadImage / uploadImage), shown as this raster. Set, the
+    // image's own width, height and depth are the raster's, nothing is uploaded for it on any frame, and
+    // `pixels`, `width`, `height`, `format` and `generation` are not read; `fit` and the layer's scroll,
+    // alpha, blend and transform apply as to any raster. Unset — ImageId{}, the default — the raster is
+    // `pixels`. An id the renderer never minted draws nothing.
+    ImageId           image{};
 };
 
 }  // namespace retropp

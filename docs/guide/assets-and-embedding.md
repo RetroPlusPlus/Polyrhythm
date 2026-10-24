@@ -1,7 +1,7 @@
 # Assets — embed vs. load-from-path
 
-Everything the platform ingests from a file — an atlas image (`loadAtlas`), a map PNG (`loadMapPng`), a
-palette image (`loadPaletteImage`), a chiptune or PCM track (`registerAudio`), a VM routine
+Everything the platform ingests from a file — an atlas image (`loadAtlas`), a truecolor image
+(`loadImage`), a map PNG (`loadMapPng`), a palette image (`loadPaletteImage`), a chiptune or PCM track (`registerAudio`), a VM routine
 (`registerRoutine`), arbitrary game data (`registerData`) — is delivered one of two ways, and **the
 choice lives in your code, not in the build system**:
 
@@ -37,6 +37,7 @@ Each ingestible family has the same pair of forms. They differ only in what you 
 | Family | Path form (policy-governed) | Bytes form (you brought the bytes) |
 |---|---|---|
 | atlas image   | `Renderer::loadAtlas(path, …)`         | `Renderer::loadAtlasFromMemory(bytes, …)` |
+| truecolor image | `Renderer::loadImage(path, …)`       | `Renderer::loadImageFromMemory(bytes)` |
 | map PNG       | `loadMapPng(path, …)`                  | `loadMapPngFromMemory(bytes, …)` |
 | palette image | `Renderer::loadPaletteImage(path, …)`  | *(none — compose `uploadPalette(slicePaletteImage(…))`)* |
 | audio         | `AudioLibrary::registerAudio(path, …)` | `AudioLibrary::uploadAudio(bytes, …)` *(chiptune only)* |
@@ -88,6 +89,7 @@ The effective policy is resolved by precedence (`resolveAssetPolicy`):
    | Call | Input | Per-type default | Why |
    |---|---|---|---|
    | `loadAtlas`       | atlas image                            | `LoadFromPath` | atlases are the most likely copyright surface |
+   | `loadImage`       | truecolor image                        | `LoadFromPath` | an image is art, the copyright surface, as an atlas is |
    | `loadMapPng`      | map PNG                                 | `Embed`        | bespoke build-time index data, not a shippable asset |
    | `loadPaletteImage`| palette image (colour PNG)              | `Embed`        | bespoke build-time colour data, like a map PNG |
    | `registerAudio`   | chiptune (`.asm`)                       | `Embed`        | a driver is a few hundred bytes — assembled to bytecode at build, only bytecode ships |
@@ -250,8 +252,8 @@ The atlas slicer's exhaustive demo (`atlas_load_demo`) reads a runtime table of 
 
 ## What the build does, automatically
 
-The build scans each linking target's sources for `loadAtlas` / `loadMapPng` / `loadPaletteImage` /
-`registerAudio` / `registerRoutine` / `registerData` calls, resolves each input's policy by the precedence
+The build scans each linking target's sources for `loadAtlas` / `loadImage` / `loadMapPng` /
+`loadPaletteImage` / `registerAudio` / `registerRoutine` / `registerData` calls, resolves each input's policy by the precedence
 above, and:
 
 - **Embed** → bakes the bytes into the binary (an atlas/PNG's raw bytes, or a `.asm`'s assembled bytecode),
@@ -286,7 +288,7 @@ call with the same policy argument bakes or ships the `.asm` the same way.
 
 ## Status
 
-Every form listed here is realized: atlas images, map PNGs, palette images, chiptune and PCM audio, VM
+Every form listed here is realized: atlas images, truecolor images, map PNGs, palette images, chiptune and PCM audio, VM
 routines, and data assets all resolve their policy and embed-or-load today. A PCM track decodes and
 streams on an `AudioKind::Pcm` system (see [audio.md](audio.md)); a palette image is embedded/loaded and
 sliced into a palette (see [tiles-and-colour.md](tiles-and-colour.md)); a data asset is handed back as

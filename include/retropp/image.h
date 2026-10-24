@@ -100,6 +100,14 @@ struct IndexGrid {
 // is sized to the real ceiling (thousands of sheets) with headroom, not to 32-bit billions.
 enum class AtlasId : std::uint16_t {};
 
+// A handle to an uploaded truecolor image the renderer owns — one texture per image, at the depth its
+// pixels need. A raster layer names it (RasterContent::image) and shows the image as its raster, with
+// nothing uploaded per frame. Sibling to AtlasId (atlas pixels) and PaletteId (colors): it lives here
+// beside the image loaders it is minted from (Renderer::uploadImage / loadImage / loadImageFromMemory,
+// renderer.h). 1-based — the default-constructed ImageId{} names no image, so a RasterContent whose
+// `image` is left unset is the raster its `pixels` carry.
+enum class ImageId : std::uint32_t {};
+
 // A per-sheet set of palette indices that render as structural HOLES: a fragment whose palette index
 // is in the set is DISCARDED (the layer below shows through), never drawn. This is the STRUCTURAL
 // transparency layer, distinct from a palette entry's own alpha (MATERIAL transparency, which blends).
