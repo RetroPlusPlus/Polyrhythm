@@ -3,7 +3,7 @@
 // Every case here runs against MockVmBackend — a flat byte array whose reads and writes ask
 // whatever is watching, exactly as a real core's memory path does. What is being pinned is that
 // declaring watches, validating a batch, routing an access to the right handler, realizing each
-// verdict, and arming/disarming are the HOST layer's behaviour: they work with no console core
+// verdict, and arming/disarming are the HOST layer's behavior: they work with no console core
 // underneath, so no part of them can have been designed around one core's capabilities.
 
 #include <cstdint>

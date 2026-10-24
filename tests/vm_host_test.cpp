@@ -25,7 +25,7 @@ namespace {
 
 // Poke a known byte into a memory address on a VM, so RNG state is deterministic for the test. A RET
 // routine whose single input binds to the address: invoke() writes the input to memory before the
-// (no-op) run — the engine's memory-input marshalling used as a seed primitive.
+// (no-op) run — the engine's memory-input marshaling used as a seed primitive.
 void pokeByte(Vm& vm, std::uint16_t addr, std::uint8_t value) {
     static constexpr std::array<std::uint8_t, 1> kRet{0xC9};
     auto poke = vm.uploadRoutine<void(std::uint8_t)>(

@@ -38,7 +38,7 @@ TEST(EmissionChainPlan, ZeroIntensityIsAnIdentityForBothKinds) {
 
 // The gates differ by kind, and each reproduces what that kind has always done. Glow early-outs on a
 // non-positive radius (no reach, no aura, whatever the intensity); Bloom does NOT — at radius 0 its kernel
-// degenerates to a single centre tap and it still adds its own un-blurred brightpass back over itself.
+// degenerates to a single center tap and it still adds its own un-blurred brightpass back over itself.
 TEST(EmissionChainPlan, ZeroRadiusGatesGlowButNotBloom) {
     ScreenSpaceEffect glow{.kind = ScreenSpaceEffectKind::Glow};
     glow.radius = 0.0f; glow.intensity = 255;
@@ -50,7 +50,7 @@ TEST(EmissionChainPlan, ZeroRadiusGatesGlowButNotBloom) {
     bloom.radius = 0.0f; bloom.intensity = 255;
     const EmissionChainPlan p = emissionChainPlan(bloom);
     EXPECT_TRUE(p.engaged);
-    EXPECT_EQ(p.taps, 0);          // one centre tap
+    EXPECT_EQ(p.taps, 0);          // one center tap
     EXPECT_FALSE(p.downsample);
     EXPECT_FLOAT_EQ(p.invNorm, 1.0f);
 }
@@ -131,7 +131,7 @@ struct Field {
     }
 };
 
-// The gather the single-pass shaders ran: every (dx, dy) of the neighbourhood, weighted by the product of
+// The gather the single-pass shaders ran: every (dx, dy) of the neighborhood, weighted by the product of
 // the per-axis weights, normalized by invNorm².
 [[nodiscard]] float twoDimensionalGather(const Field& f, int x, int y, float radius,
                                          const GaussianKernel& k) {

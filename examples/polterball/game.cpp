@@ -56,7 +56,7 @@ void PolterGame::parkBall() {
     ballVy = 0;
 }
 
-// Aim the ball UPWARD with a desired horizontal velocity plus a tiny random jitter, renormalised so
+// Aim the ball UPWARD with a desired horizontal velocity plus a tiny random jitter, renormalized so
 // |v| ≈ ballSpeed. The jitter keeps the ball off any perfectly-periodic orbit — it always drifts
 // enough to reach every corridor eventually.
 void PolterGame::aimBallUp(float desiredVx) {
@@ -152,7 +152,7 @@ void PolterGame::collideMaze() {
 }
 
 void PolterGame::eatAtBallCell() {
-    // Dots: the cell under the ball's CENTRE (eating is about where the ball is, not what it grazes).
+    // Dots: the cell under the ball's CENTER (eating is about where the ball is, not what it grazes).
     const float bcx = ballX + kBallSz / 2, bcy = ballY + kBallSz / 2;
     const int   c   = static_cast<int>(bcx) / kCell;
     const int   r   = (static_cast<int>(bcy) - kMazeTop) / kCell;
@@ -164,7 +164,7 @@ void PolterGame::eatAtBallCell() {
         emit(GameEventKind::PelletEat, cellPxX(c), cellPxY(r));
     }
 
-    // Power pellets: a real 16×16 pickup at its cell centre — overlap, not centre-cell, so a fast
+    // Power pellets: a real 16×16 pickup at its cell center — overlap, not center-cell, so a fast
     // graze still collects it.
     for (int i = 0; i < board.powerCount; ++i) {
         if (!board.powerAlive[static_cast<std::size_t>(i)]) continue;
@@ -259,8 +259,8 @@ void PolterGame::tick(const InputState& in) {
         eatAtBallCell();
         if (board.pelletsLeft == 0) { nextBoard(); return; }
 
-        // Paddle: bounce up with english from where on the paddle the ball hit (centre = straight
-        // up, edges = a steep angle). Speed is renormalised so |v| stays ≈ ballSpeed.
+        // Paddle: bounce up with english from where on the paddle the ball hit (center = straight
+        // up, edges = a steep angle). Speed is renormalized so |v| stays ≈ ballSpeed.
         if (ballVy > 0 &&
             ballX < paddleX + kPaddleW && ballX + kBallSz > paddleX &&
             ballY + kBallSz >= kPaddleY && ballY + kBallSz <= kPaddleY + kPaddleH + 6) {

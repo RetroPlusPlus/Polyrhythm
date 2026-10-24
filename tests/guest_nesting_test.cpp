@@ -2,8 +2,8 @@
 //
 // Every case here runs against MockVmBackend — a flat byte array, a scripted walk, and a call that
 // records the ask it was made with and runs whatever the test says the routine does. What is being
-// pinned is that binding a routine, validating it, marshalling a call in each direction, choosing
-// whose stack the frame belongs on and tolerating any depth at all are the HOST layer's behaviour:
+// pinned is that binding a routine, validating it, marshaling a call in each direction, choosing
+// whose stack the frame belongs on and tolerating any depth at all are the HOST layer's behavior:
 // they work with no console core underneath, so no part of them can have been designed around one
 // core's capabilities. What only a CPU can answer is in sameboy_nesting_test.cpp.
 

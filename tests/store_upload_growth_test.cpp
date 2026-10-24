@@ -1,5 +1,5 @@
 // Store uploads write only what they append. The palette store and the atlas store each hold everything a
-// game has uploaded, and an upload adds to the end: it writes its own colours or its own pixels into the
+// game has uploaded, and an upload adds to the end: it writes its own colors or its own pixels into the
 // room the store texture already has, and recreates the texture only when the content outgrows it.
 //
 // Two halves. The device-free half pins the destination rectangles and the growth decision — a rectangle
@@ -59,7 +59,7 @@ TEST(PaletteAppendGeometry, ARunStartsAtItsOwnFlatOffset) {
 }
 
 TEST(PaletteAppendGeometry, ARunReachingTheRowEdgeContinuesOnTheNextRow) {
-    // 14 of the 16 columns are taken, so a run of 4 puts 2 colours on this row and 2 on the next.
+    // 14 of the 16 columns are taken, so a run of 4 puts 2 colors on this row and 2 on the next.
     const auto where = paletteAppend(/*first=*/14, /*count=*/4, kW);
     EXPECT_EQ(where.head, (StoreRect{.x = 14, .y = 0, .w = 2, .h = 1}));
     ASSERT_TRUE(where.wraps());
@@ -148,7 +148,7 @@ std::vector<std::uint8_t> sheetPixels(int width, int height, int seed) {
     return px;
 }
 
-// Four colours far enough apart that a wrong palette row is visible, seeded so each palette differs.
+// Four colors far enough apart that a wrong palette row is visible, seeded so each palette differs.
 std::vector<Rgba8> paletteColors(int seed) {
     return {Rgba8{static_cast<std::uint8_t>(20 + seed * 30), 20, 30, 255},
             Rgba8{200, static_cast<std::uint8_t>(60 + seed * 20), 60, 255},
@@ -156,7 +156,7 @@ std::vector<Rgba8> paletteColors(int seed) {
             Rgba8{230, 230, 240, 255}};
 }
 
-// Filler colours so a later palette lands at a chosen flat offset.
+// Filler colors so a later palette lands at a chosen flat offset.
 std::vector<Rgba8> fillerColors(std::size_t count) {
     std::vector<Rgba8> px(count);
     for (std::size_t i = 0; i < count; ++i)
@@ -190,7 +190,7 @@ std::vector<Rgba8> renderSheet(Renderer& r, AtlasId atlas, PaletteId palette) {
     return ::testing::AssertionSuccess();
 }
 
-// An image with one colour in it would compare equal to any other such image, so every comparison below
+// An image with one color in it would compare equal to any other such image, so every comparison below
 // first establishes that the scene actually drew the sheet.
 ::testing::AssertionResult carriesArt(const std::vector<Rgba8>& px) {
     if (px.empty()) return ::testing::AssertionFailure() << "captured nothing";
@@ -258,7 +258,7 @@ TEST_F(StoreUploadTest, AnAppendedPaletteRendersAsARewrittenOneDoes) {
     (void)rewritten.uploadPalette(std::span<const Rgba8>(paletteColors(0)));
     (void)rewritten.uploadPalette(std::span<const Rgba8>(paletteColors(1)));
     const PaletteId subjectB = rewritten.uploadPalette(std::span<const Rgba8>(paletteColors(2)));
-    // Past the rows the store holds, so every colour in it — the subject included — is written again.
+    // Past the rows the store holds, so every color in it — the subject included — is written again.
     (void)rewritten.uploadPalette(
         std::span<const Rgba8>(fillerColors(2u * static_cast<std::size_t>(kPaletteStoreWidth))));
     const std::vector<Rgba8> fromRewrite = renderSheet(rewritten, atlasB, subjectB);
@@ -268,9 +268,9 @@ TEST_F(StoreUploadTest, AnAppendedPaletteRendersAsARewrittenOneDoes) {
     EXPECT_TRUE(sameImage(fromAppend, fromRewrite));
 }
 
-// A palette whose colours cross the store's row edge is written as two rectangles, and renders exactly as
-// it does after the whole store has been written afresh. The store is 16384 colours wide, so the subject
-// is placed two colours short of the edge and half of it lands on the next row.
+// A palette whose colors cross the store's row edge is written as two rectangles, and renders exactly as
+// it does after the whole store has been written afresh. The store is 16384 colors wide, so the subject
+// is placed two colors short of the edge and half of it lands on the next row.
 TEST_F(StoreUploadTest, APaletteCrossingTheRowEdgeRendersAsARewrittenOneDoes) {
     const std::vector<std::uint8_t> sheet    = sheetPixels(16, 16, /*seed=*/2);
     const std::size_t               toTheEdge = static_cast<std::size_t>(kPaletteStoreWidth) - 2u;

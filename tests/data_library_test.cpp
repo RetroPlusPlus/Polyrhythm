@@ -10,7 +10,7 @@
 // The most important case in the file is the one that asserts a registration with NO policy argument was
 // never baked. The family's per-type default is LoadFromPath because a data asset is the one most likely
 // to be derived from content a game cannot redistribute, and that promise is only worth anything if the
-// build honours it without being asked.
+// build honors it without being asked.
 
 #include <gtest/gtest.h>
 
@@ -123,7 +123,7 @@ TEST(DataAssetScan, AnEmbedDataFileLandsInTheAssetRegistryOnly) {
 
 // The asset root is process-global, so it is saved and restored around every case here. These logical
 // paths name no file under the project root, so the build scan skips them entirely (its documented
-// behaviour for an absent file) and this fixture owns the only copy on disk.
+// behavior for an absent file) and this fixture owns the only copy on disk.
 class DataLibraryDisk : public ::testing::Test {
 protected:
     void SetUp() override {

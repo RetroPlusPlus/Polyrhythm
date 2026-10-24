@@ -74,7 +74,7 @@ TEST(ApplyBlendMode, OpaqueOperators) {
 
 // ── applyBlendMode — clamping at the range extremes ────────────────────────────────────
 
-// Add saturates at 1; Subtract floors at 0. The clamp keeps the output a valid colour.
+// Add saturates at 1; Subtract floors at 0. The clamp keeps the output a valid color.
 TEST(ApplyBlendMode, ClampsToUnitRange) {
     EXPECT_FLOAT_EQ(opaqueBlend(Vec4{0.8f, 0, 0, 1}, Vec4{0.5f, 0, 0, 1}, BlendMode::Add).x, 1.0f);
     EXPECT_FLOAT_EQ(opaqueBlend(Vec4{0.2f, 0, 0, 1}, Vec4{0.5f, 0, 0, 1}, BlendMode::Subtract).x, 0.0f);
@@ -99,13 +99,13 @@ TEST(ApplyBlendMode, SourceAlphaWeightsTheOperator) {
 
 // ── ColorFill grade equivalence (Region::blend) ────────────────────────────────────────
 
-// A ColorFill effect is a solid colour SOURCE (out.rgb = fill, opaque). Its owning Region's blend grades
-// how that colour combines over the scene: blend = Multiply darkens the scene by the fill (a shadow /
+// A ColorFill effect is a solid color SOURCE (out.rgb = fill, opaque). Its owning Region's blend grades
+// how that color combines over the scene: blend = Multiply darkens the scene by the fill (a shadow /
 // tint), blend = Add brightens it (a glow). The grade is exactly applyBlendMode — the dropped ColorFill
 // mul/add grade lands here.
 TEST(ColorFillGrade, MultiplyTintAndAddGlow) {
     constexpr Vec4 scene{0.6f, 0.6f, 0.6f, 1.0f};
-    constexpr Vec4 fill{0.5f, 0.5f, 0.5f, 1.0f};  // the ColorFill colour as an opaque source
+    constexpr Vec4 fill{0.5f, 0.5f, 0.5f, 1.0f};  // the ColorFill color as an opaque source
     // Multiply grade = scene · fill (a 50% shadow).
     EXPECT_FLOAT_EQ(applyBlendMode(scene, fill, BlendMode::Multiply).x, 0.3f);
     // Add grade = scene + fill, clamped (a glow toward white).

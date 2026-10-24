@@ -2,7 +2,7 @@
 // <ns>_emission_rect variant (gen_shader.cmake EMISSION_RECT mode) injects this at emission_extract_rect.frag's
 // `@retropp:emission-rect-hook`, so an emission-declared game shader's `float4 emission(float2 uv)` body runs
 // to AUTHOR a Below-scope Custom lens's field over the field's rect. Where retropp_sprite_below_effect's
-// sampleSource() reads the scene for a lens's colour, here it reads the scene for the lens's EMISSION content —
+// sampleSource() reads the scene for a lens's color, here it reads the scene for the lens's EMISSION content —
 // the SAME body a frame-class emission extract runs (gen_shader EMISSION_EXTRACT), just over a rect.
 //
 //   * sampleSource(uv) reads the SCENE (SourceTexture — the accumulator this extract pass binds) under the
@@ -19,7 +19,7 @@
 Texture2D<float4> uFxStore : register(t1, space2);   // the below Custom lens's effect record (its packed params)
 
 // Per-fragment evaluation context (set by the generated wrapper before the body runs; the standard preamble's
-// retroppTrueUv / retroppEvalUv). On the Viewport grid the body evaluates at the snapped viewport-cell centre
+// retroppTrueUv / retroppEvalUv). On the Viewport grid the body evaluates at the snapped viewport-cell center
 // and sampleSource() quantizes a requested displacement to whole viewport px; on the Output grid it passes
 // through.
 static float2 retroppTrueUv;
@@ -36,7 +36,7 @@ static float uViewportH    = 0.0f;
 static uint  uRowTableY    = 0u;
 static uint  uRowTableRows = 0u;
 
-// The centre of the viewport cell `uv` falls in — the crisp evaluation point (mirrors retropp_effect.hlsli's
+// The center of the viewport cell `uv` falls in — the crisp evaluation point (mirrors retropp_effect.hlsli's
 // retroppSnapToCellCenter). A non-positive dimension leaves that axis unchanged.
 float2 retroppSnapToCellCenter(float2 uv) {
     float2 c = uv;

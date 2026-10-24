@@ -7,7 +7,7 @@
 // mixes them: an Embed boot image beside a LoadFromPath one that must never end up inside the binary.
 //
 // An image may also be given as inline BYTES, which carry no path for the scan to read. Such an image is
-// invisible to the build by construction, and the cases at the bottom hold that: its neighbours resolve
+// invisible to the build by construction, and the cases at the bottom hold that: its neighbors resolve
 // exactly as they would without it, and nothing of it reaches any registry.
 //
 // The declarations under test are in tests/registry_linkage/, whose two bindings carry every case. What

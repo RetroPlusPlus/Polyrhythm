@@ -14,7 +14,7 @@ using namespace std::chrono_literals;
 
 namespace {
 
-// Scale a colour channel-wise (the one helper behind every "same ramp, darker" palette variant).
+// Scale a color channel-wise (the one helper behind every "same ramp, darker" palette variant).
 Rgba8 scale(Rgba8 c, float f) {
     auto ch = [&](std::uint8_t v) {
         return static_cast<std::uint8_t>(std::clamp(static_cast<int>(static_cast<float>(v) * f), 0, 255));
@@ -114,7 +114,7 @@ VantAssets loadVantAssets(Renderer& renderer) {
     a.textPals[TXT_CYAN]  = fp({42, 120, 136}, {63, 160, 176}, {100, 200, 212}, {168, 236, 244});
 
     // ── The shared clips. The boom is FRAME animation (art changes); the pod pulse and the star
-    //    twinkle are PALETTE animation (the art holds, the colours breathe) — both idioms, live.
+    //    twinkle are PALETTE animation (the art holds, the colors breathe) — both idioms, live.
     a.boomClip = Animation{{
         {.label = "flash",  .sheet = a.sheet.atlasId, .tileIndex = S_BOOM0, .palette = a.spritePals[PAL_BOOM], .duration = 70ms},
         {.label = "blast",  .sheet = a.sheet.atlasId, .tileIndex = S_BOOM1, .palette = a.spritePals[PAL_BOOM], .duration = 70ms},

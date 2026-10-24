@@ -2,10 +2,10 @@
 
 // Ferryman — the ASSET LOADER, its own translation unit. Slices the three committed indexed PNGs,
 // loads EVERY palette from a PALETTE IMAGE (a 16x1 RGBA PNG under assets/palettes/, one pixel per
-// entry, alpha included — loadPaletteImage; no colour table is hand-written in C++), and builds
+// entry, alpha included — loadPaletteImage; no color table is hand-written in C++), and builds
 // the shared Animation clips: the ferry's thruster flicker, the three colonist idle bobs, the
 // abductor's wing-light blink, the mutant pulse, the explosion flipbook, the beacon's glow cycle
-// + the water shimmer (both pure PALETTE animation — the art holds, the colours breathe), and the
+// + the water shimmer (both pure PALETTE animation — the art holds, the colors breathe), and the
 // vehicle running-light phase. Everything is Embed — the built binary is self-contained; see
 // assets.cpp for the policy, decided per call.
 
@@ -31,9 +31,9 @@ struct FerrymanAssets {
     // Every palette below came off a palette IMAGE (assets/palettes/<name>.png).
     std::vector<retropp::PaletteId>   spritePals;   // indexed by the Pal enum (layout.h)
     std::array<retropp::PaletteId, 8> terrainPals{};  // indexed by TerrainPal
-    // Two liveries per text colour, differing ONLY in entry 0 (the glyph cell's background):
+    // Two liveries per text color, differing ONLY in entry 0 (the glyph cell's background):
     //   textPals — entry 0 is ALPHA-0 (a material hole): text floats over whatever is behind it.
-    //   hudPals  — entry 0 is the opaque HUD-bar colour: the band's fill, text, and rule.
+    //   hudPals  — entry 0 is the opaque HUD-bar color: the band's fill, text, and rule.
     std::array<retropp::PaletteId, 3> textPals{};  // indexed by TextPal
     std::array<retropp::PaletteId, 3> hudPals{};   // indexed by TextPal
     retropp::PaletteId                titlePal{};  // the title set's own livery (alpha-0 backed)

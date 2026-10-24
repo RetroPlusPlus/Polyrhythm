@@ -40,7 +40,7 @@ inline constexpr bool kDeviceOptional = true;
 inline constexpr bool kDeviceOptional = false;
 #endif
 
-// A small deterministic indexed atlas (16×16 px = a 2×2 tile grid, indices 0..3) + a 4-colour palette.
+// A small deterministic indexed atlas (16×16 px = a 2×2 tile grid, indices 0..3) + a 4-color palette.
 struct BaseArt {
     AtlasId   atlas{};
     PaletteId palette{};
@@ -140,7 +140,7 @@ protected:
 // their content is unchanged, so tilemapSkips/spriteSkips grow while the upload counters stay flat. Driven via
 // captureViewport: it composes unconditionally (the copy pass runs every call), so the per-upload skip is
 // observed in isolation. renderFrame would frame-skip the second identical settled submission whole (the
-// frame-level compose skip), never reaching the copy pass — a separate behaviour, pinned in compose_skip_test.
+// frame-level compose skip), never reaching the copy pass — a separate behavior, pinned in compose_skip_test.
 TEST_F(RenderStatsTest, CountersAccumulateAcrossFrames) {
     Renderer r{device_, /*window=*/nullptr, ViewportResolution{kW, kH}};
     r.automaticInterpolation(false);  // composite verbatim — deterministic per-frame uploads

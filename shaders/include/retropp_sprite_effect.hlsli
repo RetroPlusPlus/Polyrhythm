@@ -39,7 +39,7 @@ static uint  uSnap         = 0u;
 static float uViewportW    = 0.0f;
 static float uViewportH    = 0.0f;
 
-// The centre of the ART cell `uv` falls in (the sprite's own art-pixel grid) — the sprite-path analogue of the
+// The center of the ART cell `uv` falls in (the sprite's own art-pixel grid) — the sprite-path analog of the
 // standard preamble's retroppSnapToCellCenter (which snaps to the viewport grid). A body that snaps gets the
 // sprite's art granularity. A non-positive dimension leaves that axis unchanged.
 float2 retroppSnapToCellCenter(float2 uv) {

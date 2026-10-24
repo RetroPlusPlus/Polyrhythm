@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
-"""Author the animation demo's numbered, single-colour indexed tileset.
+"""Author the animation demo's numbered, single-color indexed tileset.
 
 The animation demo (examples/animation_demo.cpp) must let you SEE the difference between frame
 animation and palette-cycling animation. The atlas-load demo's sheets bake a DIFFERENT hue into
 each cell (cell 0 red, cell 1 orange, …), so an animation that merely advances the frame ALSO
-appears to change colour — which makes frame animation indistinguishable from palette cycling.
+appears to change color — which makes frame animation indistinguishable from palette cycling.
 
 This sheet fixes that: every cell uses the SAME two palette indices — index 0 background, index 1
 the digit — and differs ONLY in the digit's SHAPE. So under one fixed palette the six numbered
-cells are the same colour and differ only by their number (frame animation = the number changes,
-colour constant), while holding one cell and swapping the palette recolours that single number
-(palette cycling = colour changes, number constant). The numbers stay so the frame change is
+cells are the same color and differ only by their number (frame animation = the number changes,
+color constant), while holding one cell and swapping the palette recolors that single number
+(palette cycling = color changes, number constant). The numbers stay so the frame change is
 visible either way.
 
 These are engine-original images (no third-party art). One-time authoring tool, kept
@@ -46,7 +46,7 @@ DIGITS: dict[int, list[str]] = {
 
 # Exactly TWO indices, IDENTICAL in every cell: 0 = background, 1 = digit. Because the index plane
 # of every cell uses the same two indices, a single fixed palette renders all six numbers the same
-# colour (they differ only by digit shape) — and swapping the palette recolours the digit. The PLTE
+# color (they differ only by digit shape) — and swapping the palette recolors the digit. The PLTE
 # below is only for viewing the raw PNG; the demo uploads its own palettes. Kept legible/grayscale.
 PALETTE: list[tuple[int, int, int, int]] = [
     (28, 28, 34, 255),     # 0 background — dark
@@ -72,11 +72,11 @@ def _png_indexed8(width: int, height: int, indices: list[list[int]]) -> bytes:
 
 
 def cell_plane(ordinal: int) -> list[list[int]]:
-    """One 8×8 cell: background index 0 everywhere, the ordinal's digit in index 1 centred. Every
+    """One 8×8 cell: background index 0 everywhere, the ordinal's digit in index 1 centered. Every
     cell uses the SAME two indices — only the digit's shape changes between cells."""
     cell = [[0 for _ in range(CELL)] for _ in range(CELL)]  # all background (index 0)
     glyph = DIGITS[ordinal]
-    xoff, yoff = 2, 1  # centre the 3×5 glyph in the 8×8 cell
+    xoff, yoff = 2, 1  # center the 3×5 glyph in the 8×8 cell
     for gy, grow in enumerate(glyph):
         for gx, on in enumerate(grow):
             if on == "1":

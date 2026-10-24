@@ -153,7 +153,7 @@ bool readBlob(const std::filesystem::path& p, int& w, int& h, std::vector<Rgba8>
 }
 
 // A small deterministic indexed atlas (16×16 px = a 2×2 tile grid, indices 0..3 in a blocky pattern)
-// and a 4-colour palette. Shared by every scene so the composite is identical art across the battery.
+// and a 4-color palette. Shared by every scene so the composite is identical art across the battery.
 struct BaseArt {
     AtlasId   atlas{};
     PaletteId palette{};
@@ -509,7 +509,7 @@ TEST_F(GoldenReadback, MultiplyBrighten) {
     Renderer r{device_, nullptr, ViewportResolution{kW, kH}};
     const BaseArt art = uploadBaseArt(r);
 
-    // Baseline: the base composite with no whole-frame colour.
+    // Baseline: the base composite with no whole-frame color.
     FrameDrawState base;
     SceneBacking  bb;
     addBaseScene(base, art, bb);
@@ -550,9 +550,9 @@ TEST_F(GoldenReadback, MultiplyBrighten) {
     runScene("multiply_brighten", Tol::OneStep, frame, r);
 }
 
-// The built-in Gleam effect on-device: a luminance-keyed diagonal sheen band. Two behavioural properties,
+// The built-in Gleam effect on-device: a luminance-keyed diagonal sheen band. Two behavioral properties,
 // checked per-backend against a no-effect baseline of the same scene (no committed golden image — the exact
-// per-pixel math is the device-free applyGleam mirror; this pins the GPU path's behaviour):
+// per-pixel math is the device-free applyGleam mirror; this pins the GPU path's behavior):
 //   - gain 0 is an EXACT identity — the scene is byte-identical to no effect at all (the default no-op).
 //   - gain > 0 only ever BRIGHTENS (multiply by >= 1 plus a luminance-keyed lift): no pixel darkens, and at
 //     least one in-band pixel is brighter.
@@ -613,12 +613,12 @@ TEST_F(GoldenReadback, Gleam) {
 }
 
 // The built-in ColorSaturation effect on-device: a cross-channel pull toward each pixel's luminance. Two
-// behavioural properties, checked per-backend against a no-effect baseline of the same scene (no committed
+// behavioral properties, checked per-backend against a no-effect baseline of the same scene (no committed
 // golden image — the exact per-pixel math is the device-free applySaturation mirror; this pins the GPU path's
-// behaviour):
+// behavior):
 //   - saturation 255 is an EXACT identity — the scene is byte-identical to no effect at all (the default no-op).
-//   - saturation 0 is greyscale — every pixel's channel spread (max(rgb) - min(rgb)) collapses to zero, no
-//     pixel gains spread, and at least one coloured pixel actually drained.
+//   - saturation 0 is grayscale — every pixel's channel spread (max(rgb) - min(rgb)) collapses to zero, no
+//     pixel gains spread, and at least one colored pixel actually drained.
 TEST_F(GoldenReadback, ColorSaturation) {
     Renderer r{device_, nullptr, ViewportResolution{kW, kH}};
     const BaseArt art = uploadBaseArt(r);
@@ -649,7 +649,7 @@ TEST_F(GoldenReadback, ColorSaturation) {
     EXPECT_TRUE(identical) << "ColorSaturation at 255 differs from no effect at pixel " << diffAt
                            << " — the default (saturation 255) must be an exact identity";
 
-    // Greyscale: a whole-frame ColorSaturation at saturation 0 drains every pixel to its luminance.
+    // Grayscale: a whole-frame ColorSaturation at saturation 0 drains every pixel to its luminance.
     FrameDrawState frame;
     SceneBacking   b;
     addBaseScene(frame, art, b);
@@ -662,7 +662,7 @@ TEST_F(GoldenReadback, ColorSaturation) {
         const int lo = std::min({p.r, p.g, p.b});
         return hi - lo;
     };
-    bool        anyDrained = false;   // a coloured pixel that lost its spread
+    bool        anyDrained = false;   // a colored pixel that lost its spread
     bool        anyGained  = false;   // a pixel more saturated than the baseline (must not happen)
     std::size_t gainedAt   = 0;
     for (std::size_t i = 0; i < baseline.size(); ++i) {
@@ -682,9 +682,9 @@ TEST_F(GoldenReadback, ColorSaturation) {
 }
 
 // The built-in Bloom effect on-device: a threshold-blur-add glow (one 2-D gather pass).
-// Three behavioural properties, checked per-backend against baselines of the same scenes (no committed
+// Three behavioral properties, checked per-backend against baselines of the same scenes (no committed
 // golden image — the exact math is the device-free applyBrightpass / gaussianKernelWeight / applyBloomAdd
-// mirror; this pins the GPU sub-chain's behaviour):
+// mirror; this pins the GPU sub-chain's behavior):
 //   - intensity 0 is an EXACT identity — the scene is byte-identical to no effect at all (the default no-op).
 //   - a whole-frame Bloom only ever ADDS light: no pixel darkens, and pixels near bright content gain.
 //   - a Bloom SPRITE radiates past its art: a pixel outside the sprite's quad within the halo reach gains
@@ -781,8 +781,8 @@ TEST_F(GoldenReadback, Bloom) {
         << "the halo reached past its radius — the footprint inflation is leaking";
 }
 
-// The built-in Glow effect on-device: an authored-colour aura (one 2-D gather pass over a scalar emission
-// mask, times the tint). Behavioural properties per-backend against live baselines (no committed golden
+// The built-in Glow effect on-device: an authored-color aura (one 2-D gather pass over a scalar emission
+// mask, times the tint). Behavioral properties per-backend against live baselines (no committed golden
 // image — the exact math is the device-free glowMask / gaussianKernelWeight / applyGlowAdd mirror):
 //   - intensity 0 AND radius 0 are each an EXACT identity (the default no-op; radius 0 at full intensity too).
 //   - THE CHROMA SIGNATURE: a dark-BLUE sprite with threshold 0 and an ember tint radiates a halo whose hue
@@ -1007,7 +1007,7 @@ TEST_F(GoldenReadback, SpriteBelowEmission) {
               int(at(none, 25, 31).r) + int(at(none, 25, 31).g) + int(at(none, 25, 31).b))
         << "no halo inside the lens silhouette — the below emission field is not reaching the lens";
 
-    // The two steps are independent additions onto the same running colour, so carrying both must gain
+    // The two steps are independent additions onto the same running color, so carrying both must gain
     // exactly what carrying each alone gains.
     for (int ch = 0; ch < 3; ++ch) {
         auto chan = [&](const Rgba8& p) { return ch == 0 ? int(p.r) : ch == 1 ? int(p.g) : int(p.b); };
@@ -1065,7 +1065,7 @@ TEST_F(GoldenReadback, Swirl) {
     Renderer r{device_, nullptr, ViewportResolution{kW, kH}};
     const BaseArt art = uploadBaseArt(r);
 
-    // A disc centred in the 64×64 viewport, comfortably clear of the borders.
+    // A disc centered in the 64×64 viewport, comfortably clear of the borders.
     constexpr Point kCenter{32.0f, 32.0f};
     constexpr float kRadius = 20.0f;
 
@@ -1255,9 +1255,9 @@ TEST_F(GoldenReadback, TileSpriteRotation) {
 }
 
 // Within-layer z-order, proved on the device by equivalence (no golden needed): two overlapping
-// opaque sprites submitted BACKWARDS (the visually-front one first) with z keys forcing the correct
+// opaque sprites submitted BACKWARD (the visually-front one first) with z keys forcing the correct
 // stacking must compose byte-identically to the same sprites submitted in visual order with default
-// z. Sensitivity is proved in the same test: the backwards submission WITHOUT z keys differs.
+// z. Sensitivity is proved in the same test: the backward submission WITHOUT z keys differs.
 TEST_F(GoldenReadback, SpriteZOrderEquivalence) {
     Renderer r{device_, nullptr, ViewportResolution{kW, kH}};
     const BaseArt art = uploadBaseArt(r);
@@ -1272,7 +1272,7 @@ TEST_F(GoldenReadback, SpriteZOrderEquivalence) {
 
     // Overlapping opaque 8×8 sprites at (20,20) and (24,24). The 4×4 lap is the back sprite's
     // bottom-right quadrant against the front's top-left: tile 0's BR is palette index 2, tile 3's
-    // TL is index 0 — different colours, so the stacking order is visible in the lap.
+    // TL is index 0 — different colors, so the stacking order is visible in the lap.
     const Sprite front{.key = "front", .x = 24, .y = 24, .z = 1,
                        .atlas = art.atlas, .tile = 3, .palette = art.palette};
     const Sprite back{.key = "back", .x = 20, .y = 20, .z = 0,
@@ -1284,17 +1284,17 @@ TEST_F(GoldenReadback, SpriteZOrderEquivalence) {
     Sprite backDefault = back, frontDefault = front;
     backDefault.z = frontDefault.z = 0;
     const std::vector<Rgba8> want = capture({backDefault, frontDefault}, bSorted, fSorted);
-    // Backwards submission, z keys restore the stacking.
+    // Backward submission, z keys restore the stacking.
     const std::vector<Rgba8> got = capture({front, back}, bKeyed, fKeyed);
     ASSERT_EQ(got.size(), want.size());
     EXPECT_TRUE(compareGolden(got, want, kW, Tol::Exact)) << "z keys must restore the stacking";
-    // Teeth: backwards submission with default z stacks the other way — must differ.
+    // Teeth: backward submission with default z stacks the other way — must differ.
     const std::vector<Rgba8> wrong = capture({frontDefault, backDefault}, bBackwards, fBackwards);
     EXPECT_NE(0, std::memcmp(wrong.data(), want.data(), want.size() * sizeof(Rgba8)))
         << "overlap scene shows no stacking difference — the equivalence above proved nothing";
 }
 
-// The pivot is the spin centre, not the placement handle: under an identity transform it drops out of
+// The pivot is the spin center, not the placement handle: under an identity transform it drops out of
 // the placement entirely. Proved on the device by equivalence — a sprite with pivot (4, 6) at (x, y)
 // composes byte-identically to the same sprite with the default pivot at (x, y).
 TEST_F(GoldenReadback, SpritePivotIsANoOpUnderIdentity) {
@@ -1305,7 +1305,7 @@ TEST_F(GoldenReadback, SpritePivotIsANoOpUnderIdentity) {
     SceneBacking bDefault, bPivot;
     addBaseScene(fDefault, art, bDefault);
     addBaseScene(fPivot, art, bPivot);
-    bPivot.sprites[0].pivot = Point{4.0f, 6.0f};   // spin centre only — no position change
+    bPivot.sprites[0].pivot = Point{4.0f, 6.0f};   // spin center only — no position change
 
     const std::vector<Rgba8> want = r.captureViewport(fDefault);
     const std::vector<Rgba8> got  = r.captureViewport(fPivot);
@@ -1474,7 +1474,7 @@ TEST_F(GoldenReadback, CrispParityRipple) {
 }
 
 // A custom shader is crisp with ZERO shader change: the generated entry point hands its main() the
-// viewport-cell centre and sampleSource() quantizes the requested displacement — this scene drives both
+// viewport-cell center and sampleSource() quantizes the requested displacement — this scene drives both
 // (a spatially-varying sample displacement + procedural tint math) through an unmodified shader file.
 TEST_F(GoldenReadback, CrispParityCustomWave) {
     Renderer r{device_, nullptr, ViewportResolution{kW, kH}};
@@ -1507,7 +1507,7 @@ TEST_F(GoldenReadback, CrispParityCustomProcedural) {
 }
 
 // A region Bloom's halo is stored per VIEWPORT pixel and read from the compose grid, so the read is a
-// destination-driven path like the rest of this family: on the Viewport grid it moves to the centre of the
+// destination-driven path like the rest of this family: on the Viewport grid it moves to the center of the
 // cell it landed in, and the filtered tap there returns the stored texel unchanged. That is what makes the
 // scaled compose the scale-1 image blown up 3× rather than a softened version of it — the halo has to
 // quantize with everything around it or it is the one soft thing in a crisp frame.
@@ -1558,7 +1558,7 @@ TEST_F(GoldenReadback, CrispParityRegionBloomField) {
 }
 
 // The other grid, on the same scene: EvaluationGrid::Output must NOT quantize the halo. The scaled compose
-// has to differ from the upscale, and it has to differ INSIDE a viewport cell — three neighbouring output
+// has to differ from the upscale, and it has to differ INSIDE a viewport cell — three neighboring output
 // pixels of one cell taking three values is the reconstruction the filtered read exists for, and it is the
 // property that separates a filtered read of viewport-resolution data from a point-sampled one.
 TEST_F(GoldenReadback, OutputGridRegionBloomFieldReconstructsBetweenTexels) {
@@ -1926,7 +1926,7 @@ TEST_F(GoldenReadback, OutputGridBelowLensReconstructsBetweenTexels) {
 //
 // A tile background + one sprite layer of geometrically-transformed sprites, whose analytic (Viewport-
 // grid) coverage must upscale to an exact nearest-multiple of the scale-1 image. The base art is fully
-// opaque, so parity is a clean coverage + colour test: every viewport cell inside the true quad writes
+// opaque, so parity is a clean coverage + color test: every viewport cell inside the true quad writes
 // its texel, every cell outside discards.
 
 void addTransformedSpriteScene(FrameDrawState& frame, const BaseArt& art, SceneBacking& b,
@@ -2014,7 +2014,7 @@ enum class BatchSite { Frame, BelowLayer, IsolatedLayer };
 // Build the full scene for `site` + stage `h` into caller-owned frame/backing (both must outlive the
 // capture). The base composite (tile bg + two sprites) plus additive glow circles: overlapping (additive
 // accumulation in the lap), and — when `splitter` — an ineligible Multiply-blend region mid-list that
-// breaks the batched run into two (the hard boundary the per-region twin also honours). For the layer
+// breaks the batched run into two (the hard boundary the per-region twin also honors). For the layer
 // sites the glows ride a content-less fx layer at z 5 (between the bg at 0 and the sprites at 10).
 void buildGlowScene(FrameDrawState& frame, const BaseArt& art, SceneBacking& base,
                     BatchSite site, PostProcessStageId h, bool splitter) {
@@ -2436,7 +2436,7 @@ TEST_F(GoldenReadback, CrispParityColorFillGather) {
 }
 
 // A Bloom inside a Layer-scope sprite REGION, on-device: the bloomed pixel as the region's graded source,
-// read from a field of that sprite's own light rather than summed per fragment. Behavioural properties
+// read from a field of that sprite's own light rather than summed per fragment. Behavioral properties
 // against live baselines (no committed golden image — the field's arithmetic is the emission chain's, which
 // emission_chain_test pins device-free):
 //   - intensity 0 is an EXACT identity (the step grades with the pixel it started from).
@@ -2538,7 +2538,7 @@ TEST_F(GoldenReadback, SpriteRegionBloom) {
 
     // A field is addressed by its own RECT, and this is what proves it. The second sprite's field is packed
     // beside the first's rather than at the atlas origin, so a step that ignored the rect — reading the
-    // origin, or a neighbour, or its own margin — would shade differently here than it does when its field
+    // origin, or a neighbor, or its own margin — would shade differently here than it does when its field
     // is the only one packed. Identical pixels mean it read exactly its own content either way.
     SceneBacking sb;
     std::vector<Sprite> ss;

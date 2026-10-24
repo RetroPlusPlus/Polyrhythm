@@ -21,7 +21,7 @@
 // the evaluation context — the viewport dims + the step's edge — before the body runs.
 
 // Per-fragment evaluation context (set by the generated wrapper before the body runs; the standard preamble's
-// retroppTrueUv / retroppEvalUv). On the Viewport grid the body evaluates at the snapped viewport-cell centre
+// retroppTrueUv / retroppEvalUv). On the Viewport grid the body evaluates at the snapped viewport-cell center
 // and sampleSource() quantizes a requested displacement to whole viewport px, so the lens reproduces the
 // composeScale = 1 rasterization; on the Output grid the true uv passes through.
 static float2 retroppTrueUv;
@@ -38,7 +38,7 @@ static float uViewportH    = 0.0f;
 static uint  uRowTableY    = 0u;
 static uint  uRowTableRows = 0u;
 
-// The centre of the viewport cell `uv` falls in — the crisp evaluation point (mirrors retropp_effect.hlsli's
+// The center of the viewport cell `uv` falls in — the crisp evaluation point (mirrors retropp_effect.hlsli's
 // retroppSnapToCellCenter). A non-positive dimension leaves that axis unchanged.
 float2 retroppSnapToCellCenter(float2 uv) {
     float2 c = uv;

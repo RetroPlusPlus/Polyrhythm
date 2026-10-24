@@ -3,7 +3,7 @@
 // The see-through sibling of region_select.frag: the same per-fragment region SDF (polygon / circle /
 // capsule), but instead of selecting between two textures it makes the layer's own pixels in/around
 // the shape SEE-THROUGH. It reads ONE source (the layer's rendered pixels), computes the region signed
-// distance, turns it into a feathered survival factor, and scales the (premultiplied) colour by it.
+// distance, turns it into a feathered survival factor, and scales the (premultiplied) color by it.
 // TransparentInside punches a hole (the layers below show through); TransparentOutside keeps only the
 // inside (a porthole). The region_select gate is a separate pass and is untouched.
 //
@@ -50,7 +50,7 @@ float4 main(float2 uv : TEXCOORD0) : SV_Target0 {
     } else {
         // Fragment UV → viewport pixels → shape-local via the inverse homography (perspective divide).
         float2 fragPx = float2(uv.x / uMisc.x, uv.y / uMisc.y);
-        // Crisp evaluation (uStencil.z): snap the fragment to its viewport-cell centre before the SDF, so
+        // Crisp evaluation (uStencil.z): snap the fragment to its viewport-cell center before the SDF, so
         // the stencil resolves per viewport pixel (pixel-identical upscale). A no-op at compose scale 1.
         if (uStencil.z != 0.0) fragPx = floor(fragPx) + 0.5;
         float  wgt = uInvRow2.x * fragPx.x + uInvRow2.y * fragPx.y + uInvRow2.z;

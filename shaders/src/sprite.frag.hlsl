@@ -5,9 +5,9 @@
 // atlas-region table, address the indexed atlas at the sprite's top-left cell origin + that pixel (a
 // w×h sprite reads a contiguous w×h atlas rectangle — a 16×16 sprite spans a 2×2 cell block), Load the
 // palette INDEX, DISCARD it if the sheet's transparent-index set marks it a hole (structural
-// transparency), Load the colour from the palette store at the sprite's palette offset, DISCARD a
+// transparency), Load the color from the palette store at the sprite's palette offset, DISCARD a
 // fully-transparent palette entry (material transparency). Then run the sprite's inline effect run
-// (fxOffset/fxCount into the per-frame sprite-effect store): the chain effects transform the pixel colour
+// (fxOffset/fxCount into the per-frame sprite-effect store): the chain effects transform the pixel color
 // in list order, the region effects grade over it where their quad-space shape covers, and a Transparency
 // step scales the pixel's alpha. Finally scale by the layer alpha × the sprite's own alpha. Every art,
 // palette and record read is an integer Load; the one filtered read here is a region Bloom's halo, stored per
@@ -24,7 +24,7 @@
 // once per (kind, reach) bucket. Such a step passes through this chain untouched, and steps after it grade
 // the art alone. A Bloom inside a REGION does resolve here — it is a graded source under the region's blend
 // and alpha, not an additive halo — but it READS its halo from a field of that sprite's own light the
-// renderer prepares before this pass. No neighbourhood is summed anywhere in this shader.
+// renderer prepares before this pass. No neighborhood is summed anywhere in this shader.
 //
 // SDL_GPU HLSL conventions (see SDL_CreateGPUShader docs): sampled textures are numbered before storage
 // textures, so the one sampled texture takes t0/s0 in space2 and the five read-only storage textures follow
@@ -32,7 +32,7 @@
 //   - t0 space2 : the emission atlas — one footprint-sized rect per realized region-Bloom step, SAMPLED
 //   - s0 space2 : its sampler (linear, CLAMP) — the halo is stored per viewport pixel and filtered back up
 //   - t1 space2 : flat ATLAS STORE (R32_UINT; integer Load; all sheets stacked vertically)
-//   - t2 space2 : palette store (RGBA8; integer Load; FLAT colours wrapped W wide → texel (flat%W, flat/W))
+//   - t2 space2 : palette store (RGBA8; integer Load; FLAT colors wrapped W wide → texel (flat%W, flat/W))
 //   - t3 space2 : global atlas-region table (R32G32B32A32_UINT; texel x = AtlasId → (storeY, cols, transpMaskLo, transpMaskHi))
 //   - t4 space2 : per-frame sprite-effect records (R32G32B32A32_FLOAT; ten 16-byte texels per record, one record per
 //                 ROW at y = fxOffset + i; a storage TEXTURE, not a storage buffer — the buffer namespace after a
@@ -60,7 +60,7 @@ Texture2D<uint4>  uAtlasRegions : register(t3, space2);
 //   0 head (kind, flags, blend, pointCount as float-valued ints) | 1 gate (alpha, radius, strokeWidth, _) |
 //   2 params | 3..5 shape transform inverse rows | 6..9 up to eight quad-space vertices (x0,y0,x1,y1,…).
 // A displacing chain step (kind RowDisplacement/Ripple) reuses these lanes: params = (amplitude, frequency,
-// phase, axis); a Ripple also reads its centre from gate.yz (art px) and its decay from gate.w. flags bit2
+// phase, axis); a Ripple also reads its center from gate.yz (art px) and its decay from gate.w. flags bit2
 // (kSpriteFxEdgeStretch) picks the out-of-art edge (set = clamp, clear = transparent). A Bloom step's
 // params = (radius art px, threshold, intensity, field index) — the index names the emission field a REGION
 // Bloom reads, through the rect table; a chain Bloom resolves outside this shader and reads none of these
@@ -74,9 +74,9 @@ Texture2D<float4> uEmissionRects : register(t5, space2);
 cbuffer SpriteFragUniforms : register(b0, space3) {
     float uTilePx;          // register 0: tile edge length, pixels (8)
     float uAlpha;           // layer alpha, [0,1]
-    float uPaletteStoreW;   // palette-store row width (colours); flat offset → (f%W, f/W)
+    float uPaletteStoreW;   // palette-store row width (colors); flat offset → (f%W, f/W)
     float uComposeScale;    // compose grid ÷ viewport (1 = faithful); output pixel → viewport
-    float uEvalSnap;        // register 1: 1 = Viewport grid (snap the field read to the cell centre), 0 = Output
+    float uEvalSnap;        // register 1: 1 = Viewport grid (snap the field read to the cell center), 0 = Output
 };
 
 // Steps per texel the emission read quantizes its sample point to — mirrors retropp::kEmissionSampleSteps.
@@ -86,7 +86,7 @@ static const float kEmissionSampleSteps = 256.0f;
 
 #include "sprite_blend.hlsli"  // blendChannel, applyBlendMode — the scalar BlendMode operators
 
-#include "sprite_color.hlsli"  // applyGleam, applySaturation — the per-pixel colour operators
+#include "sprite_color.hlsli"  // applyGleam, applySaturation — the per-pixel color operators
 
 #include "sprite_stencil.hlsli"  // stencilCoverage, stencilSurvival, spriteRegionSignedDistance
 
@@ -100,7 +100,7 @@ static const float kEmissionSampleSteps = 256.0f;
 // ── Bloom glow, region scope only (the field read) ─────────────────────────────────────────
 //
 // A region-confined Bloom grades the pixel with its own bloomed value under the region's blend and alpha —
-// it is a source colour, not an additive halo. So it cannot ride a SHARED emission field, whose content is
+// it is a source color, not an additive halo. So it cannot ride a SHARED emission field, whose content is
 // the sum of a bucket's sprites: it needs this sprite's own light. It gets a field of its own instead. The
 // renderer rasters that sprite's emission, blurs it separably, and leaves the halo in one layer of the field
 // array; the step reads it here at this fragment's own texel. A whole-silhouette Bloom or Glow never comes
@@ -123,10 +123,10 @@ float4 spriteBloomApply(float4 c, float4 glow, float intensity) {
 // ── Custom effect hook ─────────────────────────────────────────────────────────────────────
 //
 // A Custom chain step runs a game-registered shader inline. The base sprite pipeline carries no game
-// shader, so the step is a no-op here (returns the running colour unchanged). A generated sprite-custom
+// shader, so the step is a no-op here (returns the running color unchanged). A generated sprite-custom
 // variant (gen_shader.cmake SPRITE mode) replaces the marker below with the game body + its sampleSource
 // (over retroppSpriteArtSample) + a record-lane param loader, and #defines RETROPP_SPRITE_CUSTOM so the
-// real retroppSpriteCustom wins. `c` is the running pixel colour, `uv` the within-sprite quad coordinate,
+// real retroppSpriteCustom wins. `c` is the running pixel color, `uv` the within-sprite quad coordinate,
 // `ri` the step's record row in the sprite-effect store.
 // An emission-consumer sprite-custom variant reads its own blurred silhouette back through sampleEmission(),
 // mapping the body's within-sprite quad uv to the field's compose position — which needs this fragment's
@@ -156,15 +156,15 @@ float4 main(float2 spriteUV : TEXCOORD0,
     // The within-sprite QUAD coordinate (fxUv) — the effect + region-gate space, pre-orientation. A sprite on
     // the analytic flag (bit 4: a transformed sprite on the Viewport grid, or ANY sprite that displaces its own
     // art) resolves coverage per VIEWPORT cell: reconstruct this fragment's viewport-space position from
-    // SV_Position (pos.xy is the output-pixel centre; ÷ uComposeScale → viewport space), snap to the cell
-    // centre, map that through the screen→unit inverse (perspective divide; behind the projection ⇒ discard).
+    // SV_Position (pos.xy is the output-pixel center; ÷ uComposeScale → viewport space), snap to the cell
+    // center, map that through the screen→unit inverse (perspective divide; behind the projection ⇒ discard).
     // fxUv may land outside the true [0,1)² quad when the footprint is inflated (a displaced crest); the
     // out-of-quad discard happens after the displacement pre-pass. The CPU mirror is retropp::sampleSpriteCell.
     // An untransformed, non-displacing sprite takes the plain source-driven spriteUV path.
     bool analytic = (flags & 16u) != 0u;
     float2 fxUv;
     if (analytic) {
-        float2 c  = floor(pos.xy / uComposeScale) + 0.5f;      // viewport-cell centre
+        float2 c  = floor(pos.xy / uComposeScale) + 0.5f;      // viewport-cell center
         float  cw = inv2.x * c.x + inv2.y * c.y + inv2.z;
         if (cw <= 0.0f) discard;                               // behind the projection
         fxUv = float2((inv0.x * c.x + inv0.y * c.y + inv0.z) / cw,
@@ -176,7 +176,7 @@ float4 main(float2 spriteUV : TEXCOORD0,
     // Displacement pre-pass — compose the chain's displacing effects (RowDisplacement / Ripple) into the
     // within-sprite READ coordinate before the art is read (mirrors retropp::spriteDisplacedRead). readUv ==
     // fxUv for a non-displacing sprite. The last displacing effect's edge governs an out-of-art read. The
-    // whole scan is gated by the has-displacement flag (bit 5) so a plain or colour-only sprite never pays for
+    // whole scan is gated by the has-displacement flag (bit 5) so a plain or color-only sprite never pays for
     // it — its read stays at the plain coordinate.
     float2 readUv = fxUv;
     bool   hasDisp = false;
@@ -194,10 +194,10 @@ float4 main(float2 spriteUV : TEXCOORD0,
                 if (dk == 1u) {
                     readUv = spriteDisplace(readUv, dp, fdims);
                 } else if (dk == 2u) {
-                    float4 dg = uFxStore.Load(int3(1, dri, 0));  // gate carries the Ripple centre + decay
+                    float4 dg = uFxStore.Load(int3(1, dri, 0));  // gate carries the Ripple center + decay
                     readUv = spriteRipple(readUv, dp, dg, fdims);
                 } else {
-                    float4 dg = uFxStore.Load(int3(1, dri, 0));  // gate carries the Swirl centre
+                    float4 dg = uFxStore.Load(int3(1, dri, 0));  // gate carries the Swirl center
                     readUv = spriteSwirl(readUv, dp, dg, fdims);
                 }
                 hasDisp  = true;
@@ -255,7 +255,7 @@ float4 main(float2 spriteUV : TEXCOORD0,
                 c = retroppSpriteCustom(c, fxUv, ri);   // no-op on the base pipeline (returns c)
 #endif
             }
-            continue;                             // None / displacing / Bloom / Glow: no colour transform here
+            continue;                             // None / displacing / Bloom / Glow: no color transform here
                                                   // (displacement already moved the read in the pre-pass; a
                                                   // halo rasters through the sprite-emission pipeline)
         }

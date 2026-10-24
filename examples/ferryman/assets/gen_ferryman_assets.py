@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Author Ferryman's art: an indexed sprite sheet, an indexed 32x32 terrain tile sheet, a rich
-16x16 font sheet, and REAL PALETTE IMAGES -- one small colour PNG per palette, loaded at runtime
+16x16 font sheet, and REAL PALETTE IMAGES -- one small color PNG per palette, loaded at runtime
 with Renderer::loadPaletteImage (one pixel per entry, alpha included).
 
-The indexed sheets are colortype-3 PNGs -- the pixels are palette INDICES; every colour lives in
-the palette images under palettes/ (the demo never hand-uploads a colour table). One colonist
-shape family recolours to three ramps, each vehicle livery's running lights blink by palette
+The indexed sheets are colortype-3 PNGs -- the pixels are palette INDICES; every color lives in
+the palette images under palettes/ (the demo never hand-uploads a color table). One colonist
+shape family recolors to three ramps, each vehicle livery's running lights blink by palette
 phase, the water shimmer and the beacon glow are palette selection alone, and one font sheet
 yields the white/gold/cyan liveries in both floating (alpha-0-backed) and HUD (opaque-backed)
 forms -- all of it palette-image data.
@@ -57,7 +57,7 @@ OUT = 1
 R = list(range(2, 12))  # R[0]..R[9] -- the 10-step ramp, dark -> bright
 SHADOW, RIM, LIGHT_A, LIGHT_B = 12, 13, 14, 15
 
-# Neutral viewable PLTE for the indexed sheets (the demo colours everything via palette images).
+# Neutral viewable PLTE for the indexed sheets (the demo colors everything via palette images).
 VIEW_PLTE = [(0, 0, 0), (20, 22, 30)] + \
     [(40 + i * 20, 44 + i * 20, 56 + i * 19) for i in range(10)] + \
     [(52, 58, 76), (228, 232, 244), (244, 240, 220), (255, 255, 255)]
@@ -154,7 +154,7 @@ class Lcg:
 
 
 # ==================================================================================================
-# Palette images -- the colour authority. One 16x1 RGBA PNG per palette; entry k is pixel k.
+# Palette images -- the color authority. One 16x1 RGBA PNG per palette; entry k is pixel k.
 # ==================================================================================================
 
 
@@ -271,7 +271,7 @@ PALETTES: dict[str, list[tuple[int, int, int, int]]] = {
                         rim=(255, 244, 190), light_a=(255, 214, 90), light_b=(255, 250, 210)),
     "beacon_b": _family((46, 32, 8), (255, 226, 128), hole=True,
                         rim=(255, 250, 210), light_a=(255, 240, 160), light_b=(255, 255, 255)),
-    # ── Font (dual liveries per colour: floating alpha-0 back vs the opaque HUD bar) ───────────
+    # ── Font (dual liveries per color: floating alpha-0 back vs the opaque HUD bar) ───────────
     "text_white": _font_pal(kClear, (244, 248, 255), (128, 140, 160)),
     "text_gold": _font_pal(kClear, (248, 220, 136), (132, 96, 30)),
     "text_cyan": _font_pal(kClear, (168, 236, 244), (40, 116, 132)),
@@ -390,7 +390,7 @@ def _ferry_ns(south: bool, w: int = 18, h: int = 28) -> list[list[int]]:
         for x in range(cx - hw, cx + hw + 1):
             if 0 <= x < w:
                 centre = 1.0 - abs(x - cx) / max(1.0, hw)
-                art[y][x] = _band(0.16 + centre * 0.74, x, y)   # wide ramp: dark sheer → lit centre
+                art[y][x] = _band(0.16 + centre * 0.74, x, y)   # wide ramp: dark sheer → lit center
         if hw >= 3 and 0.12 < t < 0.92:
             art[y][cx - hw] = R[8]                              # bright gunwale rails…
             art[y][cx + hw] = R[8]
@@ -398,7 +398,7 @@ def _ferry_ns(south: bool, w: int = 18, h: int = 28) -> list[list[int]]:
             art[y][cx - hw + 1] = SHADOW                        # …over a shaded waterline tuck
             art[y][cx + hw - 1] = SHADOW
         if 0.2 < t < 0.9 and y % 3 == 0:
-            art[y][cx] = R[7]                                   # deck-plank grain down the centre
+            art[y][cx] = R[7]                                   # deck-plank grain down the center
     # The cabin sits toward the stern; its near face reads differently per heading.
     ylo, yhi = sorted((y_at(0.5), y_at(0.8)))
     for y in range(ylo, yhi + 1):
@@ -638,7 +638,7 @@ def _abductor(frame: int, w: int = 32, h: int = 22) -> list[list[int]]:
     for x in range(4, w - 4):                # a hard specular line along the hull's top edge
         if art[11][x]:
             art[11][x] = R[9]
-    for y in range(h):                       # the dome: small, tight glass over the hull centre
+    for y in range(h):                       # the dome: small, tight glass over the hull center
         for x in range(w):
             if ((x - cx) / 5.0) ** 2 + ((y - 9.0) / 3.6) ** 2 <= 1.0:
                 art[y][x] = (LIGHT_B if y <= 6 else (R[9] if y <= 8 else R[7]))
@@ -652,7 +652,7 @@ def _abductor(frame: int, w: int = 32, h: int = 22) -> list[list[int]]:
         if x + 1 < w:
             art[14][x] = LIGHT_B if (i % 2 == frame % 2) else LIGHT_A
             art[14][x + 1] = art[14][x]
-    art[16][int(cx)] = LIGHT_A               # the beam emitter, keel-centre
+    art[16][int(cx)] = LIGHT_A               # the beam emitter, keel-center
     art[16][int(cx) + 1] = LIGHT_A
     _assert_rich(art, f"abductor {frame}")
     return art
@@ -876,7 +876,7 @@ def _water_field(phase: int) -> list[list[int]]:
     and every 32x32 cell carries its own guaranteed detail — two wave dashes, a drifting sparkle
     pair, a shadow dip, a crest dab, a micro-glint — so EVERY sliced tile holds the richness
     lock. The renderer places the 16 slices by grid position, so adjacent tiles are literal
-    neighbours in this one design: full detail, no seam possible. Frames animate DETAILS only
+    neighbors in this one design: full detail, no seam possible. Frames animate DETAILS only
     (the base is identical across all three): the bright crest rotates, dashes breathe a pixel,
     sparkles drift."""
     if phase in _water_field_cache:
@@ -1132,7 +1132,7 @@ def _lane(worn: bool) -> list[list[int]]:
 
 
 def _lane_dash() -> list[list[int]]:
-    """The lane's direction dash: the fresh roadbed with a bright, edge-shaded centre stripe."""
+    """The lane's direction dash: the fresh roadbed with a bright, edge-shaded center stripe."""
     art = _lane(False)
     for x in range(4, 24):
         art[14][x] = LIGHT_B
@@ -1409,7 +1409,7 @@ def _rich_glyph(mask_rows: list[str]) -> list[list[int]]:
     for (x, y) in filled:                    # 8-step gradient fill: 11 bright top -> 4 base
         band = min(7, max(0, (y - 1) // 2))
         art[y][x] = 11 - band
-    for (x, y) in list(filled):              # 1px outline, 8-neighbour
+    for (x, y) in list(filled):              # 1px outline, 8-neighbor
         for dy in (-1, 0, 1):
             for dx in (-1, 0, 1):
                 nx, ny = x + dx, y + dy
@@ -1442,7 +1442,7 @@ def build_font() -> bytes:
 # themed to the game: chunky arcade letterforms HALF-SUBMERGED in the sea. Above a flowing
 # waterline the fill is a gold gradient; below it the letters read through sea-teal; foam breaks
 # along the boundary with the odd bubble; the caps catch a rim light; a deep drop shadow anchors
-# the word over the open water. One palette image (`title`) colours the whole set.
+# the word over the open water. One palette image (`title`) colors the whole set.
 # ==================================================================================================
 
 TITLE_CELL = 32
@@ -1477,7 +1477,7 @@ def _title_glyph(ch: str, k: int) -> list[list[int]]:
             art[y][x] = 14
         elif y == waterline(x) + 1 and (x + k) % 4 == 0:
             art[y][x] = 15                   # a bubble caught under the surface
-    for (x, y) in list(filled):              # 1px outline, 8-neighbour
+    for (x, y) in list(filled):              # 1px outline, 8-neighbor
         for dy in (-1, 0, 1):
             for dx in (-1, 0, 1):
                 nx, ny = x + dx, y + dy

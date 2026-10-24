@@ -125,7 +125,7 @@ TEST(RunLoop, BackwardsClockRunsZeroTicksAndDoesNotUnderflow) {
     LoopHarness h;
     h.clock.set(std::chrono::seconds{5});
     h.settle();
-    h.clock.set(std::chrono::seconds{1});  // time went backwards
+    h.clock.set(std::chrono::seconds{1});  // time went backward
     h.loop.advance();
     EXPECT_EQ(h.ticks, 0);
     EXPECT_FLOAT_EQ(h.lastAlpha, 0.0f);  // accumulator unchanged, still on a boundary

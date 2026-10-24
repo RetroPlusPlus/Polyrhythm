@@ -13,7 +13,7 @@
 // real generator constrains WHICH id goes WHERE), but the catalog-clamped-RNG → assemble → render path is
 // exactly this.
 //
-// The catalog mixes 6 solid-colour tiles + one diagonal two-tone tile in its four flip orientations (same
+// The catalog mixes 6 solid-color tiles + one diagonal two-tone tile in its four flip orientations (same
 // slot, different flipX/flipY) — so the random mosaic also shows the catalog's palette/slot/flip carrying
 // through. Static scene; A RE-ROLLS the map on demand (no per-frame randomization → no flicker, photo-
 // sensitivity-safe); Select = fullscreen; close to quit.
@@ -47,7 +47,7 @@ using namespace retropp;
 
 constexpr int kViewW = 160, kViewH = 144;
 constexpr int kMapW = 20, kMapH = 18;     // 20×18 tiles exactly fill the 160×144 viewport
-constexpr int kTileCount = 7;             // atlas slots 0..5 solid colours, slot 6 a diagonal two-tone
+constexpr int kTileCount = 7;             // atlas slots 0..5 solid colors, slot 6 a diagonal two-tone
 
 // The demo's input vocabulary: re-roll the map and toggle fullscreen.
 enum class Action : std::uint8_t { Reroll, Fullscreen };
@@ -88,7 +88,7 @@ int main() {
     }
     const AtlasId atlas = renderer.uploadAtlas(art.data(), kAtlasW, kAtlasH).atlasId;
 
-    // One 8-colour palette; a tile's art index selects its colour within it.
+    // One 8-color palette; a tile's art index selects its color within it.
     const std::array<Rgba8, 8> palColours{{{220, 60, 60}, {60, 200, 90}, {70, 120, 230}, {235, 200, 70},
                                            {200, 90, 210}, {80, 210, 210}, {245, 130, 40}, {235, 235, 245}}};
     const PaletteId palette = renderer.uploadPalette(std::span<const Rgba8>(palColours));

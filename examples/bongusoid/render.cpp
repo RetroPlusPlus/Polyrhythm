@@ -62,7 +62,7 @@ void BongRenderer::render(Renderer& renderer, const BongGame& game, const BongAs
     // empty or index-derived key makes the interpolator cross-fade or skip the sprite, flashing it at the
     // wrong place as the population changes. ObjectKey owns its bytes, so a key assembled per frame passes
     // straight through.
-    // Each sprite names the sprite sheet + its palette directly; the Pal / brick-colour index selects
+    // Each sprite names the sprite sheet + its palette directly; the Pal / brick-color index selects
     // into assets.spritePals to resolve the actual PaletteId handle.
     auto placeSprite = [&](float x, float y, AssetDimensions size, Slot s, int pal,
                            const Transform& xf = Transform{}, ObjectKey label = "unlabelled") {
@@ -84,13 +84,13 @@ void BongRenderer::render(Renderer& renderer, const BongGame& game, const BongAs
                             Transform{}, "brick_" + std::to_string(r) + "_" + std::to_string(c));
             }
         }
-        // Paddle: a brief vertical squash on a bounce (scaleY about its centre); identity when at rest.
+        // Paddle: a brief vertical squash on a bounce (scaleY about its center); identity when at rest.
         const float sy = feel.paddleScaleY();
         const Transform paddleXf = (sy == 1.0f)
             ? Transform{}
             : Transform::scale(1.0f, sy, kPaddleW / 2.0f, kPaddleH / 2.0f);
         placeSprite(game.paddleX, kPaddleY, AssetDimensions{static_cast<int>(kPaddleW), static_cast<int>(kPaddleH)}, S_VAUS, PAL_PADDLE, paddleXf, "paddle");
-        // Ball: tumbles about its centre in the direction of its english.
+        // Ball: tumbles about its center in the direction of its english.
         const Transform ballXf = Transform::rotation(feel.ballSpinDegrees(), kBallSz / 2.0f, kBallSz / 2.0f);
         placeSprite(game.ballX, game.ballY, AssetDimensions{static_cast<int>(kBallSz), static_cast<int>(kBallSz)}, S_BALL, PAL_BALL, ballXf, "ball");
     }
@@ -105,7 +105,7 @@ void BongRenderer::render(Renderer& renderer, const BongGame& game, const BongAs
         char buf[8];
         std::snprintf(buf, sizeof buf, "%d", p.points);
         const int n = static_cast<int>(std::strlen(buf));
-        const float gx = p.x + kBrickW / 2.0f - static_cast<float>(n) * kTile / 2.0f;  // centred on the brick
+        const float gx = p.x + kBrickW / 2.0f - static_cast<float>(n) * kTile / 2.0f;  // centered on the brick
         const float gy = p.y - prog * 26.0f;                                           // rise
         for (int i = 0; i < n; ++i) {
             const Transform xf = Transform::scale(scl, scl, kTile / 2.0f, kTile / 2.0f);

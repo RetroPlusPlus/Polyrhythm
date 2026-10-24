@@ -1,7 +1,7 @@
 #pragma once
 
-// Game Boy audio presets — the GB-family catalogue of ready-made audio for the AudioLibrary, the audio
-// analogue of retropp/gb_routines.h (the GB RNG presets over a generic Vm).
+// Game Boy audio presets — the GB-family catalog of ready-made audio for the AudioLibrary, the audio
+// analog of retropp/gb_routines.h (the GB RNG presets over a generic Vm).
 //
 // These are CONSOLE-SPECIFIC by design. A preset REGISTERS Game-Boy audio on the single catalog
 // (AudioLibrary), selecting Isa::Sm83 — it does NOT touch an AudioSystem (registration is not the

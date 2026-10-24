@@ -114,7 +114,7 @@ public:
 };
 ```
 
-The constructor initialises SDL (video + gamepad + audio), **creates the window sized to
+The constructor initializes SDL (video + gamepad + audio), **creates the window sized to
 `viewport × enhancements.windowScale` logical points, clamped down to fit the display**, acquires the
 GPU device, claims the window for it, and sets vsync present. The destructor releases them in reverse
 order. It is single-threaded — every call runs on the platform thread.
@@ -160,7 +160,7 @@ border, and decorations. An app that draws its *own* chrome (a custom draggable 
 chrome gone so the two don't stack. Set `EngineConfig::window.suppressNativeWindowChrome = true` and the
 window is created **borderless from the first frame** (`SDL_WINDOW_BORDERLESS` is OR-ed into the creation
 flags — never applied after the fact, so the native decorations never flash at launch). The runtime knob
-`suppressNativeWindowChrome(bool)` flips it live afterwards (`SDL_SetWindowBordered`), and the
+`suppressNativeWindowChrome(bool)` flips it live afterward (`SDL_SetWindowBordered`), and the
 argument-free `suppressNativeWindowChrome()` reads the current state — a noun that submits and reads, no
 `set` verb. Making the custom bar actually drag the window is the [window](#the-window-window)'s
 job — declare the drawn bar a drag handle and the OS drags the window by it.
@@ -229,7 +229,7 @@ nothing else.
 region hands the window to the OS window manager, which performs the drag natively (`SDL_SetWindowHitTest`
 under the hood — pixel-perfect, zero per-frame work). The handle and the painted bar agree to the
 pixel by construction; containment matches the drawn region exactly, curved boundaries included
-(`hitsDragRegion` is the predicate, tested at the pixel's centre — the platform's `dragHit` asks it on
+(`hitsDragRegion` is the predicate, tested at the pixel's center — the platform's `dragHit` asks it on
 every OS drag query). One call declares the whole set and replaces the previous one; an empty set
 clears it. Pairs naturally with a borderless window (`suppressNativeWindowChrome`).
 
@@ -247,7 +247,7 @@ through an internal `update()`; a game never calls it.
 
 **Placement, size, fullscreen — the noun pairs.** `position` is the window's top-left in logical
 points, signed (a window legitimately sits at negative coordinates on a multi-monitor desktop):
-declare it to centre on launch, snap, or restore a saved position; read it for where the window
+declare it to center on launch, snap, or restore a saved position; read it for where the window
 actually is. `size` is the window's size in logical points — the read reflects user resizes and OS
 clamps. `fullscreen` enters and leaves the OS-native fullscreen. A game that wants to drive movement
 itself reads the inputs and writes `position` per tick — the same drag `autoMove` serves, written by

@@ -269,7 +269,7 @@ void drawScopes(const Scope& left, const Scope& right, ScopeView view, std::vect
 }
 
 // ── Choosing a ROM ──────────────────────────────────────────────────────────────────────────────
-// How the dialog ended: cancelling is an answer; failing is the dialog never opening.
+// How the dialog ended: canceling is an answer; failing is the dialog never opening.
 enum class DialogEnd : std::uint8_t { Chosen, Cancelled, Failed };
 
 // What the dialog callback hands back to the waiting main thread. SDL may invoke the callback on another

@@ -28,7 +28,7 @@ enum class DeadZoneShape : std::uint8_t { Radial, PerAxis };
 // Round == Scaled(1.0); Square is Scaled at the diagonal limit (~sqrt(2)).
 enum class GateShape : std::uint8_t { Round, Square, Scaled };
 
-// The dead-zone: a centre region zeroed, with motion rescaled so it begins right at the edge (no jump).
+// The dead-zone: a center region zeroed, with motion rescaled so it begins right at the edge (no jump).
 // `size` is the fraction of full throw zeroed, in [0, 1); 0 passes the input straight through. The
 // default shape is Radial (direction-preserving); PerAxis is the opt-in.
 struct DeadZone {
@@ -49,7 +49,7 @@ struct TriggerResponse {
 };
 
 // The whole controller's analog processing, one entry per input. A default-constructed value is the
-// platform's out-of-the-box behaviour (Radial dead-zone, no gate).
+// platform's out-of-the-box behavior (Radial dead-zone, no gate).
 struct AnalogResponse {
     StickResponse   leftStick{};
     StickResponse   rightStick{};

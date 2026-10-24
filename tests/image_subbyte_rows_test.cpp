@@ -110,7 +110,7 @@ void expectBothPathsDecode(const std::vector<std::uint8_t>& png, int width, int 
 // ── Widths that are not a whole number of bytes ─────────────────────────────────────────────────
 
 TEST(ImageSubByteRows, SevenWideOneBitRowsDecodeToTheirOwnSamples) {
-    // 0101010 / 1010101 / 0101010 — each row reads differently from its neighbours, so a row read at
+    // 0101010 / 1010101 / 0101010 — each row reads differently from its neighbors, so a row read at
     // the wrong offset is never mistaken for the right one.
     const std::vector<std::uint8_t> png = grayscalePng(7, 1, {{0x54}, {0xAA}, {0x54}});
     expectBothPathsDecode(png, 7, 3,

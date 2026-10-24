@@ -57,7 +57,7 @@ std::size_t nonSilentCount(const std::vector<AudioFrame>& frames) {
 
 // ── 1. The cue queue (pure) ──────────────────────────────────────────────────────────────────────
 // The main→production channel preserves command order; a drained queue reports empty. The full-queue
-// drop behaviour is the SpscRingBuffer's existing contract (covered by ring_buffer_test) — not re-tested.
+// drop behavior is the SpscRingBuffer's existing contract (covered by ring_buffer_test) — not re-tested.
 TEST(AudioProductionThread, CueQueuePreservesOrder) {
     using Op = audio::AudioCommand::Op;
     audio::CueQueue q{16};

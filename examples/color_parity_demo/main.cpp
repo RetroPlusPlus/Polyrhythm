@@ -1,12 +1,12 @@
-// Colour-parity demo — a runnable host that VISUALLY proves what a container blend grade combines OVER,
-// which is the effect's scope. One holed lattice layer sits over a colourful scene; the SAME ColorFill
+// Color-parity demo — a runnable host that VISUALLY proves what a container blend grade combines OVER,
+// which is the effect's scope. One holed lattice layer sits over a colorful scene; the SAME ColorFill
 // grade (one blend mode, one fill) is confined to the left half at Layer scope and to the right half at
 // Below scope, so the only thing that differs across the mid-screen seam is what the grade reaches:
 //
-//   • LEFT half — Layer scope: the grade colours the lattice's OWN art in place. The lattice's holes stay
-//     transparent, so the scene shows THROUGH them in its true colours — the tint never touches what is
+//   • LEFT half — Layer scope: the grade colors the lattice's OWN art in place. The lattice's holes stay
+//     transparent, so the scene shows THROUGH them in its true colors — the tint never touches what is
 //     behind the layer.
-//   • RIGHT half — Below scope: the grade colours the accumulated image beneath the layer — the lattice AND
+//   • RIGHT half — Below scope: the grade colors the accumulated image beneath the layer — the lattice AND
 //     the scene showing through its holes. The tint reaches through the holes; the windows are tinted too.
 //
 // Press A to cycle the blend mode (Multiply → Add → Screen → Subtract → Half → HalfSubtract → Normal) and
@@ -15,7 +15,7 @@
 // own art (Layer) or the scene beneath it (Below) the same way.
 //
 // The pixel-exact blend math is the ctest suite's job (applyBlendMode / colorFillParams vs the shaders, and
-// the per-layer scope matrix in colour_parity_layer_test.cpp); this is the live GPU sanity check.
+// the per-layer scope matrix in color_parity_layer_test.cpp); this is the live GPU sanity check.
 //
 // The scene is STATIC — a key press swaps a static image, nothing strobes, the window never auto-launches
 // (a dev drives it). A = cycle blend mode; Backspace = fullscreen; close to quit.
@@ -62,14 +62,14 @@ constexpr std::array<ModeEntry, 7> kModes{{{BlendMode::Multiply, "Multiply"},
 
 enum class Action : std::uint8_t { CycleMode, Fullscreen };
 
-// A ColorFill of `colour`, at the given scope, confined by its owning Region and graded by that region's
+// A ColorFill of `color`, at the given scope, confined by its owning Region and graded by that region's
 // blend. Layer scope grades the region's own layer content; Below scope grades the accumulated image.
-[[nodiscard]] Region gradeRect(ShapePoints shape, Rgba8 colour, BlendMode mode,
+[[nodiscard]] Region gradeRect(ShapePoints shape, Rgba8 color, BlendMode mode,
                                ScreenSpaceEffectScope scope) {
     return Region{.key     = "grade",
                   .shape   = std::move(shape),
                   .effects = {ScreenSpaceEffect{
-                      .kind = ScreenSpaceEffectKind::ColorFill, .scope = scope, .fill = colour}},
+                      .kind = ScreenSpaceEffectKind::ColorFill, .scope = scope, .fill = color}},
                   .blend   = mode};
 }
 
@@ -78,8 +78,8 @@ enum class Action : std::uint8_t { CycleMode, Fullscreen };
 int main() {
 
     const EngineConfig config{
-        .identity = {.organization = "Retro++", .application = "Colour Parity Demo"},
-        .window   = {.title = "Polyrhythm — colour-parity demo (Layer vs Below scope over holes)"}};
+        .identity = {.organization = "Retro++", .application = "Color Parity Demo"},
+        .window   = {.title = "Polyrhythm — color-parity demo (Layer vs Below scope over holes)"}};
     EngineConfig::setActive(config);
     SteadyClock clock;
     RunLoop     loop{clock};
@@ -92,8 +92,8 @@ int main() {
     };
     platform.actions(map);
 
-    // The opaque scene the grade combines over: a four-colour diagonal pattern, so a tint reads clearly and
-    // "the true colours through the holes" is obvious.
+    // The opaque scene the grade combines over: a four-color diagonal pattern, so a tint reads clearly and
+    // "the true colors through the holes" is obvious.
     std::array<std::uint8_t, 64> sceneArt{};
     for (int y = 0; y < 8; ++y)
         for (int x = 0; x < 8; ++x)
@@ -123,7 +123,7 @@ int main() {
 
     int modeIdx = 0;
     auto announce = [&]() {
-        std::printf("colour-parity demo — blend mode: %s. LEFT half = Layer scope (holes stay clear, the "
+        std::printf("color-parity demo — blend mode: %s. LEFT half = Layer scope (holes stay clear, the "
                     "scene shows through untinted); RIGHT half = Below scope (the tint reaches through the "
                     "holes). A = next mode; Backspace = fullscreen; close to quit.\n",
                     kModes[static_cast<std::size_t>(modeIdx)].name);

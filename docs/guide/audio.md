@@ -169,7 +169,7 @@ the auto-close behavior — `Sfx` is fire-and-forget and closes itself when its 
 and `Vocals` are sustained and stay until you `stop()` them — and it picks the **mixer bus** the source is
 scaled by (see [Volume](#volume-the-audiomixer)). A track is on whichever bus its `AudioType` names.
 `Vocals` is simply a third bus alongside `Music` and `SFX` — a separate volume channel a game can tag
-voice/dialogue-style audio with; it is not tied to any particular kind (it works for chiptune or PCM
+voice/dialog-style audio with; it is not tied to any particular kind (it works for chiptune or PCM
 sources alike). Like `Music`, it is sustained.
 
 > **Small routines vs. real drivers.** A short `.asm` like the diagnostic tone is assembled by the
@@ -401,7 +401,7 @@ A driver with no state is `DriverId<NoSlots>` — pass no slots batch.
 
   The scan reads it the way it reads the policy: a literal `Isa::…` token in the image's own initializer,
   or the binding's.
-- **The policy is per image, and the build honours each one separately.** `DriverImagePath::policy` is
+- **The policy is per image, and the build honors each one separately.** `DriverImagePath::policy` is
   optional; an image that names none resolves to `Embed`. The build scan reads each `DriverImagePath`
   initializer, so a binding can mix freely — the usual shape is an `Embed` boot image beside a
   `LoadFromPath` one carrying content a game has no right to ship inside its binary, and only the first is
@@ -615,7 +615,7 @@ mix.levels(retropp::AudioLevels{.sfx = 255});                   // ...SFX to ful
 A settings screen binds its Master / Music / SFX / Vocals sliders to `levels()`. Values are `0`–`255`, so a
 slider maps to a level with no conversion. Read one channel back with `levels(AudioLevelType::Master)` (or
 `Music` / `Sfx` / `Vocals` / `VMDriver`) — each returns the current `std::uint8_t` position, so the settings
-screen initialises its sliders from them.
+screen initializes its sliders from them.
 
 ## Output: the `AudioSink`
 
@@ -637,7 +637,7 @@ retropp::AudioSystem  owned{retropp::AudioKind::Chiptune,                // OWN:
                             std::make_unique<MyCustomSink>()};
 ```
 
-The auto-created `SdlAudioSink` needs SDL audio initialised, which `SdlPlatform`'s constructor performs —
+The auto-created `SdlAudioSink` needs SDL audio initialized, which `SdlPlatform`'s constructor performs —
 true for any real game (it already has a platform for its window). Headless / test contexts pass a
 `CaptureAudioSink` (borrowed or owned), which opens no device.
 

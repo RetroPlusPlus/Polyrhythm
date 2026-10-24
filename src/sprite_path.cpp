@@ -161,7 +161,7 @@ std::vector<BakedPathNode> bakePass(const std::vector<SpritePathNode>& nodes, Ve
 // The hold-last heading a node inherits: the last non-zero end-facing among the nodes before the landing node
 // in this pass (and, if we have wrapped, the previous identical pass's last non-zero end-facing), else the
 // prior sample's facing. Deterministic from the pass alone — so a dead spot (a wait / sentinel node) shows the
-// heading the sprite was travelling, and batched / seeked resolves match tick-by-tick.
+// heading the sprite was traveling, and batched / seeked resolves match tick-by-tick.
 Vec2 carriedFacing(const std::vector<BakedPathNode>& pass, std::size_t landingIndex, bool wrapped,
                    Vec2 priorFacing) noexcept {
     Vec2 held = priorFacing;
@@ -210,7 +210,7 @@ SpritePathSample composeNode(const SpritePathNode& node, const BakedPathNode& ba
         next.scale = sampleTween(*node.scale, localTicks, profile, node.scaleMode).value;
     }
 
-    // flipX under FacingPolicy::FlipX: mirror while travelling toward -x, hold the previous value while the
+    // flipX under FacingPolicy::FlipX: mirror while traveling toward -x, hold the previous value while the
     // horizontal component is 0 (vertical travel does not flip-flop). Otherwise carry the cached value.
     bool flip = prior.flipX;
     if (node.facing == FacingPolicy::FlipX) {
@@ -260,7 +260,7 @@ ActiveResolve parkedAtChainStart(Vec2 chainStart, const SpritePathSample& prior,
 // THE resolver — the single point of sequence truth, a PURE function of (content, elapsed, mode). advance()
 // and seek() both funnel through it, so batched advances, tick-by-tick advances, and seeks all resolve the
 // same landing from the same elapsed-tick count. Walks the node durations to find the landing node + its
-// node-local clock, honouring the sequence-level PlaybackMode over the base node list (loop / rest / N laps /
+// node-local clock, honoring the sequence-level PlaybackMode over the base node list (loop / rest / N laps /
 // play-for-a-duration), then composes there.
 ActiveResolve resolveActive(const std::vector<SpritePathNode>& nodes,
                             const std::vector<BakedPathNode>& pass, PlaybackMode mode,
@@ -484,7 +484,7 @@ void SpritePath::applyTo(Sprite& s) const {
 
     // Frame fields only when the CURRENT node has an animation track (sample.frame is set iff so). A node
     // without one leaves the last art showing — holding art is meaningful; writing "no art" is not. Within a
-    // track, an art frame writes the art; a palette-only frame (hasArt() == false) recolours the carried-over
+    // track, an art frame writes the art; a palette-only frame (hasArt() == false) recolors the carried-over
     // art — so palette always writes, the art fields only when the frame carries art.
     if (cur != nullptr && sample.frame != nullptr) {
         if (sample.frame->hasArt()) {
@@ -497,7 +497,7 @@ void SpritePath::applyTo(Sprite& s) const {
 
     // A geometric transform when ANY node the path holds declares one — the sample carries identity while the
     // current node drives neither axis, so a tumble STOPS instead of freezing at the last rotation. Pivot
-    // defaults to the sprite's centre using the size AFTER the frame write; scale composes first, then rotation.
+    // defaults to the sprite's center using the size AFTER the frame write; scale composes first, then rotation.
     if (anyDeclaresTransform(*this)) {
         const float px = (cur != nullptr && cur->pivot) ? cur->pivot->x : static_cast<float>(s.size.width) * 0.5f;
         const float py = (cur != nullptr && cur->pivot) ? cur->pivot->y : static_cast<float>(s.size.height) * 0.5f;

@@ -9,13 +9,13 @@
 // @retropp:additive
 
 cbuffer Params : register(b1, space3) {
-    float addGain;   // additive peak at the region centre
+    float addGain;   // additive peak at the region center
 };
 
 float4 main(float2 uv : TEXCOORD0) : SV_Target0 {
     float4 c = sampleSource(uv);
     const float2 d    = uv - 0.5f;
-    const float  r    = saturate(length(d) * 2.0f);   // 0 at the (frame-global) centre → 1 at the edge
+    const float  r    = saturate(length(d) * 2.0f);   // 0 at the (frame-global) center → 1 at the edge
     const float  fall = (1.0f - r) * (1.0f - r);       // soft shoulders, bright core
     const float3 tint = float3(0.9f, 0.6f, 0.3f);
     c.rgb += tint * (addGain * fall);                  // additive — brightens whatever's behind

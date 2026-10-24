@@ -6,7 +6,7 @@
 //
 // `warpChroma` is the switch: 0 = pure distortion (the ferry's clean wake); > 0 = ALSO cycle the
 // hue of the refracted view, animated + position-varying, for the mutant's PSYCHEDELIC trail (a
-// luma-preserving rotation about the grey axis, blended in by warpChroma). The engine injects the
+// luma-preserving rotation about the gray axis, blended in by warpChroma). The engine injects the
 // plumbing (sampleSource + the cbuffer packer); this file declares its own params + body.
 
 cbuffer Params : register(b1, space3) {
@@ -26,12 +26,12 @@ float4 main(float2 uv : TEXCOORD0) : SV_Target0 {
     float4 c = sampleSource(uv + duv);
 
     if (warpChroma > 0.0f) {
-        // Psychedelic hue cycle: rotate the sampled colour about the grey axis by an angle that
+        // Psychedelic hue cycle: rotate the sampled color about the gray axis by an angle that
         // sweeps with time and position — rainbow bands crawling down the trail.
         float  ang = warpPhase * warpChromaSpeed + (uv.x * 8.0f + uv.y * 6.0f);
         float  s   = sin(ang);
         float  cc  = cos(ang);
-        const float3 k = float3(0.5773503f, 0.5773503f, 0.5773503f);  // grey axis, 1/sqrt(3)
+        const float3 k = float3(0.5773503f, 0.5773503f, 0.5773503f);  // gray axis, 1/sqrt(3)
         float3 rot = c.rgb * cc + cross(k, c.rgb) * s + k * dot(k, c.rgb) * (1.0f - cc);
         c.rgb = lerp(c.rgb, rot, warpChroma);
     }

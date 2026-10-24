@@ -121,7 +121,7 @@ struct BaseArt {
     PaletteId palette{};
 };
 
-// A 16×16 indexed atlas (a 2×2 tile grid, indices 0..3) + a 4-colour palette. The first atlas / first
+// A 16×16 indexed atlas (a 2×2 tile grid, indices 0..3) + a 4-color palette. The first atlas / first
 // palette on any renderer take the same handle values and identical pixels, so two renderers built this
 // way produce byte-identical output for the same frame.
 BaseArt uploadBaseArt(Renderer& r) {

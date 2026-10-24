@@ -3,7 +3,7 @@
 **Rondo** is the platform's renderer. The `Renderer` object: the internal viewport it draws into, how that viewport is scaled and
 letterboxed onto the window, the once-per-frame submission entry point, the amortized atlas/palette
 uploads, and how shaders reach the GPU. The *content* model a frame carries (layers, tiles, sprites,
-colour) is [draw-state.md](draw-state.md) + [tiles-and-colour.md](tiles-and-colour.md); this page is
+color) is [draw-state.md](draw-state.md) + [tiles-and-color.md](tiles-and-color.md); this page is
 the object and the output path.
 
 ```cpp
@@ -36,7 +36,7 @@ the object and the output path.
 
 The renderer draws every frame into an **offscreen internal viewport** at a fixed retro resolution
 (160×144 by default), then **blits that viewport onto the window** at the largest integer scale that
-fits, centred, with letterbox/pillarbox bars filling any leftover. Game content is authored once at
+fits, centered, with letterbox/pillarbox bars filling any leftover. Game content is authored once at
 the small native resolution; the renderer always fills whatever window it's given, crisply. This
 two-stage path (render small → fill window) is what keeps pixels square at any window size. The
 presentation *size* — how big that window is — is the window-scale concern owned by the platform
@@ -65,13 +65,13 @@ public:
     AtlasManifest uploadAtlas(const std::uint8_t* indices, int width, int height,
                               TransparentIndices transparent = TransparentIndices::None);
                               // also uint16_t / uint32_t overloads, and assetSize/kind carve
-                              // overloads declaring the sheet's grid (tiles-and-colour.md)
+                              // overloads declaring the sheet's grid (tiles-and-color.md)
     AtlasManifest uploadAtlas(const LoadedImage&);             // always throws — load PNGs via loadAtlas()
     PaletteId uploadPalette(std::span<const Rgba8>  colors);   // 8-bit source, widened ×257 into the store
-    PaletteId uploadPalette(std::span<const Rgba16> colors);   // 16-bit colour source, appended direct
+    PaletteId uploadPalette(std::span<const Rgba16> colors);   // 16-bit color source, appended direct
     void updatePalette(PaletteId id, std::span<const Rgba8> colors);   // the same handle, new colors (also Rgba16)
     // PNG loading + slicing (loadAtlas / loadAtlasFromMemory / loadPaletteImage / loadImage) lives in
-    // images-and-transparency.md and tiles-and-colour.md.
+    // images-and-transparency.md and tiles-and-color.md.
 
     // Bake a cubic / arbitrary curved boundary into an SDF mask a Region samples (see draw-state.md).
     CurveMaskId bakeCurveMask(const Curve& boundary, float padding = 8.0f, int maxResolution = 256);
@@ -147,7 +147,7 @@ IntRect integerScaleToFitRect(PixelSize drawable, PixelSize viewport) noexcept; 
 ```
 
 Each frame the renderer reads the window's `drawableSize()` and fills it at the **largest integer
-multiple of the viewport that fits**, centred, with the leftover split into letterbox/pillarbox bars
+multiple of the viewport that fits**, centered, with the leftover split into letterbox/pillarbox bars
 (a pure, GPU-independent, unit-tested helper). It tracks resizes, so the content follows the window
 live. This is *fill*, not *size* — the renderer crisply fills whatever window it's handed. Choosing
 how big that window is (the presentation scale) is `windowScale` on the platform side; see
@@ -165,7 +165,7 @@ SamplingMode Renderer::samplingMode() const noexcept;
 `Nearest` (the default) is point sampling — crisp, square pixels, the faithful look. `Bilinear`
 smooths the upscale. This is a blit **sampler** swap, not a shader change: the renderer builds both
 samplers up front and binds the one the current mode selects. The tile/atlas path always samples
-nearest; only the final viewport→window blit honours the mode. The default (`Nearest`) reproduces the
+nearest; only the final viewport→window blit honors the mode. The default (`Nearest`) reproduces the
 faithful crisp-pixel output value-for-value; a consumer reads `EngineConfig::enhancements.sampling` and calls
 the setter, then toggles it live from a settings menu.
 
@@ -288,31 +288,31 @@ kind and set parameters; the platform owns the shader (no registration, no shade
 - **`Ripple`** — a radial concentric ripple (a water droplet): rings expand outward from a `center`,
   faded with radius by `decay`. Aspect-corrected so the rings stay circular.
 - **`Swirl`** — an angular twist about a `center` (a whirlpool): content within `radius` rotates, the
-  full turn at the centre easing smoothly to nothing at the rim, content outside the disc untouched.
+  full turn at the center easing smoothly to nothing at the rim, content outside the disc untouched.
   Ripple's angular sibling — Ripple pushes the sample along the radius, Swirl carries it around. The turn
   is `amplitude` + `phase` in **degrees** (advance `phase` to spin it); positive turns the content
   clockwise, matching `Transform::rotation`. A zero turn or a zero `radius` is an exact identity.
-- **`ColorFill`** — paint a colour (`Rgba8 fill`, scaled by `float fillIntensity`) into the effect's
+- **`ColorFill`** — paint a color (`Rgba8 fill`, scaled by `float fillIntensity`) into the effect's
   region: `out.rgb = fill · fillIntensity`. A filled region is a solid shape, a stroked region a drawn
   colored line/path; a `Region`'s `alpha` makes its fill translucent. (Writes over existing pixels — see
-  [draw-state.md](draw-state.md#painting-a-colour-into-a-region-colorfill) for the opaque-source scopes.)
+  [draw-state.md](draw-state.md#painting-a-color-into-a-region-colorfill) for the opaque-source scopes.)
 - **`Transparency`** — make the effect's region **see-through** (reveal what's behind it) instead of
-  painting a colour — the subtractive sibling of `ColorFill`. `stencil` (`TransparentInside` default /
+  painting a color — the subtractive sibling of `ColorFill`. `stencil` (`TransparentInside` default /
   `TransparentOutside`) chooses which side of the shape clears; `feather` softens the edge. The `stencil()`
   free helper is its shorthand (see [draw-state.md](draw-state.md)).
 - **`Gleam`** — a luminance-keyed diagonal **sheen sweep** (a marquee "shine"): `sweep` slides the band
   across, `width` sets its extent, `slant` its diagonal angle, and `gain` its strength (`gain = 0` is an
   exact identity). Bright content catches the light; dark stays dark.
-- **`ColorSaturation`** — a cross-channel **colour drain**: pull each pixel toward its own luminance. The
-  `saturation` field is a `uint8` — `255` is full colour (the exact identity), `0` is greyscale, values
+- **`ColorSaturation`** — a cross-channel **color drain**: pull each pixel toward its own luminance. The
+  `saturation` field is a `uint8` — `255` is full color (the exact identity), `0` is grayscale, values
   between desaturate partway. A mood/pause grade a `ColorFill` cannot express (it works per-channel toward a
-  solid colour; this pulls every channel toward the pixel's own brightness).
+  solid color; this pulls every channel toward the pixel's own brightness).
 - **`Bloom`** — a threshold-blur-add **glow**: pixels brighter than `threshold` (a `uint8` luminance
   floor; `0` blooms everything) blur outward by `radius` (a Gaussian blur, in the site's own pixels)
   and add back over the source scaled by `intensity` (a `uint8`; `0` is the exact identity default,
   `255` full strength) — bright content radiates its OWN light as a soft halo. On a sprite the radius is
   in the sprite's own art pixels, scaled by the placement's transform.
-- **`Glow`** — an **authored-colour aura**, Bloom's sibling: the content radiates a colour YOU pick
+- **`Glow`** — an **authored-color aura**, Bloom's sibling: the content radiates a color YOU pick
   (`fill` × `fillIntensity`, per channel; `fillIntensity > 1` is an HDR-hot aura), not its own light —
   the halo's chroma is the tint, never the source hue, so dark art radiates gold or ember at full
   strength. `radius` / `intensity` behave as Bloom's (`intensity` or `radius` at `0` is the exact
@@ -333,7 +333,7 @@ Reach for `intensity` when a confined halo should read stronger, and expect a wi
 diffuse interior light. This is what a bloom becomes when it cannot spill — the spill is the part `radius`
 normally buys, and a confined halo does not have it.
 
-**What a halo costs.** `Bloom` and `Glow` are the only built-ins that read a neighbourhood, and both
+**What a halo costs.** `Bloom` and `Glow` are the only built-ins that read a neighborhood, and both
 realize as a fixed chain of cheap passes rather than one expensive gather: the emission is extracted (or,
 on sprites, rasterized) into a scratch buffer, reduced when the radius is wide, blurred separately on each
 axis, and added back. The consequence is that **radius is nearly free** — a reach of 20 costs about what a
@@ -399,7 +399,7 @@ cbuffer Params : register(b1, space3) {
     float  strength;
 };
 float4 main(float2 uv : TEXCOORD0) : SV_Target0 {
-    return sampleSource(uv + (center - uv) * strength);  // sampleSource() honours the effect's edge policy
+    return sampleSource(uv + (center - uv) * strength);  // sampleSource() honors the effect's edge policy
 }
 ```
 
@@ -422,14 +422,14 @@ parameter cbuffer at **`b1`, `space3`**, which the build reflects into the effec
 per frame from them. **Always sample through `sampleSource()`** — it obeys the effect's **edge policy**
 (`ScreenSpaceEffect::edge`): `Blank` (the default) returns transparent outside `[0,1]` so an effect that
 displaces past the frame edge reveals the backdrop / layers below; `Stretch` clamps (smears) the border.
-The edge behaviour is the **layer/effect's** choice, not the shader's — sampling `SourceTexture` directly
+The edge behavior is the **layer/effect's** choice, not the shader's — sampling `SourceTexture` directly
 opts out and always clamps. **No runtime shader compiler** — the bytecode is built and embedded; nothing is
 loaded from disk at run time. Handles live until the renderer is destroyed.
 
 **Crisp automatically.** A custom shader written to this contract — spatial math on the `uv` your
 `main()` receives, sampling through `sampleSource()` — is crisp on the default
 [`EvaluationGrid::Viewport`](#evaluation-grid-evaluationgrid) with **no shader-side work**. The platform's
-generated entry point hands your `main()` the centre of the viewport cell its fragment falls in, so your
+generated entry point hands your `main()` the center of the viewport cell its fragment falls in, so your
 math evaluates once per viewport pixel; `sampleSource()` quantizes the displacement you request to whole
 viewport pixels; `paramRowAtUv()` lands on the row the viewport-resolution rasterization reads. The
 result upscales as solid square pixels even when the compositor runs at output resolution for steady
@@ -446,7 +446,7 @@ exercises the reflection + packing device-free.
 ### Emission: a custom stage's own glow
 
 `Bloom` and `Glow` are cheap because the platform extracts the emission into a scratch field, blurs it once,
-and hands it back — rather than gathering a neighbourhood per pixel ([What a halo costs](#built-in-effect-library)).
+and hands it back — rather than gathering a neighborhood per pixel ([What a halo costs](#built-in-effect-library)).
 A custom stage joins that same chain with **one declaration line** near the top of its `.hlsl`:
 
 ```hlsl
@@ -521,7 +521,7 @@ variant and collapses all eligible same-shader regions into **one** instanced ad
 becomes independent of region count). It engages automatically for a region on `Normal` blend at full
 `alpha` whose shape is a circle or capsule; any other region silently keeps the per-region path with
 identical output, so you never structure your scene around it. The declaration is a *promise*: a shader that
-multiplies the source, samples its neighbours, or otherwise depends on the source contents will render
+multiplies the source, samples its neighbors, or otherwise depends on the source contents will render
 incorrectly on the fast path — the platform cannot verify additivity, which is exactly why the safe (per-
 region) path is the default and the fast path is the thing you vouch for. Built-in additive effects need no
 declaration (the platform already knows their math). An additive glow that tints and adds without reading
@@ -543,8 +543,8 @@ Two things to know about the semantics:
 
 - **Where same-shader regions overlap, the effect applies once with the last (topmost) region's params** —
   not once per overlapping region compounded. The union of the shapes reads as a single region; displaced
-  samples always read the pristine previous image, never a neighbouring region's output. For most animated
-  content this is invisible, and it is the more predictable behaviour; but if you *want* an effect to compound
+  samples always read the pristine previous image, never a neighboring region's output. For most animated
+  content this is invisible, and it is the more predictable behavior; but if you *want* an effect to compound
   where two regions overlap (`eff(eff(src))`), opt out:
 
   ```hlsl
@@ -569,17 +569,17 @@ picking a winner. A lone ColorFill region keeps the per-region path at identical
 
 ## Amortized resources: `uploadAtlas` / `uploadPalette`
 
-Pixel art and colour are uploaded **once** (at load time / on change), not per frame; the draw state
-then references them by handle each frame. See [tiles-and-colour.md](tiles-and-colour.md) for the
-colour model and [images-and-transparency.md](images-and-transparency.md) for loading art from PNG.
+Pixel art and color are uploaded **once** (at load time / on change), not per frame; the draw state
+then references them by handle each frame. See [tiles-and-color.md](tiles-and-color.md) for the
+color model and [images-and-transparency.md](images-and-transparency.md) for loading art from PNG.
 
 - `uploadAtlas(indices, w, h, transparent = TransparentIndices::None)` → `AtlasManifest` (the sheet;
   take the handle explicitly via `sheet.atlasId`). An **indexed** atlas: one palette index per pixel (not RGBA).
   Every upload declares the sheet's carve — this form carves `Single`; the `assetSize`/`kind`
-  overloads declare a grid (see [tiles-and-colour.md](tiles-and-colour.md)). The optional
+  overloads declare a grid (see [tiles-and-color.md](tiles-and-color.md)). The optional
   `TransparentIndices` set declares that source's structural index holes (default `None` = every
   index draws) — see [images-and-transparency.md](images-and-transparency.md).
-- `uploadPalette(colors)` → `PaletteId`. One palette's colours, written to a row of the renderer-owned
+- `uploadPalette(colors)` → `PaletteId`. One palette's colors, written to a row of the renderer-owned
   palette store.
 - `updatePalette(id, colors)`. The palette at `id` takes new colors and keeps its handle; the next frame
   draws them.

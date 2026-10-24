@@ -25,7 +25,7 @@ namespace retropp {
 // unit-tested CPU mirror of the GPU math, like packTileCell / makeGpuSprite.
 //
 // Named constructors take a PIVOT in CONTENT-LOCAL PIXELS (e.g. a 160×144 layer rotates about its
-// centre with pivot (80, 72)); rotation/scale/skew about a pivot compose translate(pivot) · op ·
+// center with pivot (80, 72)); rotation/scale/skew about a pivot compose translate(pivot) · op ·
 // translate(-pivot) internally. `rotation` is plain `inline` (not constexpr) because std::sin/std::cos
 // are not constexpr in C++20 — the same concession displaceSourceUv made; every other member stays
 // constexpr so the affine subset + compose/inverse fold at compile time and are static_assert-testable.

@@ -56,7 +56,7 @@ int main() {
         return 1;
     }
 
-    // The close box is a SPRITE — its own Platinum-proportioned art, centred in the title bar. The
+    // The close box is a SPRITE — its own Platinum-proportioned art, centered in the title bar. The
     // sprite IS the close button: the click test queries its shape, and the drag handles below are
     // laid out around its queried bounds, so its geometry lives on this one value.
     Sprite closeBox{.key = "closebox", .x = 8, .y = (kTitleH - assets.closeBoxSlot.dimensions.height) / 2,
@@ -99,13 +99,13 @@ int main() {
         }
         if (in.mouseJustReleased(MouseButton::Left)) {
             if (closeArmed && onBox) loop.exitRequest();  // released on the button → close
-            closeArmed = false;                           // released elsewhere → cancelled
+            closeArmed = false;                           // released elsewhere → canceled
         }
 
         // The armed button shows pressed — mirrored and flipped, like the keys — while the press is
         // held over it (roll off and it pops back). The flips go on the DRAWN copy only: closeBox
         // stays unflipped as the hit-test geometry, so the click target never moves with the look
-        // (the glyph sits off-centre in its cell, so a flipped silhouette shifts by a pixel).
+        // (the glyph sits off-center in its cell, so a flipped silhouette shifts by a pixel).
         pressedLook = closeArmed && onBox && in.mouseHeld(MouseButton::Left);
         pressedKey     = in.mouseHeld(MouseButton::Left) ? keyAt(c) : -1;
     });

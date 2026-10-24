@@ -2,11 +2,11 @@
 // textured scene carrying two blended decals, and a probe disc lets you cycle one sprite through every
 // blend mode over the same moving background:
 //
-//   • SHADOW (Multiply, alpha 0.7) — a soft grey decal rides at the hero's feet, one z below it. Multiply
-//     darkens the scene under it, most where the decal is darkest (its centre), so it reads as a shadow
+//   • SHADOW (Multiply, alpha 0.7) — a soft gray decal rides at the hero's feet, one z below it. Multiply
+//     darkens the scene under it, most where the decal is darkest (its center), so it reads as a shadow
 //     that tracks the hero over whatever tile it crosses.
 //   • FLARE (Add) — a warm radial decal pulses one z above the hero. Add lifts the scene toward light,
-//     brightest at the decal's centre — a glow that never darkens.
+//     brightest at the decal's center — a glow that never darkens.
 //   • PROBE — a single disc mid-screen. Press A to cycle its blend (Normal → Multiply → Add → Screen →
 //     Subtract → Half → HalfSubtract) and watch the SAME sprite grade the scene beneath it differently at
 //     each mode.
@@ -93,8 +93,8 @@ enum class Action : std::uint8_t { CycleMode, Fullscreen };
     return a;
 }
 
-// A 16×16 radial falloff: index 3 at the centre grading out to 1 at the rim, 0 (hole) beyond — three
-// concentric bands. Paired with a dark-centre palette it is a Multiply shadow; with a bright-centre one an
+// A 16×16 radial falloff: index 3 at the center grading out to 1 at the rim, 0 (hole) beyond — three
+// concentric bands. Paired with a dark-center palette it is a Multiply shadow; with a bright-center one an
 // Add flare (the SAME art, the owning sprite's blend decides which).
 [[nodiscard]] std::array<std::uint8_t, 16 * 16> softArt() {
     std::array<std::uint8_t, 16 * 16> a{};
@@ -102,7 +102,7 @@ enum class Action : std::uint8_t { CycleMode, Fullscreen };
         for (int x = 0; x < 16; ++x) {
             const float d = std::sqrt((x - 7.5f) * (x - 7.5f) + (y - 7.5f) * (y - 7.5f));
             std::uint8_t idx = 0;                         // outside → hole
-            if (d < 2.5f)      idx = 3;                   // centre
+            if (d < 2.5f)      idx = 3;                   // center
             else if (d < 5.0f) idx = 2;                   // mid
             else if (d < 7.5f) idx = 1;                   // rim
             a[static_cast<std::size_t>(y) * 16 + x] = idx;

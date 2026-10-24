@@ -338,7 +338,7 @@ required to *build*, even though a built game needs nothing. Reopen your termina
 **Windows: "not digitally signed" on a script you downloaded.** Mark of the Web. `Unblock-File -Path
 .\script.ps1` first.
 
-**Windows: `winget` is not recognised.** Install *App Installer* from the Microsoft Store, then open a
+**Windows: `winget` is not recognized.** Install *App Installer* from the Microsoft Store, then open a
 new terminal.
 
 **Windows: `dxc` is not found after installing Build Tools.** The Windows SDK component did not

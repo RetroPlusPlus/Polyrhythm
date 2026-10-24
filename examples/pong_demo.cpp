@@ -13,7 +13,7 @@
 //                                                between tick states on its own; the sim writes positions
 //                                                and the render submits them.
 //    • SdlPlatform + Renderer                  — the live window + GPU device + the draw API.
-//    • uploadAtlas / uploadPalette             — getting indexed art + colour onto the GPU.
+//    • uploadAtlas / uploadPalette             — getting indexed art + color onto the GPU.
 //    • TileContent  (a tilemap layer)          — the court: net + scoreboard, on an 8px tile grid.
 //    • SpriteContent (free-moving sprites)     — the two paddles + the ball, at pixel positions.
 //    • A whole-frame dim (a Multiply ColorFill region) — driven by a Tween for the "point scored" flash.
@@ -63,7 +63,7 @@
 #include "retropp/engine_config.h"  // EngineConfig — the startup bundle
 #include "retropp/input.h"          // InputState (isHeld / justPressed) — the game's Action enum keys the reads
 #include "retropp/input_actions.h"  // ActionMap — binds the game's actions to keys/pad
-#include "retropp/palette.h"        // Rgba8 / PaletteId — colour upload
+#include "retropp/palette.h"        // Rgba8 / PaletteId — color upload
 #include "retropp/renderer.h"       // Renderer — uploadAtlas/uploadPalette + renderFrame
 #include "retropp/run_loop.h"       // RunLoop — simTick / renderLoop, the fixed-step driver
 #include "retropp/sdl_platform.h"   // SdlPlatform — window + GPU device + input
@@ -129,7 +129,7 @@ constexpr int kAtlasTiles = 12;
 
 // Build the indexed font atlas: ONE 8×8 tile per entry laid out left-to-right in a single row, with
 // pixel value 1 = "lit" and 0 = "background". The renderer's uploadAtlas takes exactly this: a flat
-// row-major array of palette INDICES (not colours). Colour is applied later, by a palette, on the GPU.
+// row-major array of palette INDICES (not colors). Color is applied later, by a palette, on the GPU.
 std::vector<std::uint8_t> buildFontAtlas() {
     const int width = kTile * kAtlasTiles;                          // all tiles in one 8-px-tall strip
     std::vector<std::uint8_t> atlas(static_cast<std::size_t>(width) * kTile, 0);  // start all-background
@@ -199,8 +199,8 @@ int main() {
     };
     platform.actions(map);
 
-    // ── 3. Upload art + colour to the GPU ─────────────────────────────────────────────────────────
-    // 3a. The font atlas (digits + net) and its palette. A palette is just an array of RGBA colours;
+    // ── 3. Upload art + color to the GPU ─────────────────────────────────────────────────────────
+    // 3a. The font atlas (digits + net) and its palette. A palette is just an array of RGBA colors;
     //     a tile/sprite pixel's INDEX selects an entry. Here index 0 = the dark court, index 1 = the
     //     soft-white lines/digits. uploadAtlas returns an AtlasId handle; uploadPalette a PaletteId.
     const std::vector<std::uint8_t> fontPx = buildFontAtlas();
@@ -210,7 +210,7 @@ int main() {
 
     // 3b. A single solid 8×32 atlas (every pixel index 1) serves BOTH paddles and the ball: a sprite
     //     draws a `size`-sized region read from tile 0, so any rectangle up to 8×32 is just a crop of
-    //     solid fill. Each mover then gets its OWN palette so the three differ in colour; a sprite's
+    //     solid fill. Each mover then gets its OWN palette so the three differ in color; a sprite's
     //     `palette` field selects which palette in the layer's set, and the pixel index (1) picks the
     //     entry within it. (Index 0 is the sprite "transparent hole", unused here since all pixels are 1.)
     std::array<std::uint8_t, 8 * 32> solidPx{};
@@ -227,7 +227,7 @@ int main() {
     // ── 4a. Playfield dimensions, READ FROM THE ACTIVE VIEWPORT ─────────────────────────────────────
     //     This is what makes the demo resolution-agnostic: everything below sizes itself off the
     //     configured viewport, so changing config.viewport (above) to GameBoyAdvance turns the same
-    //     code into a 240×160 game with a bigger court, the AI line and net/score re-centred, etc.
+    //     code into a 240×160 game with a bigger court, the AI line and net/score re-centered, etc.
     //     Every preset viewport is a multiple of the 8px tile, so kMapW/kMapH cover it exactly.
     const int   kViewW = config.viewport.width;
     const int   kViewH = config.viewport.height;
@@ -236,13 +236,13 @@ int main() {
     const float kPlayBottom = static_cast<float>(kViewH); // ball/paddles stay above this (the bottom edge)
     const float kRightX     = kViewW - 7.0f - kPaddleW;   // AI paddle's left edge (mirror of kLeftX)
     const float kAiReactX   = kViewW * kAiReactFrac;      // the AI tracks once the ball is right of this x
-    const int   kNetCol     = (kMapW - 1) / 2;            // centre-ish column for the dashed net
-    const int   kScoreLeftCol  = kMapW / 2 - 3;           // score-digit columns, symmetric about centre
+    const int   kNetCol     = (kMapW - 1) / 2;            // center-ish column for the dashed net
+    const int   kScoreLeftCol  = kMapW / 2 - 3;           // score-digit columns, symmetric about center
     const int   kScoreRightCol = kMapW / 2 + 2;
 
     // ── 4. Game state (all positions/velocities are floats for smooth motion; we round to int pixels
     //       only at the moment we hand them to the sprite layer — Sprite::x/y are integers). ─────────
-    float leftY  = (kPlayTop + kPlayBottom) / 2 - kPaddleH / 2;  // player paddle top-y (centred)
+    float leftY  = (kPlayTop + kPlayBottom) / 2 - kPaddleH / 2;  // player paddle top-y (centered)
     float rightY = leftY;                                         // AI paddle top-y
     float ballX = 0, ballY = 0, ballVx = 0, ballVy = 0;          // ball position + velocity
     int   leftScore = 0, rightScore = 0;
@@ -322,7 +322,7 @@ int main() {
                 else if (target > aiCentre + 2.0f) rightY += kAiSpeed;
             }
         } else {
-            // While someone is serving, the AI eases back toward vertical centre so each point starts
+            // While someone is serving, the AI eases back toward vertical center so each point starts
             // fairly (it isn't left stranded wherever the last rally ended).
             const float mid = (kPlayTop + kPlayBottom) / 2;
             if (aiCentre < mid - 2.0f) rightY += kAiSpeed;
@@ -333,7 +333,7 @@ int main() {
 
         // 7c. Serving vs rallying.
         if (phase == Phase::Serving) {
-            // The ball rides the server's paddle face, vertically centred on it — so a player can aim
+            // The ball rides the server's paddle face, vertically centered on it — so a player can aim
             // by moving their paddle before launching.
             if (server == Side::Left) {
                 ballX = kLeftX + kPaddleW;
@@ -363,7 +363,7 @@ int main() {
                 ballVx = isLeftPaddle ? std::abs(ballVx) : -std::abs(ballVx);
                 ballX  = isLeftPaddle ? paddleX + kPaddleW : paddleX - kBallSz;
                 const float offset = ((ballY + kBallSz / 2) - (paddleY + kPaddleH / 2)) / (kPaddleH / 2);
-                ballVy += offset * 1.5f;     // english: edge hits add more vertical spin than centre hits
+                ballVy += offset * 1.5f;     // english: edge hits add more vertical spin than center hits
                 ballVx *= 1.06f;             // each rally hit speeds the ball up slightly...
                 if (std::abs(ballVx) > 4.5f) ballVx = (ballVx < 0 ? -4.5f : 4.5f);  // ...up to a cap
                 if (std::abs(ballVy) > 5.0f) ballVy = (ballVy < 0 ? -5.0f : 5.0f);
@@ -396,7 +396,7 @@ int main() {
     //       timing and does no blending. ─────────────────────────────────────────────────────────────
     FrameDrawState frame;  // reused each frame; we clear() + refill it (immediate mode, no retained state)
     loop.renderLoop([&] {
-        // 8a. Rebuild the court tile layer: clear to blank, lay the dashed net down the centre column
+        // 8a. Rebuild the court tile layer: clear to blank, lay the dashed net down the center column
         //     (every other row), then stamp each player's single-digit score near the top.
         for (auto& c : cells) c.tile = kTileBlank;
         for (int row = 2; row < kMapH; row += 2) {
@@ -438,7 +438,7 @@ int main() {
         frame.layers.push_back(moversLayer);
 
         // 8b. The point-flash: a uniform whole-frame dim, expressed as an ordinary effect — a Multiply-
-        // blended ColorFill region covering the viewport, its grey fill the multiplier. Between points the
+        // blended ColorFill region covering the viewport, its gray fill the multiplier. Between points the
         // tween rests at 1.0 (Multiply by white = no change), so the region is pushed only while dimming →
         // it costs a pass only during the dip. On a point it dips to 0.6 and eases back.
         const float m = dimPlayer.value();

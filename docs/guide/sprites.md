@@ -43,13 +43,13 @@ struct Sprite {
     AssetDimensions size = AssetDimensions::GameBoy8x8;
     AtlasId         atlas{};                    // which uploaded sheet this sprite draws from
     std::uint16_t   tile = 0;                   // top-left atlas cell (8px grid) within that sheet
-    PaletteId       palette{};                  // which uploaded palette colours it
+    PaletteId       palette{};                  // which uploaded palette colors it
     float           alpha = 1.0f;               // per-sprite opacity [0,1]; multiplies UNDER the layer alpha
     BlendMode       blend = BlendMode::Normal;  // how the sprite composites over its container's image
     bool            flipX = false, flipY = false;
     Rotation        rotation = Rotation::None;  // 90° texture rotation; composes with the flips
     Transform       transform{};                // per-sprite geometric transform, sprite-local space, about pivot
-    Point           pivot{};                    // transform centre (QUAD-space px; {0,0} = top-left)
+    Point           pivot{};                    // transform center (QUAD-space px; {0,0} = top-left)
     Point           origin{};                   // placement handle — the point x/y place (QUAD-space px)
     std::span<const Anchor> anchors;            // published art-space points (game-owned; empty = none)
     std::vector<ScreenSpaceEffect> effects;     // whole-silhouette effect chain over the sprite's own pixels
@@ -58,7 +58,7 @@ struct Sprite {
     // resolvers (all const, constexpr):
     Point anchor(std::string_view | std::size_t, Space) const; // the anchor in the space you pass (Quad or Layer)
     Point toLayer(Point quadPoint) const noexcept;             // map any quad-space point into the layer's space
-    Point center(Space) const noexcept;                        // sprite middle: Quad = art midpoint, Layer = drawn centre
+    Point center(Space) const noexcept;                        // sprite middle: Quad = art midpoint, Layer = drawn center
 };
 ```
 
@@ -127,7 +127,7 @@ stays fixed). `origin` and `pivot` are two quad-space points doing two different
 
 - **`origin`** is the *placement handle* — the quad-space point that lands at `(x, y)`. Default `{0,0}`
   (top-left), so a sprite that never sets it places by its top-left corner.
-- **`pivot`** is the *transform centre* — the point `transform` spins about. Default `{0,0}`.
+- **`pivot`** is the *transform center* — the point `transform` spins about. Default `{0,0}`.
 
 A quad point `p` lands at `(x, y) + (pivot − origin) + transform·(p − pivot)`. At identity this cancels to
 `(x, y) + (p − origin)` — **the pivot drops out, so changing `pivot` never moves an untransformed sprite.**
@@ -138,11 +138,11 @@ Set the two to the *same* point to attach a joint: with `origin = pivot = a moun
 placing and spinning:
 
 ```cpp
-s.origin = s.center(Space::Quad);   // place s by its middle (x/y is now the centre)
+s.origin = s.center(Space::Quad);   // place s by its middle (x/y is now the center)
 s.pivot  = s.center(Space::Quad);   // spin s about its middle
 ```
 
-`center(Space::Layer)` gives that midpoint through transform + placement — the drawn centre a consumer
+`center(Space::Layer)` gives that midpoint through transform + placement — the drawn center a consumer
 reads. Set origin/pivot from an art feature with [`anchor`](#anchors--articulation--anchors-anchor-tolayer)
 in Quad space (`claw.pivot = claw.anchor("hinge", Space::Quad)`). Origin and pivot are quad-space
 transform inputs, so texture ops (`flip`, `rotation`) never move them and a `Space::Layer` value must not
@@ -151,7 +151,7 @@ feed them back.
 ## Art — `size`, `atlas`, `tile`, `palette`
 
 Four fields locate the sprite's art. `atlas` (`AtlasId`) names the uploaded sheet it draws from and
-`palette` (`PaletteId`) the uploaded palette it colours through — **both are per-sprite handles**, so one
+`palette` (`PaletteId`) the uploaded palette it colors through — **both are per-sprite handles**, so one
 sprite layer freely mixes sheets and palettes (there is no per-layer palette set; every sprite carries its
 own two handles). `tile` and `size` locate and size the rectangle read out of that sheet.
 
@@ -222,7 +222,7 @@ Both are *structural* transparency (a discarded pixel), distinct from `alpha` op
 draws). This coverage is also the sprite's effect **silhouette** — the mask a whole-silhouette effect or a
 Below-scope lens is confined to. The full model — how holes interact with `alpha`, with slicing, and with
 the effect silhouette — is in [images-and-transparency.md](images-and-transparency.md) and
-[tiles-and-colour.md](tiles-and-colour.md).
+[tiles-and-color.md](tiles-and-color.md).
 
 ## Flips & rotation
 
@@ -268,7 +268,7 @@ composited in isolation (one carrying its own `DrawLayer::blend` or an effect ch
 
 ```cpp
 Sprite shadow{.key = "shadow", .x = 64, .y = 96, .atlas = decals, .tile = kShadow,
-              .palette = greys, .alpha = 0.7f, .blend = BlendMode::Multiply};
+              .palette = grays, .alpha = 0.7f, .blend = BlendMode::Multiply};
 Sprite flare {.key = "flare",  .x = 80, .y = 60, .atlas = decals, .tile = kFlare,
               .palette = warm,  .blend = BlendMode::Add};
 ```
@@ -365,9 +365,9 @@ Sprite-specific semantics of the shared grammar:
   - The `radius` is authored in the sprite's own art pixels and blurs in viewport pixels, so a transformed
     sprite's halo scales with it (through the placement's linear scale — one isotropic factor, even under a
     non-uniform or perspective transform).
-  - Chain steps **before** the glow feed the emission (recolour a sprite and it radiates the new colour);
+  - Chain steps **before** the glow feed the emission (recolor a sprite and it radiates the new color);
     steps after it grade the art alone, since the halo has already left the pixel. A `Custom` step has no
-    emission pass, so a glow authored after one radiates the colour from before it (logged).
+    emission pass, so a glow authored after one radiates the color from before it (logged).
   - The halo composites over the whole layer's art, so a sprite drawn later in the same layer does not
     occlude an earlier sprite's halo.
 - **`Glow` is chain-only on a sprite.** A sprite `Glow` runs whole-silhouette (or as a Below lens) — a
@@ -505,7 +505,7 @@ one polygon. `n < 3` throws `std::invalid_argument`; a fully-transparent tile re
 `ShapePoints`. A `Region` sends ≤ 64 vertices to the GPU, so keep a region-bound budget ≤ 64.
 
 **The cost model — exactness is expensive to DRAW, not to test.** The intuition "coarse = cheap, exact =
-expensive" is backwards for point tests: the exact `contains()` is **one coverage read, O(1)**; a
+expensive" is backward for point tests: the exact `contains()` is **one coverage read, O(1)**; a
 `ShapePoints::contains()` test is **O(vertices)**. The coarse polygon is not the fast mask — it is the
 differently-*usable* one. Where vertex count really costs is **drawing**: a region's gate evaluates the
 polygon SDF per fragment, so a drawn polygon's vertex count is a per-pixel multiplier while it is on
@@ -520,7 +520,7 @@ yours, which keeps the exact-vs-coarse choice with the game.
 
 **When you just want the art again, the mask is the wrong tool.** A second `Sprite` with the same
 `atlas` / `tile` / `transform` re-draws the image as one instanced quad (a whole-silhouette `ColorFill` in
-its `effects` flat-colours it) — far cheaper than drawing a polygon. That covers **re-drawing the art and
+its `effects` flat-colors it) — far cheaper than drawing a polygon. That covers **re-drawing the art and
 nothing else**: it cannot give a textureless region, a detached storable shape, or an evenly inflated
 outline. Those are the mask's jobs.
 

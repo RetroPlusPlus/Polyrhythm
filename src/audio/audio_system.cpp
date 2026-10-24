@@ -529,7 +529,7 @@ struct AudioSystem::Impl {
         wire();
     }
 
-    // OWN: move the sink into `ownedSink`; `sink` binds to it. `ownedSink` is initialised before `sink`
+    // OWN: move the sink into `ownedSink`; `sink` binds to it. `ownedSink` is initialized before `sink`
     // (declaration order), so `*ownedSink` is live when the reference binds.
     Impl(detail::CoreFactory core, AudioKind kind, std::unique_ptr<AudioSink> s, VMPlatform platform,
          TimingProfile timing, unsigned rate)
@@ -1796,7 +1796,7 @@ struct AudioSystem::Impl {
                 machine->audio(true, {.rate = sampleRate, .onSample = [vp](std::int16_t left, std::int16_t right) {
                     // Auto-close bookkeeping: track the run of consecutive exact-zero output frames. A
                     // finished one-shot SFX's DAC-on tail settles to exact (0,0) (verified against the
-                    // real drivers), while an active tone is high-pass-centred and oscillates through 0
+                    // real drivers), while an active tone is high-pass-centered and oscillates through 0
                     // — so the run only reaches the threshold once the sound has actually stopped. Keyed
                     // off the RAW pre-gain sample: a low mixer level could round a still-playing quiet
                     // tone to zero, and that must not count as the sound stopping.
@@ -1907,7 +1907,7 @@ struct AudioSystem::Impl {
     // How far the lanes bound it depends on how much the output still has in hand. While the buffer holds
     // more than its floor there is time to wait, so the pass takes only what EVERY machine has ready and
     // comes back for the rest: a machine a few milliseconds late costs nobody anything, and the frames
-    // its healthier neighbours have parked are inventory rather than starvation. A machine that has yet
+    // its healthier neighbors have parked are inventory rather than starvation. A machine that has yet
     // to produce its first frame is still building, and a voice riding its release fade is finished
     // rather than paced, so neither one holds the pass back.
     //
@@ -1921,7 +1921,7 @@ struct AudioSystem::Impl {
     //
     // The output's own demand matters as much as the lane bound. Without it the mix would advance by
     // whatever the deepest lane happened to hold, and since machines run ahead by whole steps, a machine
-    // merely one step less far ahead than its neighbour would read as starving — every voice but the
+    // merely one step less far ahead than its neighbor would read as starving — every voice but the
     // deepest padded with a step of silence, worse the more machines there are. Without the lane bound, a
     // pass where nothing has been produced yet would stuff silence in front of frames that are merely
     // late; instead it produces nothing and the ring's own underflow covers it.

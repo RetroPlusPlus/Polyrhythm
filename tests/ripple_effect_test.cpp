@@ -6,17 +6,17 @@
 #include "retropp/geometry.h"
 
 // The built-in radial ripple effect. Device-free coverage of the CPU side: the uniform
-// resolution (rippleParams — centre px→UV normalization, the inverse-viewport scale) and the radial
+// resolution (rippleParams — center px→UV normalization, the inverse-viewport scale) and the radial
 // displacement math the ripple.frag GPU stage mirrors (rippleSourceUv). The live GPU path is build-
 // compiled + dev-verified across all three backends (the documented CI-headless boundary); these are
 // the failable units. amplitude is in viewport pixels and the sine/exp curve is GPU-verified, so the
-// assertions pin centre normalization + radial routing at SINE-EXACT arguments (sin(2π·0.25) = 1) on a
+// assertions pin center normalization + radial routing at SINE-EXACT arguments (sin(2π·0.25) = 1) on a
 // SQUARE viewport (aspect = 1, so the corrected distance equals the plain UV distance).
 
 namespace retropp {
 namespace {
 
-// rippleParams's centre normalization is constexpr (pure arithmetic, no transcendentals). It cannot be
+// rippleParams's center normalization is constexpr (pure arithmetic, no transcendentals). It cannot be
 // asserted over a `constexpr ScreenSpaceEffect` instance — the struct carries a std::vector region, and
 // a constexpr OBJECT with a heap-owning member is rejected by libstdc++ (the EngineConfig precedent). A
 // constexpr wrapper FUNCTION builds the effect as a LOCAL temporary (constructed + destroyed within the
@@ -34,7 +34,7 @@ constexpr RippleParams rippleParamsOf(Point center, float amplitude, float frequ
     return rippleParams(e, viewport);
 }
 
-// ── rippleParams — centre px→UV normalization + invViewport ───────────────────────────
+// ── rippleParams — center px→UV normalization + invViewport ───────────────────────────
 
 // center in viewport pixels normalizes to UV by the inverse viewport dimension: 80 px over 160 → 0.5,
 // 72 px over 144 → 0.5. Genuinely constexpr → static_assert-testable (the displaceParams discipline).
@@ -55,7 +55,7 @@ TEST(RippleParams, InvViewportComputed) {
     EXPECT_FLOAT_EQ(p.invViewportH, 1.0f / 144.0f);
 }
 
-// A degenerate (≤0) viewport dimension yields a 0 inverse — and thus a 0 normalized centre on that axis
+// A degenerate (≤0) viewport dimension yields a 0 inverse — and thus a 0 normalized center on that axis
 // — rather than dividing by zero. constexpr-checked.
 TEST(RippleParams, DegenerateViewportZeroesInverseAndCenter) {
     const RippleParams p = rippleParamsOf(Point{80.0f, 72.0f}, 0, 0, 0, 0, PixelSize{0, 0});
@@ -80,7 +80,7 @@ TEST(RippleParams, CopiesScalarParams) {
 static_assert(RippleParams{} == RippleParams{}, "default RippleParams compare equal");
 static_assert(!(RippleParams{.centerU = 0.5f} == RippleParams{}), "a differing field compares unequal");
 
-// ── rippleSourceUv — the full radial mirror (identity, centre, sign, decay) ────────────
+// ── rippleSourceUv — the full radial mirror (identity, center, sign, decay) ────────────
 
 // A square viewport so aspect = invH/invW = 1: the corrected distance equals the plain UV distance,
 // keeping the sine-exact construction clean.
@@ -106,14 +106,14 @@ TEST(RippleSourceUv, IdentityForNonRippleKind) {
     EXPECT_EQ(rippleSourceUv(uv, e, kSquare), uv);
 }
 
-// The centre fragment (dist ≈ 0) has no radial direction → identity, even at non-zero amplitude.
+// The center fragment (dist ≈ 0) has no radial direction → identity, even at non-zero amplitude.
 TEST(RippleSourceUv, CenterFragmentIsIdentity) {
     const ScreenSpaceEffect e = makeRipple(Point{50.0f, 50.0f}, 10.0f, 1.0f, 0.0f, 0.0f);
-    const Uv uv{0.5f, 0.5f};  // centre in UV (50/100, 50/100)
+    const Uv uv{0.5f, 0.5f};  // center in UV (50/100, 50/100)
     EXPECT_EQ(rippleSourceUv(uv, e, kSquare), uv);
 }
 
-// On the +x radius from the centre: dx = 0.25, dist = 0.25 (aspect 1); at frequency 1 / phase 0 the
+// On the +x radius from the center: dx = 0.25, dist = 0.25 (aspect 1); at frequency 1 / phase 0 the
 // sine argument is 2π·(1·0.25) → sin = 1, decay 0 → env = 1, so offset = amplitude px, displaced
 // radially OUTWARD (dir = +x). 10 px over a 100 px viewport is +0.1 UV.
 TEST(RippleSourceUv, SineExactRadialOffsetOutward) {

@@ -82,7 +82,7 @@ auto store = retropp::SaveStore::atPath("/some/explicit/directory");
 Two stores at different bases are fully independent; the store holds no global state. The
 directory does not need to exist yet — it is created on first write. This is also how tests
 stay hermetic: every store test roots at a unique directory under the system temp path and
-removes it afterwards, so nothing touches real save data and no test sees another's files.
+removes it afterward, so nothing touches real save data and no test sees another's files.
 
 ## Other files in the same directory
 

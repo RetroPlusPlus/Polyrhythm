@@ -222,7 +222,7 @@ int main() {
         const AtlasId atlas = atlasByFile.at(a.file);
         frame.layers.clear();
 
-        // z=10 — the source image, whole, near the top-centre (one sprite reading the full image rect).
+        // z=10 — the source image, whole, near the top-center (one sprite reading the full image rect).
         refSprites.clear();
         refSprites.push_back(Sprite{.key = "source", .x = (160 - a.size.width) / 2, .y = 12,
                                     .size = AssetDimensions{a.size.width, a.size.height}, .atlas = atlas,
@@ -241,12 +241,12 @@ int main() {
         frame.layers.push_back(std::move(ref));
 
         // z=20 — the carved slots in slot order. Single is always sprite-placed (its one slot is the
-        // whole image, larger than a tile cell); grids honour the toggle.
+        // whole image, larger than a tile cell); grids honor the toggle.
         const int n = static_cast<int>(slots.size());
         if (a.single || sprites) {
             carvedSprites.clear();
             if (a.single) {
-                // The one whole-image slot, centred below the source (identical to it — slot 0 = image).
+                // The one whole-image slot, centered below the source (identical to it — slot 0 = image).
                 carvedSprites.push_back(Sprite{.key = slotKeys[0], .x = (160 - slots[0].dimensions.width) / 2, .y = 84,
                                                .size = slots[0].dimensions, .atlas = atlas,
                                                .tile = slots[0].tile, .palette = pal});
@@ -268,7 +268,7 @@ int main() {
             frame.layers.push_back(std::move(carved));
         } else {
             // Tileset path: a contiguous N×1 tile row, finite (TileWrap::Blank), positioned by scroll
-            // so it sits centred below the source and the rest of the layer is transparent.
+            // so it sits centered below the source and the rest of the layer is transparent.
             carvedCells.clear();
             for (int i = 0; i < n; ++i) {
                 carvedCells.push_back(TileCell{.atlas = atlas,

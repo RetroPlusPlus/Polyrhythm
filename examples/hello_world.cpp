@@ -1,6 +1,6 @@
 // Hello, world! — the bare minimum: open a window and show "Hello, world!" on screen. It loads one
 // committed indexed image (examples/assets/hello_world.png — index 0 = background, 1 = ink) as a
-// single-asset atlas, draws it as one sprite centred in the viewport, and runs until you close the
+// single-asset atlas, draws it as one sprite centered in the viewport, and runs until you close the
 // window. Nothing else.
 //
 // (For a first *interactive* program — input + a scrolling world — see examples/controller_scrolling.cpp
@@ -48,12 +48,12 @@ int main() {
         AssetDimensions::GameBoy8x8, ContentKind::Single,
         ReadOrder::LeftRightThenDown, /*count=*/0, TransparentIndices::GameBoy);
 
-    // A two-colour palette: index 0 is the sheet's transparent index (the background shows through),
-    // index 1 is the ink. Colour is applied at render time — never baked into the art.
+    // A two-color palette: index 0 is the sheet's transparent index (the background shows through),
+    // index 1 is the ink. Color is applied at render time — never baked into the art.
     const std::array<Rgba8, 2> palette{{{0, 0, 0}, {235, 235, 245}}};
     const PaletteId pal = renderer.uploadPalette(std::span<const Rgba8>(palette));
 
-    // One sprite, the whole image (the manifest's single slot), centred in the 160×144 viewport. The
+    // One sprite, the whole image (the manifest's single slot), centered in the 160×144 viewport. The
     // sprite names its sheet (`atlas`) and palette directly — both per-sprite handles.
     const std::array<Sprite, 1> sprites{Sprite{
         .key     = "text",

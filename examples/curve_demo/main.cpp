@@ -1,5 +1,5 @@
 // Curve demo — a runnable host that VISUALLY proves the Curve primitive's queries. It opens a window and
-// plots, with small palette-coloured sprite markers (a tiny in-memory atlas — no committed asset), three
+// plots, with small palette-colored sprite markers (a tiny in-memory atlas — no committed asset), three
 // authored curves over a dim background grid in the 160×144 viewport:
 //
 //   • a CATMULL-ROM curve through gold waypoints (the curve passes THROUGH every waypoint), with cyan
@@ -45,16 +45,16 @@ using namespace retropp;
 constexpr int kViewW = 160, kViewH = 144;
 constexpr int kMapW = 20, kMapH = 18;   // 20×18 tiles cover the 160×144 viewport
 
-// One marker role per palette — the colour each marker draws through (uploaded below in this order).
+// One marker role per palette — the color each marker draws through (uploaded below in this order).
 enum Pal : std::uint8_t { kSample = 0, kWaypoint = 1, kWalker = 2, kTangent = 3, kBlob = 4 };
 
 // The demo's input vocabulary: the two toggles plus a dev key.
 enum class Action : std::uint8_t { RestartWalker, CycleRipple, Fullscreen };
 
-// One centred 8×8 marker at (x, y), drawing from `atlas` through `palette`.
+// One centered 8×8 marker at (x, y), drawing from `atlas` through `palette`.
 Sprite marker(float x, float y, AtlasId atlas, PaletteId palette) {
     Sprite s{.key = "marker"};  // placeholder key; the caller assigns a unique per-index key
-    s.x       = static_cast<int>(std::lround(x)) - 4;  // centre the 8×8 cell on the point
+    s.x       = static_cast<int>(std::lround(x)) - 4;  // center the 8×8 cell on the point
     s.y       = static_cast<int>(std::lround(y)) - 4;
     s.size    = AssetDimensions::GameBoy8x8;
     s.tile    = 0;
@@ -83,7 +83,7 @@ int main() {
     };
     platform.actions(map);
 
-    // A tiny 8×8 marker atlas: every texel is palette-index 1 (a solid square); the colour comes from the
+    // A tiny 8×8 marker atlas: every texel is palette-index 1 (a solid square); the color comes from the
     // selected palette's entry [1]. (Atlas index 0 would be the OBJ-transparent hole; we use index 1.)
     std::array<std::uint8_t, 64> markerArt{};
     markerArt.fill(1);
@@ -97,7 +97,7 @@ int main() {
             gridArt[static_cast<std::size_t>(y) * 8 + x] = (x == 0 || y == 0) ? 2 : 1;
     const AtlasId gridAtlas = renderer.uploadAtlas(gridArt.data(), 8, 8).atlasId;
 
-    // One palette per marker role; entry [1] is the visible colour (entry [0] is unused — never sampled).
+    // One palette per marker role; entry [1] is the visible color (entry [0] is unused — never sampled).
     const std::array<Rgba8, 2> samplePal{{{0, 0, 0}, {90, 200, 255}}};   // cyan — Curve::at samples
     const std::array<Rgba8, 2> wayPal{{{0, 0, 0}, {255, 210, 90}}};      // gold — waypoints
     const std::array<Rgba8, 2> walkPal{{{0, 0, 0}, {255, 90, 120}}};     // pink — constant-speed walker
@@ -109,7 +109,7 @@ int main() {
         renderer.uploadPalette(std::span<const Rgba8>(walkPal)),
         renderer.uploadPalette(std::span<const Rgba8>(tanPal)),
         renderer.uploadPalette(std::span<const Rgba8>(blobPal))};
-    // Resolve a marker ROLE (a Pal enumerator) to its uploaded palette, then build the centred marker that
+    // Resolve a marker ROLE (a Pal enumerator) to its uploaded palette, then build the centered marker that
     // draws from the marker atlas through it — each sprite now names its own sheet + palette directly.
     const auto mark = [&](float x, float y, Pal role) {
         return marker(x, y, markerAtlas, markerPalettes[role]);
@@ -238,7 +238,7 @@ int main() {
                 .amplitude = 3.5f,
                 .frequency = 5.0f,
                 .phase     = static_cast<float>(tick) * 0.01f,  // ~0.6 cycles/s — rings drift out slowly
-                .center    = Point{113, 92},                     // roughly the blob's centre
+                .center    = Point{113, 92},                     // roughly the blob's center
                 .decay     = 2.0f};
             if (rippleMode == 0)  // SAME effect, now bounded by the curve (a region the frame owns)
                 frame.regions.push_back(Region{.key = "blobRip", .shape = blobRegion, .effects = {ripple}});

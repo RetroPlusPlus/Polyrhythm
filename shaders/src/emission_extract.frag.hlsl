@@ -2,7 +2,7 @@
 //
 // Computes the per-pixel EMISSION of the source into a scratch target: the light a pixel contributes to
 // the halo, before any blur. Everything the developer authored except the reach folds in here — the
-// threshold that keys what emits, the intensity that scales it, and (for Glow) the tint that colours it —
+// threshold that keys what emits, the intensity that scales it, and (for Glow) the tint that colors it —
 // so every downstream stage is parameter-free and one emission buffer can carry many emitters at once.
 //
 //   Bloom:  e = src · f(lum(src), threshold) · intensity          // the brightpass, full rgba
@@ -10,7 +10,7 @@
 //   Glow:   m = mask(src, threshold);  e = (tint · m · intensity, m · intensity)
 //           mask(c) = c.a · survive(lumStraight(c), threshold)     // scalar; survive = 1 at threshold 0
 //
-// Bloom radiates the source's OWN colour, so its emission keeps the source chroma; Glow radiates a scalar
+// Bloom radiates the source's OWN color, so its emission keeps the source chroma; Glow radiates a scalar
 // mask times the authored tint, so no source hue ever enters its halo. Both write PREMULTIPLIED rgba —
 // the alpha carries the halo's coverage, which the composite stage lifts onto the source.
 //

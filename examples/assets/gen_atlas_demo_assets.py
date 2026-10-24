@@ -39,7 +39,7 @@ DIGITS: dict[int, list[str]] = {
 }
 
 # Palette indices: 0 = dark corner-notch marker, 1 = white digit, 2..7 = one distinct hue per
-# ordinal 0..5 (so cells differ in colour as well as digit). The demo hand-builds its own colour
+# ordinal 0..5 (so cells differ in color as well as digit). The demo hand-builds its own color
 # for these indices; this PLTE only matters if the raw PNG is viewed directly.
 PALETTE: list[tuple[int, int, int, int]] = [
     (30, 30, 36, 255),     # 0 marker

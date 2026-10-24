@@ -2,7 +2,7 @@
 //
 // Every case here runs against MockVmBackend — a flat byte array and a scripted walk. What is being
 // pinned is that declaring escapes, validating a batch, routing a fire to the right handler and
-// arming/disarming are the HOST layer's behaviour: they work with no console core underneath, so no
+// arming/disarming are the HOST layer's behavior: they work with no console core underneath, so no
 // part of them can have been designed around one core's capabilities.
 
 #include <cstdint>
@@ -294,7 +294,7 @@ TEST(GuestEscapes, AMachineThatCannotWatchAddressesIsLeftExactlyAsItWas) {
 }
 
 // ── The answering kind, on a machine with no CPU ────────────────────────────────────────────────
-// A replacement's declaration, validation, arming and marshalling are the host layer's; the mock
+// A replacement's declaration, validation, arming and marshaling are the host layer's; the mock
 // proves them with memory-convention bindings (this machine has no registers to bind).
 
 TEST(GuestEscapes, AReplacementMarshalsItsArgumentsInAndItsAnswerOut) {

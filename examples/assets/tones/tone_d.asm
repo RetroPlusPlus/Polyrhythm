@@ -2,7 +2,7 @@
 ; runs on its own fresh VM, so the driver carries its whole hardware setup — it never depends on
 ; another routine having configured the chip. Order matters for a clean start: the APU + wave RAM +
 ; DAC + volumes are set while the channel is UNTRIGGERED (silent — wave RAM is safe to write, the
-; DAC-on step lands on silence), then one frame of settle lets the output centre before the single
+; DAC-on step lands on silence), then one frame of settle lets the output center before the single
 ; trigger starts the note cleanly (no pop rides the onset).
 ld a, $80
 ldh [rNR52], a    ; APU master enable

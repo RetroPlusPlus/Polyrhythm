@@ -188,7 +188,7 @@ void SdlPlatform::openGamepad(SDL_JoystickID id) {
         if (pad.id == id) return;  // already open
     }
     if (SDL_Gamepad* handle = SDL_OpenGamepad(id)) {
-        // Detect the family so labelled sources, family-qualified rows, and glyph prompts adapt.
+        // Detect the family so labeled sources, family-qualified rows, and glyph prompts adapt.
         // Every pad enters at slot 0 (the all-devices-to-player-0 default); assignGamepad re-routes.
         pads_.push_back(OpenPad{handle, id, controllerTypeFrom(SDL_GetGamepadType(handle)), 0});
     }
@@ -597,7 +597,7 @@ void SdlAudioSink::start(unsigned rate, int channels, AudioPullFn pull) {
 
 void SdlAudioSink::stop() {
     if (stream_ != nullptr) {
-        SDL_DestroyAudioStream(stream_);  // guarantees the callback is not running afterwards
+        SDL_DestroyAudioStream(stream_);  // guarantees the callback is not running afterward
         stream_ = nullptr;
     }
     pull_ = nullptr;  // safe to clear: the callback cannot fire past the destroy

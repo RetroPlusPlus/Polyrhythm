@@ -14,7 +14,7 @@ using namespace retropp;
 
 namespace {
 
-// Scale a colour channel-wise by f (clamped) — builds the light/dark shades of a brick palette.
+// Scale a color channel-wise by f (clamped) — builds the light/dark shades of a brick palette.
 Rgba8 scale(Rgba8 c, float f) {
     auto ch = [&](std::uint8_t v) {
         return static_cast<std::uint8_t>(std::clamp(static_cast<int>(static_cast<float>(v) * f), 0, 255));
@@ -22,7 +22,7 @@ Rgba8 scale(Rgba8 c, float f) {
     return Rgba8{ch(c.r), ch(c.g), ch(c.b)};
 }
 
-// A {transparent, main, light, dark} sprite palette from a base colour (index 0 transparent).
+// A {transparent, main, light, dark} sprite palette from a base color (index 0 transparent).
 std::array<Rgba8, 4> brickPal(Rgba8 base) {
     return std::array<Rgba8, 4>{{ {0, 0, 0}, base, scale(base, 1.30f), scale(base, 0.62f) }};
 }
@@ -44,7 +44,7 @@ BongAssets loadBongAssets(Renderer& renderer) {
                                  /*count=*/0, TransparentIndices::GameBoy, /*framesPerAnimation=*/0,
                                  AssetPolicy::Embed);
 
-    // ── Sprite-layer palette set: 6 brick-row colours, then silver(full/cracked), gold, paddle, ball.
+    // ── Sprite-layer palette set: 6 brick-row colors, then silver(full/cracked), gold, paddle, ball.
     const std::array<Rgba8, kBrickRowPals> rowColours{{
         {220, 70, 70}, {230, 140, 55}, {228, 210, 80}, {95, 200, 100}, {75, 185, 215}, {130, 130, 235},
     }};
@@ -59,7 +59,7 @@ BongAssets loadBongAssets(Renderer& renderer) {
     upPal(brickPal({245, 230, 160}));                  // 10 ball
 
     // ── Text-layer set: every font cell shares a dark background (palette entry 0); entry 1 is the lit
-    //    glyph colour. Blank cells render as the dark background, so this one layer is the backdrop too.
+    //    glyph color. Blank cells render as the dark background, so this one layer is the backdrop too.
     const Rgba8 kBg{16, 18, 28};
     const std::array<Rgba8, 2> textWhite{{ kBg, {235, 238, 248} }};
     const std::array<Rgba8, 2> textGold {{ kBg, {236, 196, 96} }};

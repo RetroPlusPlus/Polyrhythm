@@ -3,7 +3,7 @@
 // Vantium — the ASSET LOADER, its own translation unit. Slices the three committed indexed PNGs,
 // uploads every (≤8-entry) palette, and builds the shared Animation clips: the explosion flipbook,
 // the fuel-pod glow pulse, and the starfield twinkle (the latter two are pure PALETTE animation —
-// the art never changes, the colours breathe). Everything is Embed; see assets.cpp.
+// the art never changes, the colors breathe). Everything is Embed; see assets.cpp.
 
 #include <array>
 #include <cstdint>

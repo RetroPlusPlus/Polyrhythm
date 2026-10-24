@@ -6,7 +6,7 @@
 #include <vector>
 
 // Device-free coverage of frame assembly: N-layer composition order across role-free mixed-content
-// layers, and the carriage of the frame's whole-frame effect lists. Whole-frame colour (day/night,
+// layers, and the carriage of the frame's whole-frame effect lists. Whole-frame color (day/night,
 // fades, flash, tints) is a screen-space effect (a ColorFill region with a blend mode), covered by
 // colorfill_effect_test / blend_mode_test; here it rides as data on FrameDrawState like any effect.
 
@@ -96,7 +96,7 @@ TEST(FrameFinish, ManyLayerStackStillTripsDuplicateZ) {
 // ── Whole-frame effect carriage ───────────────────────────────────────────────────────
 
 // The frame carries a whole-frame postEffects list and a confined-effect regions list. Whole-frame
-// colour is just an effect here: a Multiply ColorFill region is a day/night tint. The frame's own
+// color is just an effect here: a Multiply ColorFill region is a day/night tint. The frame's own
 // `blend` (the container blend mode) defaults to Normal. The two lists are carried verbatim and are
 // independent of each other.
 TEST(FrameFinish, PostEffectsAndColourRegionsAreCarriedIndependently) {

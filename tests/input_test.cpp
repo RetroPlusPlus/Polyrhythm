@@ -48,7 +48,7 @@ TEST(ActionSet, SetAndTestRoundTripPerAction) {
     ActionSet s;
     s.set(actionId(Act::Start), true);
     EXPECT_TRUE(s.test(actionId(Act::Start)));
-    EXPECT_FALSE(s.test(actionId(Act::Fire)));  // a neighbouring bit is untouched
+    EXPECT_FALSE(s.test(actionId(Act::Fire)));  // a neighboring bit is untouched
     s.set(actionId(Act::Start), false);
     EXPECT_FALSE(s.test(actionId(Act::Start)));
 }

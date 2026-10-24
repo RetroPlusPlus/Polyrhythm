@@ -201,7 +201,7 @@ int main() {
         frame.layers.push_back(sky);
 
         // z=10: the Mode-7-style floor. Build the transform: a slow scale pulse, THEN a slow yaw spin
-        // about the viewport centre, THEN (optionally) a perspective foreshortening so the far side
+        // about the viewport center, THEN (optionally) a perspective foreshortening so the far side
         // recedes — one Transform the fragment inverts + perspective-divides per pixel. The footprint
         // edge policy fills the rotated diamond's corners. (Perspective strength is dev-tunable; the
         // floor scrolls so the ground appears to drive forward.)
@@ -248,8 +248,8 @@ int main() {
 
         // Frame-level day/night (toggle): a slow warm→cool oscillation over the whole composited frame,
         // expressed as an ordinary effect — a Multiply-blended ColorFill region covering the viewport. The
-        // fill colour is the per-channel multiplier; Multiply darkens/tints the scene. No bespoke frame
-        // colour member.
+        // fill color is the per-channel multiplier; Multiply darkens/tints the scene. No bespoke frame
+        // color member.
         if (dayNight) {
             const float t   = 0.5f + 0.5f * std::sin(static_cast<float>(tick) * 0.004f);  // 0..1, slow
             const auto  u8  = [](float v) { return static_cast<std::uint8_t>(v * 255.0f); };

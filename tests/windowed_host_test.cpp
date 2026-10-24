@@ -142,7 +142,7 @@ TEST(WindowedHost, FreeSpinIsPacedToTheRefreshPeriod) {
 }
 
 // Pacing: a platform whose present blocks for a full refresh period each iteration (the healthy vsync case —
-// modelled by the pump advancing the platform clock a whole period) is ALREADY at its deadline, so the host's
+// modeled by the pump advancing the platform clock a whole period) is ALREADY at its deadline, so the host's
 // pacing sleep is ~0. The deadline composes with vsync rather than fighting it (same period → the longer block
 // wins; here the present already paced, so the host adds nothing).
 TEST(WindowedHost, VsyncBlockedFrameSleepsNearZero) {

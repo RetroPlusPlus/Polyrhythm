@@ -45,7 +45,7 @@ enum class Action : std::uint8_t { Grab, Mode, Quit };
 constexpr float kTitleBarHeight = 16.0f;  // the title bar strip, in viewport pixels
 constexpr float kManualDragRate = 4.0f;   // stick/d-pad points per tick in the game-driven drag
 
-// A solid-colour rectangle region — the demo's one drawing primitive.
+// A solid-color rectangle region — the demo's one drawing primitive.
 Region fill(std::string key, float x, float y, float w, float h, Rgba8 colour) {
     return Region{
         .key     = std::move(key),

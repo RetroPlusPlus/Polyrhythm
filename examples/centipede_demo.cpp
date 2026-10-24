@@ -1,23 +1,23 @@
 // ============================================================================================
 //  Centipede — a sprite + palette showcase on Polyrhythm, written as a heavily documented teaching
 //  example. The earlier demos (Pong/Breakout/Missile Command) drew solid rectangles, and Tempest
-//  drew lines; THIS one is about real INDEXED SPRITE ART and the PALETTE system: multi-colour
-//  hand-pixelled sprites whose colours come entirely from palettes, with per-sprite palette
+//  drew lines; THIS one is about real INDEXED SPRITE ART and the PALETTE system: multi-color
+//  hand-pixelled sprites whose colors come entirely from palettes, with per-sprite palette
 //  SELECTION, animated palette CYCLING, and palette SWAPS for state + level changes.
 // ============================================================================================
 //
 //  WHAT THIS DEMONSTRATES (engine features — the focus is sprites + palettes):
 //    • Indexed sprite art: ONE atlas of 8×8 tiles where each pixel is a PALETTE INDEX (0 =
-//      transparent hole, 1..13 = colour slots). The centipede, mushrooms, blaster, bullet and spider
-//      are all hand-pixelled multi-colour shapes — not solid blocks.
-//    • Palette SELECTION (the core idea): a sprite's COLOURS come from the palette its `palette` field
+//      transparent hole, 1..13 = color slots). The centipede, mushrooms, blaster, bullet and spider
+//      are all hand-pixelled multi-color shapes — not solid blocks.
+//    • Palette SELECTION (the core idea): a sprite's COLORS come from the palette its `palette` field
 //      selects out of the layer's palette set. The SAME centipede-segment art is drawn in 6 different
 //      hues just by choosing a different palette per segment.
 //    • Palette CYCLING (animation with no art change): the rainbow MARCHES along the centipede and
 //      shifts over time — purely by advancing which palette each segment selects each frame. (This is
-//      the "palette is a per-frame field" idea, here as a live colour wave.)
+//      the "palette is a per-frame field" idea, here as a live color wave.)
 //    • Palette SWAP for state + level: a poisoned mushroom selects a purple palette (same art); each
-//      new wave swaps the mushroom palette so the whole field recolours.
+//      new wave swaps the mushroom palette so the whole field recolors.
 //    • One SpriteContent layer carries the multi-tile atlas + a 12-entry palette set; every game
 //      object is a sprite that picks (tile, palette, position, flipX). Dynamic sprite count.
 //    • EngineConfig viewport + timing (ViewportResolution::Nes 256×240 + TimingProfile{TickPeriodNs::Hz60}).
@@ -27,7 +27,7 @@
 //      d-pad / arrows / WASD; HOLD X (pad A) to fire upward. Shoot a body segment and it SPLITS into two centipedes and drops a
 //      mushroom; shoot mushrooms to clear lanes (4 hits each). A roaming spider eats mushrooms — shoot
 //      it for points. If the centipede (or spider) reaches your blaster you lose one of 3 lives; clear
-//      the centipede for the next (faster, recoloured) wave.
+//      the centipede for the next (faster, recolored) wave.
 //
 // The demo never auto-launches a window; you run it.
 //
@@ -71,8 +71,8 @@ constexpr int kCell = 8;  // 8×8 px cell — the grid unit AND the sprite tile 
 
 // ── Indexed sprite art ──────────────────────────────────────────────────────────────────────────────
 // Each tile is 8 rows of 8 chars; a char is a PALETTE INDEX: '.' = 0 (transparent), '1'..'9' = 1..9,
-// 'a'..'d' = 10..13. The colour for an index is supplied by whichever palette a sprite selects — so the
-// art is colour-AGNOSTIC: index 2 is "the body colour", whatever the chosen palette makes it.
+// 'a'..'d' = 10..13. The color for an index is supplied by whichever palette a sprite selects — so the
+// art is color-AGNOSTIC: index 2 is "the body color", whatever the chosen palette makes it.
 //   centipede body/head: 1 outline, 2 body, 3 highlight, 4 eyes
 //   mushroom:            5 cap,     6 spots, 7 stem
 //   blaster:             8 hull,    9 cockpit
@@ -115,9 +115,9 @@ std::vector<std::uint8_t> buildSpriteAtlas() {
     return a;
 }
 
-// A palette as a 16-slot colour table indexed by the pixel index. makePal fills only the slots a sprite
+// A palette as a 16-slot color table indexed by the pixel index. makePal fills only the slots a sprite
 // type uses; the rest stay black (those indices never appear in that sprite's art, so they're never
-// sampled). Slot 0 is the transparent hole — its colour is irrelevant.
+// sampled). Slot 0 is the transparent hole — its color is irrelevant.
 std::array<Rgba8, 16> makePal(std::initializer_list<std::pair<int, Rgba8>> entries) {
     std::array<Rgba8, 16> p{};
     for (const auto& [i, c] : entries) p[static_cast<std::size_t>(i)] = c;
@@ -209,12 +209,12 @@ int main() {
     const PaletteId voidPal = renderer.uploadPalette(std::span<const Rgba8>(palVoid));
     const PaletteId hudPal  = renderer.uploadPalette(std::span<const Rgba8>(palHud));
 
-    // 2b. THE SPRITE ATLAS — one indexed atlas of all 8 sprite tiles. Colour comes from palettes, below.
+    // 2b. THE SPRITE ATLAS — one indexed atlas of all 8 sprite tiles. Color comes from palettes, below.
     const std::vector<std::uint8_t> spritePx = buildSpriteAtlas();
     const AtlasId spriteAtlas = renderer.uploadAtlas(spritePx.data(), kCell * kSpriteTiles, kCell, TransparentIndices::GameBoy).atlasId;
 
     // 2c. THE PALETTE SET — every palette any sprite might select, in ONE set. A sprite's `palette` field
-    //     is an index into this set; that's the whole colouring mechanism. 6 rainbow hues for the
+    //     is an index into this set; that's the whole coloring mechanism. 6 rainbow hues for the
     //     centipede, two mushroom schemes (swapped per wave) + a poisoned scheme, blaster, bullet, spider.
     const Rgba8 outline{20, 22, 34}, eyes{245, 245, 255};
     const std::array<std::pair<Rgba8, Rgba8>, kRainbowCount> hues{{   // {body, highlight}
@@ -379,11 +379,11 @@ int main() {
                 for (const Cell& s : c.segs)
                     if (s.cx == px && s.cy == py) { loseLife(); goto after_cent; }
         after_cent:;
-        // wave clear → next (faster, recoloured) wave
+        // wave clear → next (faster, recolored) wave
         if (cents.empty()) startWave();
 
         // 4d. Spider: spawns occasionally, zig-zags through the lower field eating mushrooms; shoot it for
-        //     points, it costs a life on contact. (Another multi-colour sprite + a moving target.)
+        //     points, it costs a life on contact. (Another multi-color sprite + a moving target.)
         if (!spider.alive && --spiderTimer <= 0) {
             spider.alive = true; spider.life = 600;
             spider.x = (nextRand(rng) & 1) ? 0.0f : static_cast<float>(kViewW - kCell);
@@ -473,7 +473,7 @@ int main() {
         // stationary mushroom or centipede segment (they move by mounting a new head / unmounting the tail,
         // never by shifting an existing cell), a per-spawn id for a bullet or burst, a fixed name for a
         // singleton. Emission order no longer decides identity.
-        const int mushPal = (wave % 2 == 0) ? palMushA : palMushB;  // per-WAVE palette swap (recolour)
+        const int mushPal = (wave % 2 == 0) ? palMushA : palMushB;  // per-WAVE palette swap (recolor)
         for (int r = kFieldTop; r < kRows; ++r)
             for (int c = 0; c < kCols; ++c) {
                 const int hp = mush[static_cast<std::size_t>(r)][static_cast<std::size_t>(c)];
@@ -498,7 +498,7 @@ int main() {
                               kTileSpider, palSpider);
         if (scorpion.alive) put("scorpion", static_cast<int>(scorpion.x) / kCell, scorpion.row, kTileScorpion,
                                 palScorpion, scorpion.vx < 0);
-        // hit bursts: the spark pops OUTWARD over its short life (scaled about its centre via Transform).
+        // hit bursts: the spark pops OUTWARD over its short life (scaled about its center via Transform).
         for (const Burst& bu : bursts) {
             const float s = 0.6f + 1.3f * (static_cast<float>(bu.age) / kBurstLife);
             sprites.push_back(Sprite{

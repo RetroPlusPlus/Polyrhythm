@@ -7,7 +7,7 @@
 // locks in.
 //
 // Device-backed and reference-FREE: it composes four sprites that differ only by palette, each at its
-// own position, and asserts each sprite's OWN colour appears at its OWN centre. On a backend exhibiting
+// own position, and asserts each sprite's OWN color appears at its OWN center. On a backend exhibiting
 // the bug every instance reads record 0, so only sprite 0 renders and sprites 1..3 read the background
 // there — the assertion goes red. No committed golden is involved, so the test gives a clean red/green
 // on ANY GPU (the per-backend GoldenReadback pins compare each backend to itself and cannot catch a
@@ -86,17 +86,17 @@ TEST_F(SpriteInstancing, EveryInstanceRendersItsOwnRecord) {
 
     // One solid 8x8 tile of palette index 1 — the sprite art. Each sprite differs ONLY by palette, so the
     // draw exercises the per-instance record read (GpuSprite.atlasPalette) directly: a collapse to record 0
-    // shows as sprites sharing sprite 0's colour AND position.
+    // shows as sprites sharing sprite 0's color AND position.
     std::array<std::uint8_t, 8 * 8> solid{};
     solid.fill(1);
     const AtlasId atlas = r.uploadAtlas(solid.data(), 8, 8).atlasId;
 
-    // Background fills the viewport in a colour distinct from every sprite, so a non-rendered sprite's
-    // cell reads the background — never a sprite colour by coincidence.
+    // Background fills the viewport in a color distinct from every sprite, so a non-rendered sprite's
+    // cell reads the background — never a sprite color by coincidence.
     const std::array<Rgba8, 2> bgPal{{{0, 0, 0}, {25, 25, 35}}};
     const PaletteId bg = r.uploadPalette(std::span<const Rgba8>(bgPal));
 
-    // Four distinct, opaque sprite colours (at palette index 1), one palette each.
+    // Four distinct, opaque sprite colors (at palette index 1), one palette each.
     const std::array<Rgba8, 4> colors{{{220, 40, 40}, {40, 200, 80}, {50, 110, 230}, {240, 220, 60}}};
     std::array<PaletteId, 4> pals{};
     for (std::size_t i = 0; i < colors.size(); ++i) {
@@ -139,7 +139,7 @@ TEST_F(SpriteInstancing, EveryInstanceRendersItsOwnRecord) {
     const std::vector<Rgba8> px = r.captureViewport(frame);
     ASSERT_EQ(px.size(), static_cast<std::size_t>(kW) * static_cast<std::size_t>(kH));
 
-    // Each sprite's own colour must appear at its own centre. If the D3D12 stride-0 collapse is present,
+    // Each sprite's own color must appear at its own center. If the D3D12 stride-0 collapse is present,
     // sprites 1..3 read record 0 and never render here — these expectations go red exactly on the buggy
     // backend, one line per instance so the failure names which instances vanished.
     for (std::size_t i = 0; i < at.size(); ++i) {

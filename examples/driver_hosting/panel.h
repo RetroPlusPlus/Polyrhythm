@@ -5,7 +5,7 @@
 // pure UI (layout, mouse hit-testing, drawing); it knows nothing about audio. main.cpp maps a clicked
 // Control to the matching handle verb.
 //
-// Drawing is two pure functions: controlRegions() returns the coloured rectangles (pads, faders, LEDs) as a
+// Drawing is two pure functions: controlRegions() returns the colored rectangles (pads, faders, LEDs) as a
 // list of Regions, and textSprites() returns the labels as glyph Sprites. main.cpp puts the regions on a
 // low-z faceplate layer and the sprites on a higher-z text layer, so the labels sit above the panel.
 
@@ -77,7 +77,7 @@ struct Fonts {
     PaletteId     dim;     // secondary notes
 };
 
-// The coloured rectangles of the faceplate, in draw order.
+// The colored rectangles of the faceplate, in draw order.
 [[nodiscard]] std::vector<Region> controlRegions(const PanelState& s);
 // The text labels + live readouts as glyph sprites.
 [[nodiscard]] std::vector<Sprite> textSprites(const PanelState& s, const Fonts& fonts);

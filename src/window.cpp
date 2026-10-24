@@ -54,7 +54,7 @@ void Window::dragHandles(std::span<const Region> regions) {
 }
 
 bool Window::hitsDragRegion(Vec2i viewportPos) const {
-    // Test the pixel's centre, exactly where the drawn region resolves that pixel — so the draggable
+    // Test the pixel's center, exactly where the drawn region resolves that pixel — so the draggable
     // area and the painted title bar agree to the pixel. curveRegionContains handles every boundary a
     // ShapePoints can carry (polygon, radius, stroke, transform, invert, curves).
     const Point centre{static_cast<float>(viewportPos.x) + 0.5f,

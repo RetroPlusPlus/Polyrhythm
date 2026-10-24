@@ -27,7 +27,7 @@ struct SdlPlatformTestAccess;  // src/sdl_platform_testing.h — a platform with
 //
 // Freely constructible — make one per AudioSystem (an AudioSystem drives one of these). Multiple
 // sinks open multiple device streams that the OS mixes, so several AudioSystems (chiptune, PCM, …)
-// play at once. Requires SDL audio initialised — SdlPlatform does that in its constructor (SDL_INIT_
+// play at once. Requires SDL audio initialized — SdlPlatform does that in its constructor (SDL_INIT_
 // AUDIO); a game has a platform, so this is satisfied by the time it builds an AudioSystem.
 class SdlAudioSink final : public AudioSink {
 public:
@@ -58,7 +58,7 @@ struct GamepadInfo {
 };
 
 // The production Platform: owns an SDL_Window, an SDL_GPUDevice, and the swapchain
-// association. The constructor initialises SDL (video + gamepad + audio), creates the window
+// association. The constructor initializes SDL (video + gamepad + audio), creates the window
 // (from the EngineConfig's WindowConfig), acquires the GPU device, and claims the window
 // for it; the destructor releases them in reverse order. Single-threaded — every call
 // runs on the platform thread.

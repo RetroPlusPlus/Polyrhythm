@@ -145,10 +145,10 @@ constexpr int kKnobPx = 96, kLampPx = 48;
 
 // The deck.
 constexpr int kDeckTop = 856;                       // the face begins here and runs to the bottom
-constexpr int kControlY = 946;                      // every control's centre line
+constexpr int kControlY = 946;                      // every control's center line
 constexpr int kLabelY = 1012;
 constexpr int kControlX0 = 112, kControlDx = 178;
-constexpr float kKnobSweep = 135.0f;                // the pointer's travel either side of centre
+constexpr float kKnobSweep = 135.0f;                // the pointer's travel either side of center
 
 constexpr int kMaxSprites = 4000, kMaxLenses = 24, kMaxTileLayers = 4, kMaxRuns = 24;
 
@@ -265,7 +265,7 @@ int main(int argc, char** argv) {
     };
     platform.actions(map);
 
-    // ── Art: generated sheets, coloured by palette images ────────────────────────────────────
+    // ── Art: generated sheets, colored by palette images ────────────────────────────────────
     const AtlasManifest font =
         renderer.loadAtlas("examples/render_stats/assets/art/font.png",
                            AssetDimensions{kGlyphPx, kGlyphPx}, ContentKind::Tileset,
@@ -551,7 +551,7 @@ int main(int argc, char** argv) {
                                                   kFieldPx * 0.5f, kFieldPx * 0.5f);
             if (load.blendRuns > 0) {
                 // Contiguous blocks, so the RUNS value IS the number of runs the layer splits into.
-                // Interleaving instead would maximise the split for a given count and read as damage
+                // Interleaving instead would maximize the split for a given count and read as damage
                 // rather than as the cost being dialled.
                 const int block = (i * load.blendRuns) / std::max(1, load.sprites);
                 if ((block & 1) != 0) s.blend = BlendMode::Screen;

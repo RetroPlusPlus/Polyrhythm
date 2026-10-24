@@ -11,7 +11,7 @@
 // through the region gate's CPU mirrors (curveRegionContains / regionContains), so a drawn shape and this
 // test agree by construction; the one deliberate departure is the empty shape, which contains NOTHING
 // (the free-function mirrors keep their applies-everywhere default — an effect with no region covers the
-// frame). Device-free: every case is pure CPU geometry, and each shape field the gate honours — radius,
+// frame). Device-free: every case is pure CPU geometry, and each shape field the gate honors — radius,
 // strokeWidth, transform, invert, a curve boundary — is exercised through the member verb.
 
 namespace retropp {
@@ -28,7 +28,7 @@ TEST(ShapePointsContains, EmptyShapeContainsNothing) {
 
 TEST(ShapePointsContains, RadiusInflatesTheContainedDisc) {
     const ShapePoints disc = ShapePoints::circle(Point{80.0f, 72.0f}, 10.0f);
-    EXPECT_TRUE(disc.contains(Point{80.0f, 72.0f}));    // centre
+    EXPECT_TRUE(disc.contains(Point{80.0f, 72.0f}));    // center
     EXPECT_TRUE(disc.contains(Point{89.0f, 72.0f}));    // just inside the rim
     EXPECT_FALSE(disc.contains(Point{92.0f, 72.0f}));   // just past it
     EXPECT_FALSE(disc.contains(Point{140.0f, 72.0f}));  // far outside
@@ -77,7 +77,7 @@ TEST(ShapePointsContains, ACurveBoundaryRoutesThroughTheCurvePath) {
     diamond.closed = true;
     const ShapePoints shape = ShapePoints::fromCurve(diamond);
     ASSERT_TRUE(shape.points.empty());
-    EXPECT_TRUE(shape.contains(Point{80.0f, 72.0f}));   // centre
+    EXPECT_TRUE(shape.contains(Point{80.0f, 72.0f}));   // center
     EXPECT_FALSE(shape.contains(Point{10.0f, 10.0f}));  // far outside
     EXPECT_FALSE(shape.contains(Point{52.0f, 44.0f}));  // inside the corner's bounding box, outside the arc
 }

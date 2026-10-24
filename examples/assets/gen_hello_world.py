@@ -64,7 +64,7 @@ def _round8(n: int) -> int:
 def render(text: str) -> tuple[int, int, list[list[int]]]:
     text_w = len(text) * (GW + GAP) - GAP
     # The atlas upload path needs image dimensions that are a multiple of the 8px cell, so pad the
-    # canvas up and centre the text (the padding is background = index 0, transparent on the sprite).
+    # canvas up and center the text (the padding is background = index 0, transparent on the sprite).
     width, height = _round8(text_w), _round8(GH)
     ox, oy = (width - text_w) // 2, (height - GH) // 2
     plane = [[0 for _ in range(width)] for _ in range(height)]

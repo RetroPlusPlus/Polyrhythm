@@ -117,7 +117,7 @@ TEST(RegionBatching, CircleInstanceRecord) {
     const RegionBatchInstance r     = regionBatchInstance(shape, 1, kW, kH);
     EXPECT_EQ(r.box, regionScissorRect(shape, 1, kW, kH));  // the single box authority
     EXPECT_EQ(r.p0, (Point{80, 72}));
-    EXPECT_EQ(r.p1, (Point{80, 72}));   // a circle repeats its centre as the spine
+    EXPECT_EQ(r.p1, (Point{80, 72}));   // a circle repeats its center as the spine
     EXPECT_FLOAT_EQ(r.radius, 30.0f);
 }
 
@@ -406,7 +406,7 @@ TEST(RegionGather, RecordHeaderCircle) {
     EXPECT_FLOAT_EQ(h[2], static_cast<float>(in.box.x + in.box.width)  / kW);
     EXPECT_FLOAT_EQ(h[3], static_cast<float>(in.box.y + in.box.height) / kH);
     EXPECT_FLOAT_EQ(h[4], 80.0f);  EXPECT_FLOAT_EQ(h[5], 72.0f);   // spine p0
-    EXPECT_FLOAT_EQ(h[6], 80.0f);  EXPECT_FLOAT_EQ(h[7], 72.0f);   // circle repeats its centre
+    EXPECT_FLOAT_EQ(h[6], 80.0f);  EXPECT_FLOAT_EQ(h[7], 72.0f);   // circle repeats its center
     EXPECT_FLOAT_EQ(h[8], 30.0f);                                   // radius
     EXPECT_FLOAT_EQ(h[9], 0.0f);   EXPECT_FLOAT_EQ(h[10], 0.0f);  EXPECT_FLOAT_EQ(h[11], 0.0f);
 }

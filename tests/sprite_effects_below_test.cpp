@@ -181,14 +181,14 @@ protected:
 
 struct Art { AtlasId atlas{}; PaletteId palette{}; };
 
-// A uniform single-colour background (every tile the same solid colour) — a predictable scene to grade.
+// A uniform single-color background (every tile the same solid color) — a predictable scene to grade.
 Art uploadSolidBg(Renderer& r, Rgba8 colour) {
     std::array<std::uint8_t, 8 * 8> idx{};   // all index 0
     const AtlasId a = r.uploadAtlas(idx.data(), 8, 8).atlasId;
     const std::array<Rgba8, 1> pal{{colour}};
     return {a, r.uploadPalette(std::span<const Rgba8>(pal))};
 }
-// A background split into a left half (colour A) and right half (colour B) — for the displacement edge test.
+// A background split into a left half (color A) and right half (color B) — for the displacement edge test.
 Art uploadSplitBg(Renderer& r, Rgba8 a, Rgba8 b) {
     std::array<std::uint8_t, 8 * 8> idx{};
     for (int y = 0; y < 8; ++y)
@@ -262,7 +262,7 @@ TEST_F(SpriteBelow, ColorFillGradesTheSceneOnTheSilhouetteAndLeavesTheSurroundIn
 
     // A lens draws no art; with an opaque mask (coverage 1) the Below ColorFill fully replaces the scene on
     // the silhouette, so a covered pixel is exactly the fill. (N drew the opaque disc art there — a different
-    // colour — so N ≠ B marks the silhouette, and G ≠ N confirms the lens replaced the art draw with the grade.)
+    // color — so N ≠ B marks the silhouette, and G ≠ N confirms the lens replaced the art draw with the grade.)
     const Rgba8 want{FILL.r, FILL.g, FILL.b, 255};
 
     int covered = 0, changed = 0;
@@ -293,7 +293,7 @@ TEST_F(SpriteBelow, RowDisplacementMovesTheSceneEdgeWithinTheSilhouette) {
     auto scene = [&](bool withBelow, std::vector<TileCell>& cells, std::vector<Sprite>& keepS) {
         FrameDrawState f;
         f.layers.push_back(splitBgLayer(bg, cells));
-        // Place the sprite straddling the scene's colour seam (viewport x = 32) so a horizontal shift of the
+        // Place the sprite straddling the scene's color seam (viewport x = 32) so a horizontal shift of the
         // scene visibly swaps which side shows under the silhouette.
         Sprite s{.key = "lens", .x = 28, .y = kSY, .atlas = sprite.atlas, .tile = 0, .palette = sprite.palette};
         if (withBelow) {
@@ -375,7 +375,7 @@ TEST_F(SpriteBelow, CustomGradesTheSceneThroughTheSilhouetteViaAGameShader) {
     ASSERT_EQ(G.size(), B.size());
 
     // Covered pixels: saturate(scene * tint + lift), opaque (coverage 1). This differs from both the raw scene
-    // (a no-op passthrough would fail) and the art N drew, so it is a real behavioural gate.
+    // (a no-op passthrough would fail) and the art N drew, so it is a real behavioral gate.
     const Vec4  s = Vec4{BG.r / 255.0f, BG.g / 255.0f, BG.b / 255.0f, 1.0f};
     const Rgba8 want{quant(s.x * tint.x + lift), quant(s.y * tint.y + lift), quant(s.z * tint.z + lift), 255};
 

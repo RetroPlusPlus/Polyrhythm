@@ -1,7 +1,7 @@
 # Images & transparency
 
 Loading art from PNG files, and the opt-in per-source transparency that lets one layer's holes reveal
-the layer beneath. This feeds the indexed colour model in [tiles-and-colour.md](tiles-and-colour.md):
+the layer beneath. This feeds the indexed color model in [tiles-and-color.md](tiles-and-color.md):
 a PNG's index plane goes straight into `uploadAtlas`.
 
 ```cpp
@@ -13,7 +13,7 @@ a PNG's index plane goes straight into `uploadAtlas`.
 
 - [Loading a PNG: `loadPng`](#loading-a-png-loadpng)
   - [How sources route](#how-sources-route)
-  - [Truecolour decodes to a colour plane](#truecolour-decodes-to-a-colour-plane)
+  - [Truecolor decodes to a color plane](#truecolor-decodes-to-a-color-plane)
   - [A truecolor image as a layer: `loadImage`](#a-truecolor-image-as-a-layer-loadimage)
 - [Slicing an atlas into addressable assets](#slicing)
 - [Transparency: structural and material](#transparency-structural-and-material)
@@ -33,11 +33,11 @@ struct LoadedImage {
     int                       width  = 0, height = 0;
     std::vector<std::uint8_t> indices;   // kind == Indexed: one index per pixel, row-major
     std::vector<Rgba8>        palette;   // kind == Indexed: embedded palette (may be empty)
-    std::vector<Rgba16>       pixels;    // kind == Rgba: one 16-bit colour per pixel, row-major
+    std::vector<Rgba16>       pixels;    // kind == Rgba: one 16-bit color per pixel, row-major
 };
 ```
 
-`loadPng` decodes a PNG and routes by its colour type. For the faithful indexed path it extracts the
+`loadPng` decodes a PNG and routes by its color type. For the faithful indexed path it extracts the
 **index plane** — one palette index per pixel — which is exactly what `uploadAtlas` consumes:
 
 ```cpp
@@ -52,37 +52,37 @@ const AtlasId atlas = renderer.uploadAtlas(img.indices.data(), img.width, img.he
 
 ### How sources route
 
-| PNG colour type | `kind` | `indices` | `palette` |
+| PNG color type | `kind` | `indices` | `palette` |
 |---|---|---|---|
 | **Palette (PLTE)** | `Indexed` | the raw PLTE index per pixel | the embedded palette, as `Rgba8` |
-| **Grayscale** | `Indexed` | the grey sample value *as* the index (e.g. 2-bit → 0..3) | empty (grayscale carries no colour) |
-| **Truecolour / truecolour-alpha** | `Rgba` | — (fills `pixels`) | — (see below) |
+| **Grayscale** | `Indexed` | the gray sample value *as* the index (e.g. 2-bit → 0..3) | empty (grayscale carries no color) |
+| **Truecolor / truecolor-alpha** | `Rgba` | — (fills `pixels`) | — (see below) |
 
-The index is **read, never reverse-derived from a colour**: the decoder preserves the source's own
+The index is **read, never reverse-derived from a color**: the decoder preserves the source's own
 format and the platform unpacks the (possibly sub-byte) samples itself, so it is exact for any bit depth
 (1/2/4/8-bit). A 16-bit-sample PNG throws on this indexed path — that depth carries wider indices and
 belongs to the map-import path (`loadMapPng` / `loadMapPngFromMemory`, see
 [tilemaps.md](tilemaps.md)). A palette PNG yields its PLTE index plane plus the
 embedded palette; a grayscale PNG
-yields its sample-as-index plane and an empty palette (you supply colour separately via
-`uploadPalette` — the indexed model never bakes colour into the art). Errors — a missing file, a
+yields its sample-as-index plane and an empty palette (you supply color separately via
+`uploadPalette` — the indexed model never bakes color into the art). Errors — a missing file, a
 corrupt PNG — throw `std::runtime_error`.
 
 > **Faithful default.** Indexed/grayscale is the faithful console source format. Decoding works
 > headlessly (pure CPU), so image loading is unit-testable with no window or GPU device.
 
-### Truecolour decodes to a colour plane
+### Truecolor decodes to a color plane
 
-A truecolour (RGB / RGBA) PNG decodes too: `loadPng` returns `kind == Rgba` and fills `pixels` with one
-**16-bit-per-channel** colour per pixel (an 8-bit source widens losslessly ×257, a 16-bit source lands
-direct), alpha included. This is the colour counterpart to the index plane, and two routes consume it.
-One builds a **palette** from an image: `slicePaletteImage` walks a truecolour PNG one pixel per palette entry (and
+A truecolor (RGB / RGBA) PNG decodes too: `loadPng` returns `kind == Rgba` and fills `pixels` with one
+**16-bit-per-channel** color per pixel (an 8-bit source widens losslessly ×257, a 16-bit source lands
+direct), alpha included. This is the color counterpart to the index plane, and two routes consume it.
+One builds a **palette** from an image: `slicePaletteImage` walks a truecolor PNG one pixel per palette entry (and
 throws `std::runtime_error` on a non-`Rgba` source), and
 `Renderer::loadPaletteImage` chains the decode + slice + upload (see
-[tiles-and-colour.md](tiles-and-colour.md#loading-a-palette-from-an-image-loadpaletteimage--paletteid)).
+[tiles-and-color.md](tiles-and-color.md#loading-a-palette-from-an-image-loadpaletteimage--paletteid)).
 The other shows the image itself: `Renderer::loadImage` decodes a truecolor PNG and uploads it whole as
 an image a raster layer names (below).
-Atlas art stays **indexed/grayscale** — the faithful console format, where colour is an index plus a
+Atlas art stays **indexed/grayscale** — the faithful console format, where color is an index plus a
 palette chosen at render time — so `uploadAtlas` consumes the index plane, not `pixels`.
 
 ### A truecolor image as a layer: `loadImage`
@@ -216,7 +216,7 @@ list is wanted.
 
 An atlas pixel can be a HOLE — discarded so the layer beneath shows through — by two independent
 mechanisms. They compose: one decides *whether* an index draws at all, the other *how faintly* a drawn
-pixel blends. Both the tile and sprite paths honour both.
+pixel blends. Both the tile and sprite paths honor both.
 
 **Structural transparency — the transparent-index set.** Per sheet, you declare which palette *indices*
 are holes. It is a property of the **source** (the atlas), not the layer or the palette. The set is a
@@ -242,13 +242,13 @@ fragment's index is in the sheet's set, the shader discards it and whatever laye
 shows through.
 
 **Material transparency — palette alpha.** A palette entry with alpha `0` is also a hole: a fragment
-whose colour samples a fully-transparent entry is discarded, on either path. (Alpha `1`–`254` still
-alpha-blends — only an exact `0` discards.) This needs no index list — it travels with the colour, so a
-palette image (a colour PNG; see [tiles-and-colour.md](tiles-and-colour.md)) whose entries carry alpha
+whose color samples a fully-transparent entry is discarded, on either path. (Alpha `1`–`254` still
+alpha-blends — only an exact `0` discards.) This needs no index list — it travels with the color, so a
+palette image (a color PNG; see [tiles-and-color.md](tiles-and-color.md)) whose entries carry alpha
 makes its own holes.
 
-The two are orthogonal: the index set holes an index whatever colour it maps to (it works for
-grayscale/indexed art with no palette alpha); the alpha discard holes a colour whatever index it sits
+The two are orthogonal: the index set holes an index whatever color it maps to (it works for
+grayscale/indexed art with no palette alpha); the alpha discard holes a color whatever index it sits
 at. Use either or both per sheet.
 
 The runnable showcase of material (palette-alpha) transparency is [`examples/wall_cracks_demo`](../../examples/wall_cracks_demo/main.cpp): a brick
@@ -277,11 +277,11 @@ const AtlasId holed  =
   `uploadAtlas`.
 - **Make an index see-through:** pass it in the `TransparentIndices` set at upload —
   `TransparentIndices::of({n})`, or `::GameBoy` for the index-0 OBJ hole.
-- **Make a colour see-through:** give that palette entry alpha 0 — it discards wherever it is sampled,
+- **Make a color see-through:** give that palette entry alpha 0 — it discards wherever it is sampled,
   no index list needed.
 - **Decode a console palette file (`.gbcpal`, etc.):** that's consumer-side — build the `Rgba8`
   palette from your asset format and `uploadPalette` it; the platform's image loader handles the index
-  plane, you handle the colour table.
-- **RGBA / truecolour art:** load it as an image (`loadImage`) and show it on a raster layer
-  (`RasterContent{.image = …}`); atlas art stays indexed/grayscale, and a truecolour PNG also decodes to
-  a 16-bit colour plane for palette building (see "Truecolour decodes to a colour plane" above).
+  plane, you handle the color table.
+- **RGBA / truecolor art:** load it as an image (`loadImage`) and show it on a raster layer
+  (`RasterContent{.image = …}`); atlas art stays indexed/grayscale, and a truecolor PNG also decodes to
+  a 16-bit color plane for palette building (see "Truecolor decodes to a color plane" above).

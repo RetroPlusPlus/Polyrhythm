@@ -1,19 +1,19 @@
 // Sprite transform showcase demo — the capstone of the transform era:
 //
-//   • A big 16×16 "F" GLYPH SPRITE (z=10) that spins about ITS OWN centre under Sprite::transform — a
-//     per-sprite projective transform, the sprite analogue of D.1's per-layer Mode-7 floor. The F is
+//   • A big 16×16 "F" GLYPH SPRITE (z=10) that spins about ITS OWN center under Sprite::transform — a
+//     per-sprite projective transform, the sprite analog of D.1's per-layer Mode-7 floor. The F is
 //     asymmetric in BOTH axes, so rotation orientation, flip, and perspective all read clearly. Toggle
 //     a slow scale pulse (Left), a perspective foreshorten (Up), a horizontal flip (Z), and a vertical
 //     flip (Down) to prove the flips compose with rotation (a flip mirrors the TEXTURE within the
 //     sprite; the transform rotates the QUAD — independent operations).
 //   • A RIDE LAYER (z=20) of three small F glyphs whose DrawLayer::transform slowly rotates the WHOLE
-//     layer about the viewport centre — the glyphs orbit rigidly together, proving the per-layer
+//     layer about the viewport center — the glyphs orbit rigidly together, proving the per-layer
 //     transform reaches sprites (each sprite carries identity; the layer moves them all).
 //   • A static checkerboard BACKGROUND (z=0, tile path) so the sprite motion reads against a grid.
 //
 // Rotation/zoom are slow and same-direction — no strobing — and nothing auto-launches. Run on a dev
-// machine and confirm: the central F spins about its own centre (and foreshortens / pulses / flips to a
-// backwards-F per the toggles), while the three small F's orbit together as one rigid layer.
+// machine and confirm: the central F spins about its own center (and foreshortens / pulses / flips to a
+// backward-F per the toggles), while the three small F's orbit together as one rigid layer.
 //
 // Like the other example hosts this instantiates SdlPlatform + Renderer in a real run, so it keeps the
 // live SDL_GPU sprite transform path compiling + linking on every CI platform even though CI never
@@ -53,7 +53,7 @@ enum class Action : std::uint8_t {
 
 // Build a 16×16 indexed "F" glyph — asymmetric in BOTH axes so rotation AND flip read clearly (the
 // classic transform-test glyph). index 0 = transparent (OBJ hole), 1 = the vertical spine, 2 = the
-// two arms. A horizontal flip turns it into a backwards F; any rotation is unambiguous.
+// two arms. A horizontal flip turns it into a backward F; any rotation is unambiguous.
 std::array<std::uint8_t, 16 * 16> makeGlyphAtlas() {
     std::array<std::uint8_t, 16 * 16> px{};  // zero = transparent
     auto set = [&](int x, int y, std::uint8_t v) {
@@ -123,13 +123,13 @@ int main() {
         }
     }
 
-    // The spinner: one 16×16 F centred in the viewport. Its own transform spins it about (8,8).
+    // The spinner: one 16×16 F centered in the viewport. Its own transform spins it about (8,8).
     Sprite spinner{.key = "spinner"};
     spinner.size    = AssetDimensions{16, 16};
     spinner.tile    = 0;
     spinner.atlas   = glyphAtlas;
     spinner.palette = glyphP;
-    spinner.x       = kViewW / 2 - 8;   // centre the 16×16 sprite
+    spinner.x       = kViewW / 2 - 8;   // center the 16×16 sprite
     spinner.y       = kViewH / 2 - 8;
 
     // The ride layer: three F glyphs in a row near the top; the LAYER transform orbits them.
@@ -198,7 +198,7 @@ int main() {
                                  .cells         = std::span<const TileCell>(bgCells)};
         frame.layers.push_back(bg);
 
-        // z=10: the spinner. Sprite::transform spins about the sprite's own centre (8,8), optionally
+        // z=10: the spinner. Sprite::transform spins about the sprite's own center (8,8), optionally
         // pulsing in scale and foreshortening under perspective — all in sprite-local space.
         const float spin  = static_cast<float>(tick) * 0.4f;   // ~24°/s — slow, no strobe
         const float pulse = scalePulse ? 1.0f + 0.3f * std::sin(static_cast<float>(tick) * 0.015f) : 1.0f;
@@ -219,7 +219,7 @@ int main() {
         frame.layers.push_back(spinLayer);
 
         // z=20: the ride layer — three identity sprites; the LAYER transform orbits them all rigidly
-        // about the viewport centre (proving DrawLayer::transform reaches the sprite path).
+        // about the viewport center (proving DrawLayer::transform reaches the sprite path).
         DrawLayer rideLayer{.key = "ride"};
         rideLayer.z         = 20;
         rideLayer.size      = PixelSize{kViewW, kViewH};

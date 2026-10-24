@@ -84,8 +84,8 @@ struct SpritePathMove {
     enum class Kind : std::uint8_t { Line, ThroughPoints, Hermite, Curve };
     Kind                kind = Kind::Line;      // identity, first member
     std::optional<Vec2> origin{};              // absent → the inherited origin (start / previous node's end)
-    Vec2                destination{};          // Line / Hermite: the point travelled to
-    std::vector<Vec2>   points;                // ThroughPoints: travelled through in order, ending at back()
+    Vec2                destination{};          // Line / Hermite: the point traveled to
+    std::vector<Vec2>   points;                // ThroughPoints: traveled through in order, ending at back()
     Vec2                originTangent{};         // Hermite: the departure directional vector
     Vec2                destinationTangent{};    // Hermite: the arrival directional vector
     Curve               curve{};               // Curve: travel this exact curve verbatim (no origin defaulting)
@@ -98,7 +98,7 @@ struct SpritePathMove {
 ```
 
 - **`to(destination)`** — a straight line from the origin to `destination`.
-- **`through(points)`** — a smooth [Catmull-Rom](curve.md) curve travelling through the listed points in
+- **`through(points)`** — a smooth [Catmull-Rom](curve.md) curve traveling through the listed points in
   order, ending at the last one.
 - **`hermite(destination, originTangent, destinationTangent)`** — a cubic leaving the origin along
   `originTangent` and arriving at `destination` along `destinationTangent` (a directional vector *is* a
@@ -140,7 +140,7 @@ struct SpritePathNode {
     PlaybackMode                scaleMode = PlaybackMode::single();
     const Animation*            animation = nullptr;       // frames track (game-owned)
     PlaybackMode                animationMode = PlaybackMode::loopIndefinitely();
-    std::optional<Vec2>         pivot;                     // rotation/scale pivot (absent = sprite centre)
+    std::optional<Vec2>         pivot;                     // rotation/scale pivot (absent = sprite center)
 };
 ```
 
@@ -267,7 +267,7 @@ Two idioms fall out of the pacing kinds, both intentional:
 
 - **The wait node** — a zero-length move (`to` the same point) with `Eased` pacing. The move covers no
   distance, so the sprite stands still, but the node stays entered for the eased duration while its tracks
-  play. A patrol pausing at a corner is a wait node between two travelling legs.
+  play. A patrol pausing at a corner is a wait node between two traveling legs.
 - **The sentinel node** — `Speed` 0 (the parked default) on a move with real geometry. Constant speed 0 never
   reaches the end, so the leg **never finishes**: the sequence rests there indefinitely, tracks playing, until
   an interrupt or a re-path moves it on. A guard standing post until something happens is a sentinel node.
@@ -343,7 +343,7 @@ freezing it:
 |---|---|---|
 | `x` / `y` | always | `std::lround(position)` — the one quantize point (the path's math is float end-to-end) |
 | `atlas` / `tile` / `size` / `palette` | the **current** node has an animation track | the current frame's art (a node without one leaves the last art showing — holding art is meaningful; writing "no art" is not) |
-| `transform` | **any** node the path holds declares rotation, scale, or `RotateToFacing` | scale, then rotation, about the pivot (`node.pivot`, or the sprite's centre using the size after the frame write). While the *current* node drives neither axis the sample is identity, so a tumble **stops** instead of freezing at the last rotation |
+| `transform` | **any** node the path holds declares rotation, scale, or `RotateToFacing` | scale, then rotation, about the pivot (`node.pivot`, or the sprite's center using the size after the frame write). While the *current* node drives neither axis the sample is identity, so a tumble **stops** instead of freezing at the last rotation |
 | `flipX` | **any** node the path holds uses `FacingPolicy::FlipX` | the mirror state from travel (held across nodes that don't drive it) |
 | `key`, `alpha`, `flipY`, the 90° texture `rotation` | never | left untouched — the game's |
 
@@ -386,7 +386,7 @@ shadow.y = int(std::lround(p.y)) + 3;
 
 `applyTo` and the getters agree on every shared value — `applyTo` is the common-case write, the getters are
 the composed values when you want to place them differently. The sample carries raw values (no pre-composed
-`Transform`) because the rotation/scale pivot defaults to the sprite's centre, and the sprite's size is only
+`Transform`) because the rotation/scale pivot defaults to the sprite's center, and the sprite's size is only
 known at the write.
 
 Each getter returns one field of the cached `SpritePathSample`:
@@ -420,7 +420,7 @@ struct SpritePathSample {
 - **Face travel:** set `FacingPolicy::FlipX` (mirror) or `RotateToFacing` (rotate).
 - **Spin or scale it while it moves:** give the node a `rotationDegrees` and/or `scale`
   [`Tween`](tween.md) track, each with its own `PlaybackMode`; pick the pivot with `node.pivot` (default is
-  the sprite's centre).
+  the sprite's center).
 - **Animate its art as it moves:** point `node.animation` at an [`Animation`](animation.md).
 - **Break off to a detour:** `interrupt(detourNodes)` — it departs from the current position; on finish the
   route continues from where the detour ended (`ResumePolicy::Continue`, the default — it drifts) or snaps

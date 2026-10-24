@@ -218,7 +218,7 @@ public:
     [[nodiscard]] std::uint64_t readRegister(std::uint16_t) override { throw notAMachine(); }
     void writeLiveRegister(std::uint16_t, std::uint64_t, int) override { throw notAMachine(); }
 
-    // Live word access over the flat array — what a replacement's memory-convention marshalling
+    // Live word access over the flat array — what a replacement's memory-convention marshaling
     // reads and writes. Little-endian, as every console this engine hosts is.
     [[nodiscard]] std::uint64_t readMemory(std::uint32_t address, int width) override {
         std::uint64_t value = 0;
@@ -286,7 +286,7 @@ public:
 
     // ── The save-data seam ─────────────────────────────────────────────────────────────────────
     // This machine has no power to go off, so it keeps nothing: a core with no persistence model is a
-    // thing the seam is built to allow, and this is one. The save-data behaviour itself is exercised
+    // thing the seam is built to allow, and this is one. The save-data behavior itself is exercised
     // against the real core (vm_save_data_test.cpp), because the chain under test — a guest's store
     // raising the core's own change signal — only exists when the core is real.
 

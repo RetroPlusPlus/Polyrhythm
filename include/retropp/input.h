@@ -78,11 +78,11 @@ private:
     std::uint64_t bits_ = 0;  // one bit per ActionId, 0..kMaxActions-1
 };
 
-// The detected physical-controller family. SDL normalises button POSITIONS across families, so this
+// The detected physical-controller family. SDL normalizes button POSITIONS across families, so this
 // is not needed for input correctness — it drives button-glyph / prompt selection (via the
-// active-device signal below) and the per-family resolution of labelled pad sources
+// active-device signal below) and the per-family resolution of labeled pad sources
 // (input_actions.h). "Standard" is SDL's generic well-mapped pad; "Unknown" is no pad /
-// unrecognised.
+// unrecognized.
 enum class ControllerType : std::uint8_t { Unknown, Xbox, PlayStation, Nintendo, Standard };
 
 // Which kind of device most recently produced input for a player slot.

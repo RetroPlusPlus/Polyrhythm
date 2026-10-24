@@ -3,7 +3,7 @@
 // Every case here runs against MockVmBackend, whose finishFrame stands where a real core's vblank is.
 // What is being pinned is that turning drawing on, holding a completed frame to the tick boundary,
 // answering with the last complete one, and refusing the clock that cannot carry a picture are all the
-// HOST layer's behaviour: they work with no console core underneath, so no part of them can have been
+// HOST layer's behavior: they work with no console core underneath, so no part of them can have been
 // designed around one core's picture.
 
 #include <chrono>
@@ -45,7 +45,7 @@ constexpr int kWidth  = 4;
 constexpr int kHeight = 2;
 
 // A picture whose every pixel is a distinct byte pattern derived from `mark`, so one frame is never
-// mistaken for another and a row read backwards is not the row read forwards.
+// mistaken for another and a row read backward is not the row read forward.
 std::vector<std::uint8_t> pictureOf(std::uint8_t mark) {
     std::vector<std::uint8_t> pixels(static_cast<std::size_t>(kWidth) * kHeight * 4);
     for (std::size_t i = 0; i < pixels.size(); ++i) {
@@ -76,7 +76,7 @@ TEST(VmFrameSink, AskingAMachineThatDrawsNothingToDrawThrows) {
     EXPECT_THROW(m.machine.video(true), std::logic_error);
 }
 
-// Declaring an output at construction and switching it on afterwards are the same setting reached two
+// Declaring an output at construction and switching it on afterward are the same setting reached two
 // ways, so a machine declared this way is drawing before it has hosted anything.
 TEST(VmFrameSink, VideoDeclaredAtConstructionIsOn) {
     Vm             machine{VMPlatform::GameBoy, VmConfig{.video = true}};

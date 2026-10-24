@@ -1,15 +1,15 @@
-// Colour-saturation demo — a runnable host that teaches and shows off the built-in COLOR SATURATION effect
+// Color-saturation demo — a runnable host that teaches and shows off the built-in COLOR SATURATION effect
 // (ScreenSpaceEffectKind::ColorSaturation): a cross-channel grade that pulls each pixel toward its own
-// luminance, draining colour toward greyscale.
+// luminance, draining color toward grayscale.
 //
-// WHAT IT IS. Saturation is a colour operation ColorFill can't express: ColorFill is per-channel (scale +
-// offset + mix toward one solid colour), but desaturation pulls every channel toward the SAME target — the
+// WHAT IT IS. Saturation is a color operation ColorFill can't express: ColorFill is per-channel (scale +
+// offset + mix toward one solid color), but desaturation pulls every channel toward the SAME target — the
 // pixel's OWN brightness. saturation 255 leaves the pixel exactly as-is (the identity, the default), 0 makes
-// it grey, and values between drain it partway.
+// it gray, and values between drain it partway.
 //
 // HOW YOU DRIVE IT (the teaching bit). It is a built-in: you never write a shader or register anything — you
 // name the kind and set ONE inline field with plain designated-init, exactly like ColorFill or Gleam. The
-// amount is a uint8, the same 0..255 surface as a colour channel (255 = full, 0 = grey):
+// amount is a uint8, the same 0..255 surface as a color channel (255 = full, 0 = gray):
 //
 //     Sprite s{ .key = "hero", .x = 64, .y = 56, .atlas = ball, .palette = pal };
 //     s.effects = { ScreenSpaceEffect{ .kind = ScreenSpaceEffectKind::ColorSaturation, .saturation = 128 } };
@@ -18,15 +18,15 @@
 // a frame postEffect, or inside a Region to desaturate a layer, the whole frame, or one shape.
 //
 // THE THREE BALLS (same art, same palette, side by side):
-//   • LEFT — the control. No effect at all: full colour.
-//   • MIDDLE — a static ColorSaturation at 0: fully greyscale, every frame.
-//   • RIGHT — an animated grade. Its saturation eases between 255 (full colour) and 0 (grey); Space toggles
-//     the direction, so one press drains the colour out over about a second and the next press floods it
+//   • LEFT — the control. No effect at all: full color.
+//   • MIDDLE — a static ColorSaturation at 0: fully grayscale, every frame.
+//   • RIGHT — an animated grade. Its saturation eases between 255 (full color) and 0 (gray); Space toggles
+//     the direction, so one press drains the color out over about a second and the next press floods it
 //     back. The game owns the timeline (the eased value is recomputed each tick and written into the effect);
 //     the engine owns the shader.
 //
 // The beach-ball art (four saturated wedges — red / green / blue / yellow) makes the drain obvious: at full
-// saturation the wedges are vivid; at 0 they collapse to four greys of different brightness.
+// saturation the wedges are vivid; at 0 they collapse to four grays of different brightness.
 //
 // Motion advances on the sim tick, so the ease runs the same on any display. Space = toggle the right ball's
 // drain, Backspace = fullscreen. Close to quit.
@@ -60,12 +60,12 @@ using namespace retropp;
 
 constexpr int kViewW = 160, kViewH = 144;
 constexpr int kMapW = 20, kMapH = 18;
-constexpr int kBall = 32;  // a 32x32 ball, big enough that the wedge colours (and their drain) read clearly
+constexpr int kBall = 32;  // a 32x32 ball, big enough that the wedge colors (and their drain) read clearly
 
 enum class Action : std::uint8_t { Toggle, Fullscreen };
 
 // A 32x32 beach ball: four angular wedges (indices 1..4) inside radius 15, index 0 (a GameBoy hole) outside.
-// The four saturated wedge colours make the desaturation obvious — vivid hues collapse to distinct greys.
+// The four saturated wedge colors make the desaturation obvious — vivid hues collapse to distinct grays.
 [[nodiscard]] std::array<std::uint8_t, kBall * kBall> beachBallArt() {
     std::array<std::uint8_t, kBall * kBall> a{};
     const float c = (kBall - 1) * 0.5f, r = kBall * 0.5f - 1.0f;
@@ -102,7 +102,7 @@ int main() {
     };
     platform.actions(map);
 
-    // A dark neutral backdrop so all three balls — including the greyscale one — stand clear of the background.
+    // A dark neutral backdrop so all three balls — including the grayscale one — stand clear of the background.
     std::array<std::uint8_t, 64> bg{};
     bg.fill(1);
     const AtlasId          bgAtlas = renderer.uploadAtlas(bg.data(), 8, 8).atlasId;
@@ -121,10 +121,10 @@ int main() {
                                         {240, 210, 40}}};   // 4 — yellow
     const PaletteId ballPalId = renderer.uploadPalette(std::span<const Rgba8>(ballPal));
 
-    // The animated ball's eased saturation. `phase` 0 = full colour, 1 = grey; `dir` is which way Space last
+    // The animated ball's eased saturation. `phase` 0 = full color, 1 = gray; `dir` is which way Space last
     // sent it. Advanced on the sim tick so the ease is display-rate-independent.
-    float phase = 0.0f;   // 0 -> full colour
-    int   dir   = +1;     // +1 drains toward grey, -1 floods colour back
+    float phase = 0.0f;   // 0 -> full color
+    int   dir   = +1;     // +1 drains toward gray, -1 floods color back
     constexpr int kDurationTicks = 60;  // ~1s at ~59.7 ticks/s per direction
 
     loop.simTick([&](const InputState& in) {
@@ -158,17 +158,17 @@ int main() {
                           .atlas = ballAtlas, .tile = 0, .palette = ballPalId};
         };
 
-        // LEFT — control: no effect at all, full colour.
+        // LEFT — control: no effect at all, full color.
         sprites.push_back(ballSprite("control", ballX[0]));
 
-        // MIDDLE — a static ColorSaturation at 0: greyscale every frame.
+        // MIDDLE — a static ColorSaturation at 0: grayscale every frame.
         Sprite grey = ballSprite("static-grey", ballX[1]);
         grey.effects = {ScreenSpaceEffect{.kind = ScreenSpaceEffectKind::ColorSaturation, .saturation = 0}};
         sprites.push_back(grey);
 
-        // RIGHT — the eased grade: saturation rides the smoothstepped phase (255 full -> 0 grey), toggled by
+        // RIGHT — the eased grade: saturation rides the smoothstepped phase (255 full -> 0 gray), toggled by
         // Space. The value is recomputed and resubmitted each tick; the engine never eases effect params for us.
-        const float        sat  = 1.0f - smoothstep(phase);                          // 1 = full colour, 0 = grey
+        const float        sat  = 1.0f - smoothstep(phase);                          // 1 = full color, 0 = gray
         const std::uint8_t satU = static_cast<std::uint8_t>(std::lround(sat * 255.0f));
         Sprite drain = ballSprite("animated", ballX[2]);
         drain.effects = {ScreenSpaceEffect{.kind = ScreenSpaceEffectKind::ColorSaturation, .saturation = satU}};

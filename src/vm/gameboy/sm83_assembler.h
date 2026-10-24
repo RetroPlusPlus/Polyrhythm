@@ -170,7 +170,7 @@ constexpr std::int64_t evalTerm(const std::string& term, std::size_t line, const
 }
 
 // Evaluate an operand expression: a term, optionally with one trailing +/- term (covers `label+2`,
-// `$FF00-1`). Leading sign is honoured (`-2`).
+// `$FF00-1`). Leading sign is honored (`-2`).
 constexpr std::int64_t evalExpr(const std::string& expr, std::size_t line, const SymbolTable& syms,
                                 bool lenient) {
     std::string e = despace(expr);

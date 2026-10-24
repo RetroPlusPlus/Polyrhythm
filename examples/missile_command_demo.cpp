@@ -13,17 +13,17 @@
 //          profile from the enum like this. (The two GB presets are TimingProfile::GameBoy/GameBoyColor.)
 //    • SteadyClock + RunLoop                   — fixed-step sim (simTick) decoupled from render (renderLoop).
 //    • SdlPlatform + Renderer                  — the live window + GPU device + draw API.
-//    • uploadAtlas / uploadPalette             — indexed art + colour onto the GPU.
+//    • uploadAtlas / uploadPalette             — indexed art + color onto the GPU.
 //    • A TILE layer for the static backdrop     — sky + ground + the score readout, on the 8px grid.
 //    • SPRITE layers for everything dynamic      — cities, battery, missile heads, trail dots, crosshair,
 //                                                and explosions; DYNAMIC sprite counts (a std::vector
 //                                                rebuilt each frame → arbitrary N sprites per layer).
 //    • Sprite::transform (a per-sprite scale)    — the expanding explosions are one 16×16 circle sprite
-//                                                scaled about its centre to the current blast radius.
+//                                                scaled about its center to the current blast radius.
 //
 //  THE GAME:
 //    • Enemy missiles rain from the top toward your 6 cities, leaving trails.
-//    • A CROSSHAIR (arrows / WASD / d-pad) aims your battery (bottom centre). Fire (X key or the
+//    • A CROSSHAIR (arrows / WASD / d-pad) aims your battery (bottom center). Fire (X key or the
 //      pad's south button) launches a counter-missile to the crosshair; when it arrives it
 //      detonates into an expanding circular blast.
 //    • Any enemy missile caught in a blast is destroyed (+points). Blasts chain: a ground hit also
@@ -105,7 +105,7 @@ constexpr std::array<std::array<std::uint8_t, 7>, 10> kDigits{{
     {0b01110,0b10001,0b10001,0b01111,0b00001,0b00010,0b01100},  // 9
 }};
 
-// Background tile-atlas layout: tile 0 = a solid block (used for both sky and ground, recoloured by the
+// Background tile-atlas layout: tile 0 = a solid block (used for both sky and ground, recolored by the
 // cell's palette), tiles 1..10 = the digits 0..9 (5×7 lit on a 1px margin) for the score.
 constexpr int kTileSolid  = 0;
 constexpr int kTileDigit0 = 1;
@@ -169,14 +169,14 @@ struct CounterMissile {
     int   id = 0;          // stable identity for this missile's head + trail keys
 };
 struct Explosion {
-    float x, y;            // centre
+    float x, y;            // center
     int   age = 0;         // ticks since detonation
     bool  scoring = false; // YOUR blasts score kills; ground/enemy blasts don't
     bool  alive = true;
     int   id = 0;          // stable identity for this blast's sprite key
 };
 struct City {
-    float x;               // centre x (fixed)
+    float x;               // center x (fixed)
     bool  alive = true;
 };
 
@@ -225,12 +225,12 @@ int main() {
     const int   kMapH    = kViewH / kTile;           // 28 tall
     const float kGroundY = kViewH - kGroundFromBottom;            // y of the ground surface (== 200)
     const int   kGroundRow = static_cast<int>(kGroundY) / kTile;  // first ground tile row
-    const float kBatteryX  = kViewW / 2.0f;                       // battery sits at bottom centre
+    const float kBatteryX  = kViewW / 2.0f;                       // battery sits at bottom center
 
     // ── 4. Upload art + palettes ─────────────────────────────────────────────────────────────────────
     // 4a. Background tile atlas (solid + digits) and its palette SET. A tile cell picks a palette from
-    //     this set; the pixel index (0/1) picks the entry. We recolour the SAME solid tile as sky or
-    //     ground just by choosing palette 0 vs 1; digits use palette 2 (lit on the sky colour).
+    //     this set; the pixel index (0/1) picks the entry. We recolor the SAME solid tile as sky or
+    //     ground just by choosing palette 0 vs 1; digits use palette 2 (lit on the sky color).
     const std::vector<std::uint8_t> bgPx = buildBgAtlas();
     const AtlasId bgAtlas = renderer.uploadAtlas(bgPx.data(), kTile * kBgTiles, kTile).atlasId;
     const std::array<Rgba8, 2> palSky{{ {12, 14, 34}, {12, 14, 34} }};       // solid → night sky
@@ -243,7 +243,7 @@ int main() {
 
     // 4b. A solid 16×16 atlas (all index 1) → every solid rectangle (cities, battery, missile heads,
     //     trail dots, crosshair bars). A sprite reads its `size`-sized region from tile 0's top-left,
-    //     so any rect up to 16×16 is a crop of solid fill; colour comes from the sprite's palette.
+    //     so any rect up to 16×16 is a crop of solid fill; color comes from the sprite's palette.
     // A solid index-1 sheet the rect() sprites read a w×h region from. It must be at least as large as the
     // widest / tallest solid sprite (the 18×13 battery, the 18-wide cities): a sprite reads px in [0, size),
     // and any column/row past the sheet's extent reads index 0 → the city/battery showed a 2px black strip
@@ -251,12 +251,12 @@ int main() {
     std::array<std::uint8_t, 24 * 24> solidPx{};
     solidPx.fill(1);
     const AtlasId solidAtlas = renderer.uploadAtlas(solidPx.data(), 24, 24).atlasId;
-    // Solid-layer palette set — sprite.palette selects the colour (entry 1 is the colour; 0 is unused).
+    // Solid-layer palette set — sprite.palette selects the color (entry 1 is the color; 0 is unused).
     const std::array<Rgba8, 2> pCity{{ {0,0,0}, {90, 200, 120} }};      // 0: city — green
     const std::array<Rgba8, 2> pBattery{{ {0,0,0}, {120, 180, 255} }};  // 1: battery — blue
     const std::array<Rgba8, 2> pEnemy{{ {0,0,0}, {235, 90, 70} }};      // 2: enemy missile + trail — red
     const std::array<Rgba8, 2> pCounter{{ {0,0,0}, {120, 235, 235} }};  // 3: your missile + trail — cyan
-    const std::array<Rgba8, 2> pRubble{{ {0,0,0}, {70, 60, 55} }};      // 4: destroyed city — grey
+    const std::array<Rgba8, 2> pRubble{{ {0,0,0}, {70, 60, 55} }};      // 4: destroyed city — gray
     const std::array<Rgba8, 2> pCross{{ {0,0,0}, {245, 245, 245} }};    // 5: crosshair — white
     const PaletteId cityPal    = renderer.uploadPalette(std::span<const Rgba8>(pCity));
     const PaletteId batteryPal = renderer.uploadPalette(std::span<const Rgba8>(pBattery));
@@ -276,7 +276,7 @@ int main() {
 
     // ── 5. Game state ────────────────────────────────────────────────────────────────────────────────
     std::array<City, kNumCities> cities{};
-    // Spread the 6 cities across the width in two groups of 3, leaving the centre clear for the battery.
+    // Spread the 6 cities across the width in two groups of 3, leaving the center clear for the battery.
     auto layoutCities = [&] {
         const float slot[kNumCities] = {0.12f, 0.24f, 0.36f, 0.64f, 0.76f, 0.88f};
         for (int i = 0; i < kNumCities; ++i) { cities[static_cast<std::size_t>(i)].x = slot[i] * kViewW;
@@ -304,7 +304,7 @@ int main() {
     auto rand01 = [&] { return static_cast<float>(nextRand(rng) % 10000) / 10000.0f; };
 
     // Spawn one enemy missile: from a random x at the top, aimed at a random ALIVE city (or a random
-    // ground x if none remain), travelling at kEnemySpeed along that path.
+    // ground x if none remain), traveling at kEnemySpeed along that path.
     auto spawnEnemy = [&] {
         if (static_cast<int>(enemies.size()) >= kMaxEnemies) return;
         EnemyMissile m{};
@@ -434,7 +434,7 @@ int main() {
     // owns its bytes, so a key assembled per frame moves straight into the sprite.
     static const std::vector<std::string> crossKeys{"cross0", "cross1"};
 
-    // Append a solid rectangle (centre-anchored) under the stable key `key`, in palette `pal` (an index
+    // Append a solid rectangle (center-anchored) under the stable key `key`, in palette `pal` (an index
     // into solidSet — each sprite now names its sheet + palette handle directly).
     auto rect = [&](std::string key, float cx, float cy, float w, float h, int pal) {
         solidSprites.push_back(Sprite{
@@ -497,7 +497,7 @@ int main() {
             rect(k + "_head", m.x, m.y, 3.0f, 3.0f, PAL_COUNTER);
         }
 
-        // 7c. Explosions: ONE 16×16 circle sprite each, scaled about its centre to the live radius via
+        // 7c. Explosions: ONE 16×16 circle sprite each, scaled about its center to the live radius via
         //     Sprite::transform (the circle's own radius in the sprite is 8 px, so scale = radius / 8).
         blastSprites.clear();
         for (const Explosion& b : blasts) {

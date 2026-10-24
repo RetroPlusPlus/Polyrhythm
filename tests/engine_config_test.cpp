@@ -164,7 +164,7 @@ TEST_F(EngineConfigActive, BareRunLoopInheritsTheFannedTimingAndExplicitOverride
 
 TEST_F(EngineConfigActive, FaithfulDefaultIsPreservedByADefaultConfig) {
     // A default config (identity aside — setActive requires one) fans the GBC values back into
-    // every per-type default, proving the defaults themselves reproduce the original behaviour.
+    // every per-type default, proving the defaults themselves reproduce the original behavior.
     EngineConfig::setActive(identified());
 
     EXPECT_EQ(RunLoop::defaultTiming, TimingProfile::GameBoyColor);

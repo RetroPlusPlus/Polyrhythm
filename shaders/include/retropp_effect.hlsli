@@ -8,7 +8,7 @@
 // drop in a .hlsl with a cbuffer + body, reference its path, set params inline — nothing else.
 //
 //   sampleSource(uv)  — THE sample function. Inside [0,1] it samples the composited frame (or the prior
-//                       chain pass). OUTSIDE [0,1] its behaviour is the EFFECT's edge setting, NOT the
+//                       chain pass). OUTSIDE [0,1] its behavior is the EFFECT's edge setting, NOT the
 //                       shader's choice: ScreenSpaceEffect::edge == Blank (the default) returns BLANK
 //                       (transparent — the backdrop / layers below reveal through, never a smeared edge);
 //                       edge == Stretch clamps (smears the border). A layer that doesn't want clamping
@@ -16,7 +16,7 @@
 //                       shaders should ALWAYS sample through this, not SourceTexture directly.
 //
 // Evaluation grid: on the Viewport grid (uSnap, the crisp default) the generated entry point hands the
-// shader's main() the CENTRE of the viewport cell its fragment falls in, and sampleSource() quantizes the
+// shader's main() the CENTER of the viewport cell its fragment falls in, and sampleSource() quantizes the
 // requested displacement to whole viewport pixels — so the shader's spatial math and sampling reproduce
 // the viewport-resolution rasterization exactly, nearest-upscaled, with no change to the shader itself.
 // On the Output grid (uSnap == 0) main() receives the fragment's true uv and sampleSource() samples the
@@ -40,12 +40,12 @@ cbuffer RetroppEngineEffect : register(b0, space3) {
 
 // Per-fragment evaluation context, set by the generated entry point before the shader's main() runs.
 // retroppTrueUv is the fragment's actual uv; retroppEvalUv is what main() received (the viewport-cell
-// centre on the Viewport grid, the true uv on the Output grid). sampleSource() reads both to quantize a
+// center on the Viewport grid, the true uv on the Output grid). sampleSource() reads both to quantize a
 // requested displacement relative to the evaluation point.
 static float2 retroppTrueUv;
 static float2 retroppEvalUv;
 
-// The centre of the viewport cell `uv` falls in: (floor(uv·dim) + 0.5) / dim per axis — the exact point
+// The center of the viewport cell `uv` falls in: (floor(uv·dim) + 0.5) / dim per axis — the exact point
 // the composeScale = 1 fragment evaluates at, so per-cell math matches the viewport-resolution
 // rasterization. A non-positive dimension leaves that axis unchanged. CPU mirror: snapUvToCellCenter
 // (postprocess.h).
@@ -120,7 +120,7 @@ float4 paramRow(uint i) {
 }
 
 // The table row under this fragment's scanline — maps uv.y in [0,1) to a row in [0, uRowTableRows). The
-// per-scanline case (a per-line scroll / warp / colour). Returns 0 when the effect has no table.
+// per-scanline case (a per-line scroll / warp / color). Returns 0 when the effect has no table.
 float4 paramRowAtUv(float2 uv) {
     if (uRowTableRows == 0u) return float4(0, 0, 0, 0);
     uint i = min((uint)(uv.y * (float)uRowTableRows), uRowTableRows - 1u);

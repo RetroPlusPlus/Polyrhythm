@@ -14,7 +14,7 @@ namespace retropp {
 class Platform;
 
 // A per-player gamepad OUTPUT handle. Obtained from platform.gamepad(player), it is a cheap value that
-// forwards the declared state to the platform. Vibration is the channel today; LED colour and adaptive
+// forwards the declared state to the platform. Vibration is the channel today; LED color and adaptive
 // triggers can join it on the same handle. Input and output are named differently on purpose:
 // input.player(n) reads device-agnostically, gamepad(n) sends to a specific gamepad (a keyboard has
 // nothing to vibrate, so the handle for a non-gamepad slot no-ops).
@@ -128,7 +128,7 @@ public:
     // draggable title bar), true removes the OS decorations that would otherwise stack underneath it.
     // The primary path is the startup config (WindowConfig::suppressNativeWindowChrome), which creates
     // the window borderless from the first frame so the native chrome never flashes; this runtime knob
-    // flips it live afterwards. Noun-submit: the argument overload submits, the argument-free overload
+    // flips it live afterward. Noun-submit: the argument overload submits, the argument-free overload
     // reads the current state. Host-OS-agnostic — a backend without decorations no-ops. The production
     // platform uses SDL_SetWindowBordered.
     virtual void suppressNativeWindowChrome(bool suppress) = 0;

@@ -30,7 +30,7 @@ One sentence: **a sprite places by its origin and spins about its pivot; sprites
 - An **anchor** is a named point on a sprite's *art* — a socket, hinge, muzzle, emitter. Query it and
   get back where that point is *right now*, the sprite's transform applied.
 - The **origin** is the quad-space point `Sprite::x/y` place — the placement handle. The **pivot** is
-  the quad-space point `Sprite::transform` spins about — the transform centre. They are independent;
+  the quad-space point `Sprite::transform` spins about — the transform center. They are independent;
   set them to the SAME point to place and spin on one spot (a joint).
 - **Attachment is re-feeding**: each tick the game writes a parent's anchor into a child's `x/y`. No
   binding is held anywhere — the anchor query is a pure resolver like `sampleAnimationFrame(tick)` or
@@ -92,7 +92,7 @@ sees the layer's scroll or transform. Consumers on *other* layers map between la
 Sprite s{.key = "wheel", .size = AssetDimensions{16, 16}};
 s.origin    = s.center(Space::Quad);          // QUAD-space px; default {0,0} = the top-left
 s.pivot     = s.center(Space::Quad);          // QUAD-space px; default {0,0} = the top-left
-s.x         = 80;  s.y = 72;                  // x/y place the ORIGIN — the wheel's centre sits here
+s.x         = 80;  s.y = 72;                  // x/y place the ORIGIN — the wheel's center sits here
 s.transform = Transform::rotation(angle);     // …and it spins about the PIVOT
 ```
 
@@ -102,15 +102,15 @@ jobs:
 - **`origin`** is the placement handle: `x/y` place it. At the identity transform the pivot drops out
   and a point lands at `(x, y) + (p − origin)`, so `origin = {0,0}` places by the top-left corner and
   `origin = s.center(Space::Quad)` places by the middle.
-- **`pivot`** is the spin centre: `transform` applies about it. Under any origin-fixing transform (the
+- **`pivot`** is the spin center: `transform` applies about it. Under any origin-fixing transform (the
   plain `rotation(θ)` / `scale` / `skew` forms) the pivot's own image is `(x, y) + (pivot − origin)`,
   the one point the transform holds still. A pivot change never moves an untransformed sprite.
 
 `Sprite::center(Space)` returns the sprite's middle in the space you ask for. `Space::Quad` is the raw
 art midpoint (`{size.width / 2, size.height / 2}`) — the quad-space value you place and spin by.
-`Space::Layer` is that midpoint mapped through transform + placement — the centre of the sprite *as
-drawn*, which a consumer reads to sit something at the visible centre. **Origin and pivot are transform
-inputs, so feed them from `Space::Quad`** — a `Space::Layer` centre is computed *through* origin and
+`Space::Layer` is that midpoint mapped through transform + placement — the center of the sprite *as
+drawn*, which a consumer reads to sit something at the visible center. **Origin and pivot are transform
+inputs, so feed them from `Space::Quad`** — a `Space::Layer` center is computed *through* origin and
 pivot, so feeding it back into them is circular.
 
 Set `origin` and `pivot` to the **same** point to place and spin on one spot: `origin = pivot =
@@ -123,7 +123,7 @@ top-left, and an anchor at `(13, 4)` stays `(13, 4)` whatever `origin`/`pivot` a
 local points are the handle and the hinge, not where the ruler starts.
 
 This differs from a pivot baked into the matrix (`Transform::rotation(deg, 8, 8)`): the baked form
-composes inside the transform and only affects the spin, while `Sprite::pivot` is the spin centre as a
+composes inside the transform and only affects the spin, while `Sprite::pivot` is the spin center as a
 first-class field and `Sprite::origin` is the separate placement handle.
 
 `Sprite::toLayer(Point)` is the same mapping for any quad-space point you already have — `anchor(k,
@@ -166,7 +166,7 @@ reads, and the quad itself never moves. Stored points split accordingly:
   `anchor(k, Space::Quad)` / `anchor(k, Space::Layer)` return the mirrored position automatically — no
   per-facing anchor tables.
 - **Origin and pivot live on the quad and ignore them.** They are the placement handle and the spin
-  centre; the default `{0,0}` is always the quad's top-left, flipped art or not.
+  center; the default `{0,0}` is always the quad's top-left, flipped art or not.
 
 When the mount *is* an art feature (it usually is), bridge with one line each — re-read the anchor into
 origin and pivot after setting the flip:
@@ -231,7 +231,7 @@ Curve trail = Curve::quadratic(Vec2{tail.x, tail.y},          // a curve ORIGIN 
 ```
 
 A curve origin, a `PathWalker` frame of reference, a tween target, a particle-emitter position, a
-region centre — the anchor never knows what consumes it; the game reads a point per tick and routes
+region center — the anchor never knows what consumes it; the game reads a point per tick and routes
 it. Re-author the consumer from the fresh point each tick (the immediate-mode model), and the whole
 construction rides the sprite's motion.
 
@@ -252,11 +252,11 @@ the game holds; there is no render-time (eased) anchor query.
 
 - **`x/y` place the origin, and the default origin is the top-left.** A sprite that never sets `origin`
   behaves exactly as its `x/y` read — top-left placement. Set `origin = s.center(Space::Quad)` and the
-  same `x/y` now name the centre; adjust positions when introducing one.
+  same `x/y` now name the center; adjust positions when introducing one.
 - **Feed origin and pivot from `Space::Quad` only.** They are transform inputs; a `Space::Layer` query
   (`center(Space::Layer)`, `anchor(k, Space::Layer)`) is computed *through* origin and pivot, so writing
   one back into them is circular. `Space::Layer` values are for consumers — a sibling, a path, an effect.
-- **A pivot alone never moves an untransformed sprite.** The pivot is the spin centre; with an identity
+- **A pivot alone never moves an untransformed sprite.** The pivot is the spin center; with an identity
   transform it drops out of the placement entirely — placement is `origin`.
 - **A transform with its own translation moves the pivot's held image.** The pivot's image is
   `(x, y) + (pivot − origin)` for origin-fixing transforms (`rotation(θ)`, `scale(sx, sy)`,

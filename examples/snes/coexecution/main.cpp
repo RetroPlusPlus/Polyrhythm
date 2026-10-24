@@ -323,7 +323,7 @@ int runVerify() {
 
     // Parked wherever a tick of an uneven length leaves it — inside the frame handler or the idle loop,
     // often part-way through an instruction — the cartridge's own mix answers exactly every time, and
-    // the cartridge carries on afterwards as if it had never been called.
+    // the cartridge carries on afterward as if it had never been called.
     constexpr int kParkedCalls = 240;
     int           exact        = 0;
     for (int i = 0; i < kParkedCalls; ++i) {

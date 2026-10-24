@@ -1,5 +1,5 @@
 // Concave silhouette under a whole-silhouette effect (device-backed). A whole-silhouette effect
-// (ColorFill here) is a per-pixel colour rewrite of the pixels that survive transparency — it never
+// (ColorFill here) is a per-pixel color rewrite of the pixels that survive transparency — it never
 // bridges an OPEN concavity, and it never enlarges the drawn footprint beyond the sprite's transformed
 // quad. A horseshoe with an open mouth (an index-0 channel contiguous with the outside through the bottom
 // edge) is filled and drawn across four container configurations — plain, partial-alpha Add, scaled, and
@@ -9,7 +9,7 @@
 //              surviving pixels, the open channel is never sealed.
 //   geometry — the drawn content's bounding box matches the sprite's transformed quad within a pixel: the
 //              silhouette is not realized as a filled hull or a traced polygon that spills past the art.
-//   colour   — a leg (interior) pixel matches applyBlendMode(scene, {fill, alpha}, mode): the partial-alpha
+//   color   — a leg (interior) pixel matches applyBlendMode(scene, {fill, alpha}, mode): the partial-alpha
 //              Add composite lands at straight-alpha weight, the fill's intended strength.
 //
 // The horseshoe touches all four quad edges (top bar row 0, both legs down cols 0 and 23, leg feet on row
@@ -110,7 +110,7 @@ TEST_F(ConcaveSilhouette, OpenMouthStaysUncoveredAndFillGrades) {
 
     const Rgba8 fillCol{240, 40, 40, 255};
     const ScreenSpaceEffect fill{.kind = ScreenSpaceEffectKind::ColorFill, .fill = fillCol};
-    const Transform scale15 = Transform::scale(1.5f, 1.5f);  // s.pivot = {12,12} centres it (no baked pivot)
+    const Transform scale15 = Transform::scale(1.5f, 1.5f);  // s.pivot = {12,12} centers it (no baked pivot)
 
     std::vector<TileCell> cells(static_cast<std::size_t>((kW / 8) * (kH / 8)),
                                TileCell{.atlas = bgAtlas, .tile = 0, .palette = bgPalId});
@@ -119,7 +119,7 @@ TEST_F(ConcaveSilhouette, OpenMouthStaysUncoveredAndFillGrades) {
     bg.content = TileContent{.widthInTiles = kW / 8, .heightInTiles = kH / 8,
                              .cells = std::span<const TileCell>(cells)};
 
-    // Straight-alpha colour oracles for a leg (fully-covered interior) pixel: the plain/scaled variants draw
+    // Straight-alpha color oracles for a leg (fully-covered interior) pixel: the plain/scaled variants draw
     // the fill opaquely (Normal), the Add variants grade it over the background at alpha 0.5.
     const Rgba8 legPlain = fillCol;
     const Vec4  addV = applyBlendMode(Vec4{bgCol.r / 255.0f, bgCol.g / 255.0f, bgCol.b / 255.0f, 1.0f},
@@ -127,8 +127,8 @@ TEST_F(ConcaveSilhouette, OpenMouthStaysUncoveredAndFillGrades) {
                                       BlendMode::Add);
     const Rgba8 legAdd{quant(addV.x), quant(addV.y), quant(addV.z), 255};
 
-    // Each variant renders alone over the background, centred with margin, so the content bounding box scan
-    // has no neighbour to catch. The horseshoe sits at (sx0, sy0); a scaled variant inflates about pivot
+    // Each variant renders alone over the background, centered with margin, so the content bounding box scan
+    // has no neighbor to catch. The horseshoe sits at (sx0, sy0); a scaled variant inflates about pivot
     // (12,12), a footprint that stays inside the viewport.
     constexpr int sx0 = 36, sy0 = 16;
     auto checkVariant = [&](const char* name, bool add, bool xform) {
@@ -153,18 +153,18 @@ TEST_F(ConcaveSilhouette, OpenMouthStaysUncoveredAndFillGrades) {
             auto at   = [&](int x, int y) { return cap[static_cast<std::size_t>(y) * W + x]; };
             auto isBg = [&](Rgba8 c) { return c.r == bgCol.r && c.g == bgCol.g && c.b == bgCol.b; };
 
-            // Art point a → viewport, then to the centre of the scaled output cell.
+            // Art point a → viewport, then to the center of the scaled output cell.
             auto vx = [&](float ax) { return xform ? sx0 + 12.0f + 1.5f * (ax - 12.0f) : sx0 + ax; };
             auto vy = [&](float ay) { return xform ? sy0 + 12.0f + 1.5f * (ay - 12.0f) : sy0 + ay; };
             auto ox = [&](float v) { return static_cast<int>(v * cs) + cs / 2; };
 
             // coverage — the open mouth stays background.
-            const Rgba8 mouth = at(ox(vx(12.0f)), ox(vy(16.0f)));  // mouth centre
+            const Rgba8 mouth = at(ox(vx(12.0f)), ox(vy(16.0f)));  // mouth center
             const Rgba8 deep  = at(ox(vx(12.0f)), ox(vy(22.0f)));  // deep mouth, near the open edge
             EXPECT_TRUE(isBg(mouth)) << name << " cs=" << cs << ": mouth centre covered";
             EXPECT_TRUE(isBg(deep))  << name << " cs=" << cs << ": deep mouth covered";
 
-            // colour — a leg pixel matches the straight-alpha oracle for its configuration.
+            // color — a leg pixel matches the straight-alpha oracle for its configuration.
             const Rgba8 leg  = at(ox(vx(4.0f)), ox(vy(16.0f)));  // left leg interior
             const Rgba8 want = add ? legAdd : legPlain;
             EXPECT_FALSE(isBg(leg)) << name << " cs=" << cs << ": leg not drawn";
@@ -186,7 +186,7 @@ TEST_F(ConcaveSilhouette, OpenMouthStaysUncoveredAndFillGrades) {
             ASSERT_GE(maxX, 0) << name << " cs=" << cs << ": no content drawn";
             const int expLo = ox(vx(0.0f)) - cs / 2,  expHi = ox(vx(23.0f)) - cs / 2 + (cs - 1);
             const int expTop = ox(vy(0.0f)) - cs / 2, expBot = ox(vy(23.0f)) - cs / 2 + (cs - 1);
-            const int tol = 2 * cs;  // nearest-sampling + cell-centre + inflation/trim slack
+            const int tol = 2 * cs;  // nearest-sampling + cell-center + inflation/trim slack
             EXPECT_NEAR(minX, expLo, tol) << name << " cs=" << cs << ": content left edge";
             EXPECT_NEAR(maxX, expHi, tol) << name << " cs=" << cs << ": content right edge";
             EXPECT_NEAR(minY, expTop, tol) << name << " cs=" << cs << ": content top edge";

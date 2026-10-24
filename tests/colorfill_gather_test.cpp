@@ -166,7 +166,7 @@ TEST(ColorFillGather, RecordPadsToRunStride) {
     ASSERT_EQ(rec.size(), static_cast<std::size_t>(runStride) * 16u);
     EXPECT_FLOAT_EQ(lane(rec, 20), 1.0f);   // count: the circle's one vertex
     EXPECT_FLOAT_EQ(lane(rec, 21), 10.0f);  // radius
-    EXPECT_FLOAT_EQ(lane(rec, 24), 80.0f);  // the centre vertex
+    EXPECT_FLOAT_EQ(lane(rec, 24), 80.0f);  // the center vertex
     EXPECT_FLOAT_EQ(lane(rec, 25), 72.0f);
     for (std::size_t f = 26; f < runStride * 4u; ++f) {
         EXPECT_FLOAT_EQ(lane(rec, f), 0.0f) << "pad lane " << f;

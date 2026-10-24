@@ -1,12 +1,12 @@
 // Partial-alpha container composite (device-backed). A non-Normal container (a Sprite or a DrawLayer)
 // contributes at STRAIGHT-alpha weight over the scene it sits on:
 //
-//     out.rgb = (1 - a)·dst + a·B(dst, colour)
+//     out.rgb = (1 - a)·dst + a·B(dst, color)
 //
-// where `colour` is the container's straight source colour, `a` its source alpha at the pixel, `dst` the
+// where `color` is the container's straight source color, `a` its source alpha at the pixel, `dst` the
 // accumulator beneath, and B the container's separable BlendMode operator. This is exactly
-// retropp::applyBlendMode(dst, {colour, a}, mode) — the CPU authority the composite must reproduce on the
-// GPU. The container's isolated render arrives at the composite PREMULTIPLIED (colour·a in rgb, a in
+// retropp::applyBlendMode(dst, {color, a}, mode) — the CPU authority the composite must reproduce on the
+// GPU. The container's isolated render arrives at the composite PREMULTIPLIED (color·a in rgb, a in
 // alpha), so the composite un-premultiplies before evaluating the operator; a is applied once, not twice.
 //
 // Two composite paths reach the same blend shader and are both covered here:
@@ -16,8 +16,8 @@
 //
 // The container-blend MATH itself lives device-free in blend_mode_test.cpp (applyBlendMode); this file
 // verifies it reaches the GPU composite at PARTIAL alpha — the regime where premultiplied and straight
-// source colours diverge (at a = 1 they coincide, which is what the opaque-only cells of
-// sprite_blend_test.cpp already anchor). The sprite `colour` and the scene `dst` are read back from Normal
+// source colors diverge (at a = 1 they coincide, which is what the opaque-only cells of
+// sprite_blend_test.cpp already anchor). The sprite `color` and the scene `dst` are read back from Normal
 // captures so palette→float→8-bit rounding cancels; the composite is compared within 2 8-bit steps.
 
 #include <algorithm>
@@ -97,8 +97,8 @@ int chDelta(Rgba8 a, Rgba8 b) {
                      std::abs(int(a.b) - int(b.b)), std::abs(int(a.a) - int(b.a))});
 }
 
-// A solid opaque 8×8 sheet (one index) + a palette carrying `colour` — a GameBoy8x8 tile/sprite renders a
-// flat, known colour.
+// A solid opaque 8×8 sheet (one index) + a palette carrying `color` — a GameBoy8x8 tile/sprite renders a
+// flat, known color.
 struct Art { AtlasId atlas{}; PaletteId palette{}; };
 Art uploadSolid(Renderer& r, Rgba8 colour) {
     std::array<std::uint8_t, 8 * 8> idx{};  // all index 0
@@ -117,10 +117,10 @@ DrawLayer solidBgLayer(std::int32_t z, const Art& art, std::vector<TileCell>& ke
 enum class Path { SpriteRun, Layer };
 
 // Render `spriteColour` over `bgColour` at source alpha `a` under `mode`, on the chosen composite path, and
-// check every covered pixel against the straight-alpha oracle applyBlendMode(dst, {colour, a}, mode). The
-// sprite colour is read from a Normal, fully-opaque capture (mirror-from-capture); the scene from a
-// no-sprite baseline. Also reports the measured value at the sprite centre so a failure shows the composited
-// colour directly.
+// check every covered pixel against the straight-alpha oracle applyBlendMode(dst, {color, a}, mode). The
+// sprite color is read from a Normal, fully-opaque capture (mirror-from-capture); the scene from a
+// no-sprite baseline. Also reports the measured value at the sprite center so a failure shows the composited
+// color directly.
 void runPartialAlphaCell(SDL_GPUDevice* dev, const char* name, Path path, BlendMode mode, float a,
                          Rgba8 bgColour, Rgba8 spriteColour) {
     Renderer r{dev, nullptr, ViewportResolution{kW, kH}};
@@ -135,7 +135,7 @@ void runPartialAlphaCell(SDL_GPUDevice* dev, const char* name, Path path, BlendM
     const std::vector<Rgba8> B = r.captureViewport(base);
 
     // A scene: bg + one sprite. `graded` picks the partial-alpha non-Normal configuration on the chosen
-    // path; otherwise a Normal, fully-opaque sprite (the colour/coverage reference). Layer path carries the
+    // path; otherwise a Normal, fully-opaque sprite (the color/coverage reference). Layer path carries the
     // BlendMode on the layer with a Normal sprite; sprite-run path carries it on the sprite.
     auto scene = [&](bool graded, std::vector<TileCell>& cells, std::vector<Sprite>& keepS) {
         FrameDrawState f;
@@ -154,14 +154,14 @@ void runPartialAlphaCell(SDL_GPUDevice* dev, const char* name, Path path, BlendM
         return f;
     };
 
-    FrameDrawState fN = scene(false, cN, sN);  // Normal, opaque ⇒ the sprite's flat colour on coverage
+    FrameDrawState fN = scene(false, cN, sN);  // Normal, opaque ⇒ the sprite's flat color on coverage
     FrameDrawState fG = scene(true,  cG, sG);  // the partial-alpha graded sprite
     const std::vector<Rgba8> N = r.captureViewport(fN);
     const std::vector<Rgba8> G = r.captureViewport(fG);
     ASSERT_EQ(N.size(), B.size());
     ASSERT_EQ(G.size(), B.size());
 
-    // The sprite sits at (24,20) size 8×8 — sample its centre for the diagnostic.
+    // The sprite sits at (24,20) size 8×8 — sample its center for the diagnostic.
     const std::size_t centre = static_cast<std::size_t>(24) * kW + 28;
     const Vec4  wantC = applyBlendMode(norm(B[centre]), Vec4{norm(N[centre]).x, norm(N[centre]).y,
                                                              norm(N[centre]).z, a}, mode);
@@ -185,7 +185,7 @@ void runPartialAlphaCell(SDL_GPUDevice* dev, const char* name, Path path, BlendM
 // ── Sprite-run path (compositeSpriteRuns) — partial alpha × non-Normal ──────────────────────────────
 
 // Named oracle (audit decision 4): Add, a = 0.5, red {255,0,0} over black → (128,0,0). A composite that
-// treats the premultiplied source as straight colour weights alpha twice and yields (64,0,0).
+// treats the premultiplied source as straight color weights alpha twice and yields (64,0,0).
 TEST_F(BlendAlpha, SpriteRunAddHalfRedOverBlack) {
     runPartialAlphaCell(device_, "run_add_red_black", Path::SpriteRun, BlendMode::Add, 0.5f,
                         Rgba8{0, 0, 0, 255}, Rgba8{255, 0, 0, 255});
@@ -225,8 +225,8 @@ TEST_F(BlendAlpha, OpaqueAddUnchangedByUnpremultiply) {
                         Rgba8{30, 40, 60, 255}, Rgba8{180, 120, 90, 255});
 }
 
-// Normal at partial alpha is plain alpha-over on both paths — the composite reduces to (1-a)·dst + colour
-// (colour already premultiplied), independent of the un-premultiply. A guard that Normal partial alpha is
+// Normal at partial alpha is plain alpha-over on both paths — the composite reduces to (1-a)·dst + color
+// (color already premultiplied), independent of the un-premultiply. A guard that Normal partial alpha is
 // correct too, not only the operator modes.
 TEST_F(BlendAlpha, NormalHalfIsAlphaOver) {
     runPartialAlphaCell(device_, "run_normal_half", Path::SpriteRun, BlendMode::Normal, 0.5f,

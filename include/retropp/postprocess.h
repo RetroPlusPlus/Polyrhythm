@@ -24,7 +24,7 @@ namespace retropp {
 // the output unchanged.
 //
 // The built-in stages are ROW DISPLACEMENT (wavy water / heat haze / per-line scroll, f(row, phase))
-// and RIPPLE (a radial water droplet, displaced along the radius from a centre) — each realized
+// and RIPPLE (a radial water droplet, displaced along the radius from a center) — each realized
 // per-pixel in a shader, the modern expression of effects a GB achieved by rewriting SCX every
 // scanline, with no reconstructed LY counter and no HBlank ISR. The game advances `phase` per frame
 // to animate.
@@ -101,10 +101,10 @@ struct Uv {
 //
 // On the Viewport evaluation grid the analytic paths evaluate their spatial math at a viewport-cell
 // point so the result matches the viewport-resolution rasterization (crisp under upscale); these mirror
-// the shaders' snap exactly, on BOTH grid settings (unsnapped = the Output grid = today's behaviour).
+// the shaders' snap exactly, on BOTH grid settings (unsnapped = the Output grid = today's behavior).
 // Not constexpr: std::floor is not core-constant until C++23.
 
-// The centre of the viewport cell a normalized coordinate falls in: (floor(uv·dim) + 0.5) / dim per axis
+// The center of the viewport cell a normalized coordinate falls in: (floor(uv·dim) + 0.5) / dim per axis
 // — the point displace.frag / ripple.frag evaluate at on the Viewport grid. A non-positive dimension
 // leaves that axis unchanged.
 [[nodiscard]] inline Uv snapUvToCellCenter(Uv uv, PixelSize viewport) noexcept {
@@ -116,7 +116,7 @@ struct Uv {
     return c;
 }
 
-// A viewport-pixel fragment moved to its cell centre: floor + 0.5 per axis — the region shaders' fragPx
+// A viewport-pixel fragment moved to its cell center: floor + 0.5 per axis — the region shaders' fragPx
 // snap on the Viewport grid, before the SDF / inverse transform.
 [[nodiscard]] inline Point snapFragToCellCenter(Point fragPx) noexcept {
     return Point{std::floor(fragPx.x) + 0.5f, std::floor(fragPx.y) + 0.5f};
@@ -129,7 +129,7 @@ struct Uv {
 
 // The source UV a custom shader's sampleSource(requested) actually samples — the CPU mirror of the
 // preamble's snap math (retropp_effect.hlsli). A custom shader's generated entry point evaluates the
-// shader at `evalUv` (the viewport-cell centre of the fragment's true uv on the Viewport grid; the true
+// shader at `evalUv` (the viewport-cell center of the fragment's true uv on the Viewport grid; the true
 // uv itself on the Output grid); with `snap` set, the displacement the shader asked for relative to that
 // evaluation point is quantized to whole viewport pixels (round-half-up per axis) and applied to the
 // fragment's TRUE uv, so each source cell's output-resolution interior is copied intact. With `snap`
@@ -165,9 +165,9 @@ struct Uv {
 // Not constexpr: std::sin is not a core-constant expression in C++20. The pure-arithmetic
 // normalization is constexpr-tested via displacementOffset(); this full mirror is unit-tested at
 // sine-exact arguments (sin(2π·0.25)=1) and amplitude 0, while the curve itself is GPU-verified.
-// `snap` selects the evaluation grid: false (the default — the Output grid, today's behaviour) evaluates the
+// `snap` selects the evaluation grid: false (the default — the Output grid, today's behavior) evaluates the
 // wave at `uv` and offsets by the continuous px→UV displacement; true (the Viewport grid) evaluates the wave
-// at the fragment's viewport-cell centre and offsets by the round-half-up whole-pixel displacement (the crisp
+// at the fragment's viewport-cell center and offsets by the round-half-up whole-pixel displacement (the crisp
 // path, byte-identical to the viewport-resolution rasterization under nearest sampling). Mirrors displace.frag
 // exactly on both settings.
 [[nodiscard]] inline Uv displaceSourceUv(Uv uv, const ScreenSpaceEffect& effect,
@@ -176,7 +176,7 @@ struct Uv {
         return uv;
     }
     constexpr float kTwoPi = 6.283185307179586f;
-    const Uv e = snap ? snapUvToCellCenter(uv, viewport) : uv;  // wave evaluated at the cell centre when snapping
+    const Uv e = snap ? snapUvToCellCenter(uv, viewport) : uv;  // wave evaluated at the cell center when snapping
     if (effect.axis == Axis::Horizontal) {
         const float s = std::sin(kTwoPi * (effect.frequency * e.v + effect.phase));
         const float off = snap
@@ -209,7 +209,7 @@ struct DisplaceParams {
     [[nodiscard]] constexpr bool operator==(const DisplaceParams&) const noexcept = default;
 };
 
-// `blankTransparent` is the scope-dependent blank colour: false (the default — frame-level postEffects
+// `blankTransparent` is the scope-dependent blank color: false (the default — frame-level postEffects
 // and per-layer Below) leaves an exposed Blank-edge strip the opaque backdrop; true (per-layer Layer,
 // the isolated scope) leaves it fully transparent so the strip reveals the layers below.
 [[nodiscard]] constexpr DisplaceParams displaceParams(const ScreenSpaceEffect& effect,
@@ -231,7 +231,7 @@ struct DisplaceParams {
 
 // The radial-ripple stage's parameters, resolved from an effect + the viewport — the built-in
 // peer of DisplaceParams. The renderer copies these into the GPU uniform (a byte-exact
-// mirror, RippleFragUniforms in renderer.cpp), so keeping the resolution here makes the px→UV centre
+// mirror, RippleFragUniforms in renderer.cpp), so keeping the resolution here makes the px→UV center
 // normalization unit-testable without a device. `center` arrives in viewport pixels and is normalized
 // to UV here; `invViewportW/H` carry the px→UV amplitude scale (and the aspect via invH/invW). Field
 // order mirrors ripple.frag's RippleUniforms cbuffer (two 16-byte registers).
@@ -247,10 +247,10 @@ struct RippleParams {
     [[nodiscard]] constexpr bool operator==(const RippleParams&) const noexcept = default;
 };
 
-// Resolve a Ripple effect + viewport into the ripple cbuffer parameters. The centre is normalized
+// Resolve a Ripple effect + viewport into the ripple cbuffer parameters. The center is normalized
 // px→UV by the inverse viewport dimension; a non-positive viewport dimension yields a 0 inverse (and
-// thus a 0 centre on that axis) rather than dividing by zero. Pure arithmetic, genuinely constexpr
-// (no transcendentals) — so the centre normalization is static_assert-testable independent of the
+// thus a 0 center on that axis) rather than dividing by zero. Pure arithmetic, genuinely constexpr
+// (no transcendentals) — so the center normalization is static_assert-testable independent of the
 // sine curve, the displaceParams discipline.
 [[nodiscard]] constexpr RippleParams rippleParams(const ScreenSpaceEffect& effect,
                                                   PixelSize viewport) noexcept {
@@ -267,18 +267,18 @@ struct RippleParams {
 }
 
 // For an output fragment at normalized `uv`, the source UV to sample under a Ripple `effect`. Mirrors
-// ripple.frag.hlsl exactly: the sample is displaced ALONG THE RADIUS from the (normalized) centre
+// ripple.frag.hlsl exactly: the sample is displaced ALONG THE RADIUS from the (normalized) center
 //   delta   = uv − center                                  (UV)
 //   dist    = length(delta.x · aspect, delta.y),  aspect = invH/invW   (circular in screen space)
 //   offset  = amplitude · sin(2π·(frequency·dist − phase)) · exp(−decay·dist)   (viewport px)
 //   src     = uv + (delta/dist) · (offset · invViewportW, offset · invViewportH)
-// `amplitude == 0` (or a non-Ripple/unknown kind) → identity; the centre fragment (dist ≈ 0) → identity
+// `amplitude == 0` (or a non-Ripple/unknown kind) → identity; the center fragment (dist ≈ 0) → identity
 // (no radial direction). Not constexpr: std::sin/exp/sqrt are not core-constant in C++20. The pure
-// centre normalization is constexpr-tested via rippleParams(); this full mirror is unit-tested at
+// center normalization is constexpr-tested via rippleParams(); this full mirror is unit-tested at
 // sine-exact arguments while the curve itself is GPU-verified — the displaceSourceUv discipline.
-// `snap` selects the evaluation grid: false (the default — the Output grid, today's behaviour) evaluates the
+// `snap` selects the evaluation grid: false (the default — the Output grid, today's behavior) evaluates the
 // ripple at `uv` and displaces by the continuous per-axis px→UV offset; true (the Viewport grid) evaluates at
-// the fragment's viewport-cell centre and displaces by the round-half-up whole-pixel per-axis offset (the
+// the fragment's viewport-cell center and displaces by the round-half-up whole-pixel per-axis offset (the
 // crisp path, byte-identical to the viewport-resolution rasterization under nearest sampling). Mirrors
 // ripple.frag exactly on both settings.
 [[nodiscard]] inline Uv rippleSourceUv(Uv uv, const ScreenSpaceEffect& effect,
@@ -288,13 +288,13 @@ struct RippleParams {
     }
     const RippleParams p = rippleParams(effect, viewport);
     constexpr float kTwoPi = 6.283185307179586f;
-    const Uv    e      = snap ? snapUvToCellCenter(uv, viewport) : uv;  // ripple evaluated at the cell centre
+    const Uv    e      = snap ? snapUvToCellCenter(uv, viewport) : uv;  // ripple evaluated at the cell center
     const float dx     = e.u - p.centerU;
     const float dy     = e.v - p.centerV;
     const float aspect = p.invViewportW > 0.0f ? p.invViewportH / p.invViewportW : 1.0f;
     const float cx     = dx * aspect;
     const float dist   = std::sqrt(cx * cx + dy * dy);  // corrected (circular) distance
-    if (dist <= 1e-5f) return uv;                        // centre: no radial direction
+    if (dist <= 1e-5f) return uv;                        // center: no radial direction
     const float wave   = std::sin(kTwoPi * (p.frequency * dist - p.phase));
     const float env    = std::exp(-p.decay * dist);
     const float offset = p.amplitude * wave * env;       // viewport pixels
@@ -319,7 +319,7 @@ struct RippleParams {
 struct SwirlParams {
     float centerX = 0.0f;
     float centerY = 0.0f;
-    float twist   = 0.0f;  // the total turn at the centre, RADIANS (see swirlParams for the sign)
+    float twist   = 0.0f;  // the total turn at the center, RADIANS (see swirlParams for the sign)
     float radius  = 0.0f;
     [[nodiscard]] constexpr bool operator==(const SwirlParams&) const noexcept = default;
 };
@@ -350,10 +350,10 @@ struct SwirlParams {
 // under a resolved Swirl. Mirrors swirl.frag.hlsl exactly:
 //   d      = px - center
 //   t      = |d| / radius                      // >= 1 = outside the disc
-//   theta  = twist * (1 - t^2)^2               // full turn at the centre, 0 at the rim, zero slope at both
+//   theta  = twist * (1 - t^2)^2               // full turn at the center, 0 at the rim, zero slope at both
 //   out    = center + rotate(d, theta)
 // twist == 0, radius <= 0, or a fragment at or beyond the rim returns `px` unchanged — the identity paths
-// the goldens pin. The exact centre is a fixed point (rotating a zero offset moves nothing). Not constexpr:
+// the goldens pin. The exact center is a fixed point (rotating a zero offset moves nothing). Not constexpr:
 // std::sin / std::cos / std::sqrt are not core-constant in C++20. The pure parameter resolution is
 // constexpr-tested via swirlParams(); this full mirror is unit-tested at exact-angle arguments while the
 // rotation itself is GPU-verified — the rippleSourceUv discipline.
@@ -376,7 +376,7 @@ struct SwirlParams {
 // stage, the sprite's art size on a chain step). A non-Swirl kind, a zero twist, a non-positive radius, or
 // a fragment at or beyond the rim returns `uv` unchanged — the exact own coordinate, matching the shader's
 // early-outs. `snap` selects the evaluation grid: true (the Viewport grid) evaluates the twist from the
-// fragment's viewport-cell centre so every output pixel of one cell reads the same source (the crisp path);
+// fragment's viewport-cell center so every output pixel of one cell reads the same source (the crisp path);
 // false (the Output grid) evaluates at the exact fragment position for a smooth vortex. Mirrors
 // swirl.frag.hlsl's control flow, including that an outside-the-disc fragment reads its ORIGINAL uv rather
 // than the snapped one.
@@ -397,18 +397,18 @@ struct SwirlParams {
     return Uv{src.x / w, src.y / h};
 }
 
-// ── Colour-fill math (the CPU mirror the colorfill.frag shader reproduces) ─────────────
+// ── Color-fill math (the CPU mirror the colorfill.frag shader reproduces) ─────────────
 
-// The colour-fill stage's resolved parameters — the built-in peer of DisplaceParams / RippleParams: the
-// fill colour as normalized [0,1] floats (the shader and this mirror work in floats; the public ColorFill
+// The color-fill stage's resolved parameters — the built-in peer of DisplaceParams / RippleParams: the
+// fill color as normalized [0,1] floats (the shader and this mirror work in floats; the public ColorFill
 // carries an Rgba8). The renderer copies these straight into the GPU uniform (ColorFillFragUniforms in
-// renderer.cpp). The stage emits this colour, opaque; opacity belongs to the owning Region / Layer / Frame.
+// renderer.cpp). The stage emits this color, opaque; opacity belongs to the owning Region / Layer / Frame.
 struct ColorFillParams {
-    float r = 0.0f, g = 0.0f, b = 0.0f;  // fill colour, normalized
+    float r = 0.0f, g = 0.0f, b = 0.0f;  // fill color, normalized
     [[nodiscard]] constexpr bool operator==(const ColorFillParams&) const noexcept = default;
 };
 
-// Resolve a ColorFill effect into the colour-fill parameters — normalize the Rgba8 fill's rgb (0..255 →
+// Resolve a ColorFill effect into the color-fill parameters — normalize the Rgba8 fill's rgb (0..255 →
 // 0..1) and scale by fillIntensity, so a fillIntensity > 1 pushes a channel past 1 (the headroom a Multiply
 // container brightens with, carried by the float16 intermediates). Genuinely constexpr (pure arithmetic) →
 // static_assert-testable. The renderer fills this on the ColorFill branch.
@@ -419,14 +419,14 @@ struct ColorFillParams {
                            static_cast<float>(e.fill.b) * inv * e.fillIntensity};
 }
 
-// An RGB colour in [0,1] floats — the colorfill mirror's output type. Named channels per the
+// An RGB color in [0,1] floats — the colorfill mirror's output type. Named channels per the
 // no-positional-opacity discipline.
 struct ColorFillRgb {
     float r = 0.0f, g = 0.0f, b = 0.0f;
     [[nodiscard]] constexpr bool operator==(const ColorFillRgb&) const noexcept = default;
 };
 
-// The output rgb IS the fill colour — a fill is a pure source colour, so the params fully determine it.
+// The output rgb IS the fill color — a fill is a pure source color, so the params fully determine it.
 // Opacity and blending belong to the owning Region / Layer / Frame. The exact colorfill.frag rgb math;
 // pure arithmetic → genuinely constexpr, so it is static_assert-testable.
 [[nodiscard]] constexpr ColorFillRgb applyColorFill(const ColorFillParams& p) noexcept {
@@ -449,9 +449,9 @@ struct GleamParams {
     return GleamParams{e.sweep, e.width, e.gain, e.slant};
 }
 
-// The gleam colour transform (in/out rgb in [0,1] floats — reuses ColorFillRgb). For an output fragment at
+// The gleam color transform (in/out rgb in [0,1] floats — reuses ColorFillRgb). For an output fragment at
 // normalized `uv`, the sheen boost is a luminance-keyed diagonal band: d = u + v·slant, a soft crest of
-// half-width `width` centred on `sweep`, with the WHOLE contribution scaled by `gain` — so gain == 0
+// half-width `width` centered on `sweep`, with the WHOLE contribution scaled by `gain` — so gain == 0
 // returns `in` unchanged (the identity contract). Mirrors gleam.frag exactly (same op order, luma weights,
 // and 0.6 lift); pure arithmetic → constexpr, so static_assert-testable, the applyColorFill discipline.
 [[nodiscard]] constexpr ColorFillRgb applyGleam(ColorFillRgb in, float u, float v,
@@ -472,7 +472,7 @@ struct GleamParams {
 // ── ColorSaturation math (the CPU mirror the saturation.frag shader reproduces) ────────
 
 // The saturation stage's resolved parameter — the developer's uint8 saturation normalized to [0,1] (255 →
-// 1.0 = full saturation = identity, 0 → greyscale). The renderer copies this into the GPU uniform
+// 1.0 = full saturation = identity, 0 → grayscale). The renderer copies this into the GPU uniform
 // (SaturationFragUniforms in renderer.cpp).
 struct SaturationParams {
     float saturation = 1.0f;  // normalized 0..1
@@ -486,10 +486,10 @@ struct SaturationParams {
     return SaturationParams{static_cast<float>(e.saturation) / 255.0f};
 }
 
-// The saturation colour transform (in/out rgb in [0,1] floats — reuses ColorFillRgb). Each channel is pulled
+// The saturation color transform (in/out rgb in [0,1] floats — reuses ColorFillRgb). Each channel is pulled
 // toward the pixel's own luminance by `1 - saturation`, so saturation == 1 returns `in` unchanged (the
 // identity contract, byte-exact: at amount == 0 the multiply-by-zero + subtract-zero is exact, mirroring
-// Gleam's ×(1+0)+0). saturation == 0 collapses every channel to the luma (greyscale). Mirrors saturation.frag
+// Gleam's ×(1+0)+0). saturation == 0 collapses every channel to the luma (grayscale). Mirrors saturation.frag
 // exactly (same op order, same Rec. 601 luma weights Gleam uses); pure arithmetic → constexpr, so
 // static_assert-testable, the applyColorFill / applyGleam discipline.
 [[nodiscard]] constexpr ColorFillRgb applySaturation(ColorFillRgb in, const SaturationParams& p) noexcept {
@@ -504,7 +504,7 @@ struct SaturationParams {
 //
 // A threshold-blur-add glow: pixels brighter than the threshold blur outward (a 2-D Gaussian gather, one
 // pass) and add back over the source. One definition at every site, in the pipeline's own (premultiplied)
-// colour domain:
+// color domain:
 //
 //   f       = saturate((lum(c.rgb) − threshold) / max(1 − threshold, 1/255))   // the brightpass factor
 //   bright(c) = c · f                        // full-rgba scale — the glow's coverage rides the alpha
@@ -589,9 +589,9 @@ struct GaussianKernel {
 
 // ── Glow math (the CPU mirror the glow_h / glow_v shaders and the sprite kernels reproduce) ──
 //
-// Bloom's authored-colour sibling: a SCALAR emission mask (coverage × the survival of the STRAIGHT
+// Bloom's authored-color sibling: a SCALAR emission mask (coverage × the survival of the STRAIGHT
 // luminance above the threshold) blurs outward (the shared 2-D Gaussian gather, one pass), and the blurred
-// mask times a chosen tint adds back over the source. Where Bloom radiates the source's OWN colour, Glow
+// mask times a chosen tint adds back over the source. Where Bloom radiates the source's OWN color, Glow
 // radiates the tint — the mask carries no chroma, so no source hue enters the halo. One definition at every
 // site:
 //
@@ -665,7 +665,7 @@ struct GlowParams {
 // ── Emission chain (the CPU mirror of the Bloom / Glow realization) ────────────────────
 //
 // Bloom and Glow are realized as a chain of cheap fixed passes over a shared emission buffer, not as one
-// neighbourhood gather per output pixel:
+// neighborhood gather per output pixel:
 //
 //   extract → [reduce ×½ → reduce ×½] → blur H → blur V → composite
 //
@@ -678,7 +678,7 @@ struct GlowParams {
 //
 // so a radius-r halo costs 2(2r+1) taps per fragment instead of (2r+1)², and 16× less again once the field
 // is reduced to quarter resolution first. Reach is the only parameter the blur still sees, which is what
-// lets one emission buffer carry many emitters of differing colour and strength at once.
+// lets one emission buffer carry many emitters of differing color and strength at once.
 //
 // The extract always runs at FULL resolution even when the blur is reduced: the threshold is a nonlinear
 // key, so it belongs on true pixels — evaluating it on an already-averaged image is what makes a lone
@@ -768,7 +768,7 @@ struct EmissionChainPlan {
 
 // The Glow emission at one source pixel: the scalar mask scaled by intensity, carried on the alpha and
 // tinted into the rgb — so the halo's chroma is the authored tint and no source hue enters it. The rgb is
-// premultiplied by the mask, matching the pipeline's colour domain. Pure arithmetic → constexpr.
+// premultiplied by the mask, matching the pipeline's color domain. Pure arithmetic → constexpr.
 [[nodiscard]] constexpr Vec4 emissionExtractGlow(Vec4 src, float threshold, float intensity,
                                                  float tintR, float tintG, float tintB) noexcept {
     const float m = glowMask(src, threshold) * intensity;
@@ -787,13 +787,13 @@ struct EmissionChainPlan {
 // ── Container blend math (the CPU mirror the blend compositor reproduces) ──────────────
 //
 // How a compositing container (a Region's effects, a DrawLayer's content, the frame's whole-frame
-// postEffects) combines its colour SOURCE `src` over what it composites onto, `dst`, under a BlendMode.
+// postEffects) combines its color SOURCE `src` over what it composites onto, `dst`, under a BlendMode.
 // The separable blend operator B(dst, src) is applied per channel, source-alpha-weighted:
 //   out.rgb = (1 - src.a)·dst.rgb + src.a·B(dst.rgb, src.rgb)   (clamped to [0,1])
 //   out.a   = src.a + dst.a·(1 - src.a)                         (standard over alpha; mode-independent)
 // Normal (B = src) reduces to the standard alpha-over, so a Normal container's output is the alpha-over
 // it always was. The region-select gate and the blend composite shader reproduce this exactly — it is
-// the single authority both mirror. Colours are straight (non-premultiplied) [0,1] floats. Genuinely
+// the single authority both mirror. Colors are straight (non-premultiplied) [0,1] floats. Genuinely
 // constexpr (pure arithmetic) → static_assert-testable, the applyColorFill / applyBlendMode discipline.
 
 // The separable blend operator B(d, s) for one channel, per mode (rgb only; alpha composites separately).
@@ -954,7 +954,7 @@ static_assert(applyBlendMode(Vec4{0.8f, 0, 0, 1}, Vec4{0.5f, 0, 0, 1}, BlendMode
 // path), then test (sdPolygon - radius), routed through bandSignedDistance (a stroke confines to the
 // boundary band), ≤ 0. The CPU mirror of the region_select.frag gate.
 // `snap` selects the evaluation grid: false (the default — the Output grid) tests the fragment as given;
-// true (the Viewport grid) snaps it to its viewport-cell centre first, so the gate resolves per viewport
+// true (the Viewport grid) snaps it to its viewport-cell center first, so the gate resolves per viewport
 // pixel (the crisp path). Mirrors region_select.frag on both settings.
 [[nodiscard]] inline bool regionContains(Point fragPx, const ShapePoints& region, bool snap = false) noexcept {
     if (region.points.empty()) return true;
@@ -980,7 +980,7 @@ static_assert(applyBlendMode(Vec4{0.8f, 0, 0, 1}, Vec4{0.5f, 0, 0, 1}, BlendMode
 // or empty `points`. A circle (points=[c], radius=r) and a capsule (points=[a,b], radius=r) bound exactly.
 //
 // The gate has NO anti-aliasing (region_select.frag resolves containment as a hard step), and under CRISP
-// snapping tests the fragment's viewport-cell centre (within its own pixel). So the box need only cover every
+// snapping tests the fragment's viewport-cell center (within its own pixel). So the box need only cover every
 // compose pixel whose SDF test point lands inside the shape: floor/ceil the viewport-space bbox to whole
 // viewport px, then ±1 px outward for float32 SDF slop, then scale to the compose grid. A fully-offscreen
 // shape collapses to a 1×1 degenerate-but-valid rect (backends need not accept a zero-area scissor; nothing
@@ -1019,7 +1019,7 @@ static_assert(applyBlendMode(Vec4{0.8f, 0, 0, 1}, Vec4{0.5f, 0, 0, 1}, BlendMode
 
 // ── Region batching (the instanced-additive fast path) ─────────────────────────────────────────
 //
-// Many same-shader region-confined effects on one site are the O(N)-pass GPU cliff: each is modelled as
+// Many same-shader region-confined effects on one site are the O(N)-pass GPU cliff: each is modeled as
 // its own pair of full-frame passes (runEffect then the region-select gate), so N regions ⇒ ~2N
 // serialized passes chaining on a read-after-write hazard the GPU cannot pipeline. When the effect is a
 // custom shader whose output is its source PLUS a source-independent term (out = sampleSource(uv) + D(uv);
@@ -1339,7 +1339,7 @@ inline constexpr std::size_t kColorFillGatherMaxPoints = 64;
 // predicates: any region alpha and any blend mode qualify (they ride the record and composite in-loop),
 // as do invert, stroke, a non-identity transform (the inverse homography rides the record), and any
 // vertex count (truncation matches the per-region cbuffer). The only shape holdout is a curve boundary
-// — the analytic/sampled flavours are follow-up record kinds, and a baked SDF mask cannot batch at all
+// — the analytic/sampled flavors are follow-up record kinds, and a baked SDF mask cannot batch at all
 // (each region binds its own mask texture; records have no per-record texture) — and the only step
 // holdout is shapelessness, which never reaches here (an unconfined step is skipped by the plan walk,
 // and a shapeless region was already synthesized into a whole-viewport rectangle).
@@ -1687,7 +1687,7 @@ struct CurveMaskField {
 // Whether a viewport-pixel fragment lies inside a region whose boundary is evaluated by a baked mask `field`
 // — the CPU mirror of the region_select_curve_mask.frag gate. Maps the fragment into shape space via the
 // region transform inverse, samples the field, then tests the radius-inflated, stroke-banded distance,
-// honouring invert.
+// honoring invert.
 [[nodiscard]] inline bool curveMaskRegionContains(Point fragPx, const ShapePoints& region,
                                                   const CurveMaskField& field, bool snap = false) noexcept {
     if (snap) fragPx = snapFragToCellCenter(fragPx);
@@ -1716,7 +1716,7 @@ enum class CurveRegionPath : std::uint8_t { Polygon, Analytic, Mask, SampledPoly
 // behind it (the layers below, or the backdrop). The boundary reuses the region SDF wholesale — sdPolygon for a
 // polygon / circle / capsule, sdCurveAnalytic for an analytic curve — so a stencil boundary curves for
 // free. These two helpers turn the SDF's signed distance into the survival factor the (premultiplied)
-// source colour is scaled by; the region_stencil.frag / region_stencil_curve.frag shaders mirror them.
+// source color is scaled by; the region_stencil.frag / region_stencil_curve.frag shaders mirror them.
 
 // Coverage = how far INSIDE the shape, ramped over `feather` (shape-local px, the same units as radius),
 // centered on the boundary. feather == 0 → a hard step (1 inside, 0 outside); feather > 0 → a linear
@@ -1771,12 +1771,12 @@ struct CurveStencilParams {
 // SpriteFxRecords the sprite fragment loops over per pixel (no added render passes — the pass count
 // stays flat in the sprite count). These helpers are the CPU side the renderer drives (buildSpriteFxRecords
 // packs a sprite's run) and the device-free oracle the sprite fragment mirrors (evalSpriteFxRecords for the
-// colour transform; spriteDisplacedReadUv for the displacing re-read).
+// color transform; spriteDisplacedReadUv for the displacing re-read).
 //
-// A whole-silhouette chain step is a colour transform (ColorFill / Gleam / ColorSaturation /
+// A whole-silhouette chain step is a color transform (ColorFill / Gleam / ColorSaturation /
 // Transparency — realized by evalSpriteFxRecords), a displacing re-read (RowDisplacement / Ripple —
-// realized by spriteDisplacedReadUv, which moves WHERE the art is sampled before the colour transform
-// runs), or a Bloom glow (a neighbourhood sum over the sprite's own art the fragment computes in-loop;
+// realized by spriteDisplacedReadUv, which moves WHERE the art is sampled before the color transform
+// runs), or a Bloom glow (a neighborhood sum over the sprite's own art the fragment computes in-loop;
 // the pure pieces are applyBrightpass / gaussianKernelWeight / applyBloomAdd, composed by the fragment and
 // the tests). A displacing or bloom effect's params on a sprite are in the sprite's OWN art pixels (the
 // re-read / halo space), not viewport pixels as on a layer. Region
@@ -1842,7 +1842,7 @@ struct CurveStencilParams {
             if (e.edge == DisplacementEdge::Stretch) r.flags |= kSpriteFxEdgeStretch;
             break;
         case ScreenSpaceEffectKind::Ripple:
-            // Radial art re-read. params = (amplitude, frequency, phase, _); the centre (art px) and decay ride
+            // Radial art re-read. params = (amplitude, frequency, phase, _); the center (art px) and decay ride
             // the otherwise-idle chain-step gate lanes (radius/strokeWidth/pad0 carry no shape for a chain step).
             r.params[0] = e.amplitude; r.params[1] = e.frequency; r.params[2] = e.phase;
             r.radius = e.center.x; r.strokeWidth = e.center.y; r.pad0 = e.decay;
@@ -1851,8 +1851,8 @@ struct CurveStencilParams {
         case ScreenSpaceEffectKind::Swirl: {
             // Angular art re-read. params = (twist, radius, _, _) with the twist ALREADY resolved to radians
             // (and signed) by swirlParams — the record carries what the fragment consumes, never the
-            // developer-facing degrees. The centre (art px) rides the otherwise-idle chain-step gate lanes
-            // (radius/strokeWidth carry no shape for a chain step), the Ripple-centre precedent; pad0 stays
+            // developer-facing degrees. The center (art px) rides the otherwise-idle chain-step gate lanes
+            // (radius/strokeWidth carry no shape for a chain step), the Ripple-center precedent; pad0 stays
             // free. Those lanes carry a region's shape, so a Swirl REGION step is unsupported and skipped
             // (with a warning) by buildSpriteFxRecords / buildSpriteBelowRecords — this pack is only ever
             // reached for a whole-silhouette chain step.
@@ -1872,9 +1872,9 @@ struct CurveStencilParams {
             break;
         }
         case ScreenSpaceEffectKind::Glow: {
-            // The authored-colour aura sum over the sprite's own art. params = (radius art px, threshold,
+            // The authored-color aura sum over the sprite's own art. params = (radius art px, threshold,
             // intensity, invNorm) as for Bloom; the tint r/g/b ride the otherwise-idle chain-step gate lanes
-            // (radius/strokeWidth/pad0 — the same lanes a Ripple's centre + decay ride). Those lanes carry a
+            // (radius/strokeWidth/pad0 — the same lanes a Ripple's center + decay ride). Those lanes carry a
             // region's shape, so a Glow REGION step is unsupported and skipped (with a warning) by
             // buildSpriteFxRecords / buildSpriteBelowRecords — this pack is only ever reached for a
             // whole-silhouette chain step.
@@ -1930,7 +1930,7 @@ struct CurveStencilParams {
             if (e.kind == ScreenSpaceEffectKind::None) continue;
             if (effectIsBelowScope(e)) continue;  // a region-confined Below step is packed by the below pass, not inline
             // A displacing kind re-reads the whole silhouette; it has no confined-region meaning (and its packed
-            // centre/decay would collide with the region's shape lanes) — skip it inside a region. A Custom kind
+            // center/decay would collide with the region's shape lanes) — skip it inside a region. A Custom kind
             // runs whole-silhouette (its cbuffer params fill the same lanes the region shape needs) — skip it
             // inside a region too. A Glow's tint fills those same shape lanes — skip it too (the renderer warns).
             if (e.kind == ScreenSpaceEffectKind::RowDisplacement || e.kind == ScreenSpaceEffectKind::Ripple ||
@@ -1945,15 +1945,15 @@ struct CurveStencilParams {
 
 // ── Sprite emission — the Layer-scope Bloom / Glow raster ───────────────────────────────────
 //
-// A glowing sprite does not gather its own neighbourhood. It rasterizes its EMISSION — the light it
+// A glowing sprite does not gather its own neighborhood. It rasterizes its EMISSION — the light it
 // contributes to the halo — into the shared emission buffer, which is blurred once and composited once for
 // every sprite sharing the reach. The cost of a field of glowing sprites is therefore the cost of the
 // distinct reaches it authors, not the count of sprites: fifty boulders at one radius cost the same four
 // passes as one, and the reach itself costs taps along two axes rather than over an area.
 //
-// The sprite's own chain still runs during the raster, up to the glow step: colour steps BEFORE it feed the
-// emission (a ColorFill recolours what radiates), and the step itself resolves the emission from the running
-// colour. Steps AFTER it grade the art alone — the aura has already left the pixel, and composites
+// The sprite's own chain still runs during the raster, up to the glow step: color steps BEFORE it feed the
+// emission (a ColorFill recolors what radiates), and the step itself resolves the emission from the running
+// color. Steps AFTER it grade the art alone — the aura has already left the pixel, and composites
 // separately over the layer.
 
 // One realized Layer-scope Bloom / Glow chain step of a sprite.
@@ -2031,7 +2031,7 @@ struct PixelBox {
 // the box a field of its own light must cover.
 //
 // The quad is NOT clipped to the grid. A sprite hanging off the edge still rasters its whole quad into its
-// rect, and clipping the box would leave the overhang landing outside the rect, in a neighbour's. Position
+// rect, and clipping the box would leave the overhang landing outside the rect, in a neighbor's. Position
 // does not enlarge the box, so an off-screen sprite asks for no more atlas than an on-screen one.
 //
 // A corner behind the projection (w <= 0) has no image, so a sprite carrying one asks for nothing and its
@@ -2217,8 +2217,8 @@ collectSpriteLayerCustomEmissionDemand(const ScreenSpaceEffect& e, float linearS
     return packSpriteFxRecord(bloom, /*isRegion=*/false, kNoShape, 1.0f, BlendMode::Normal);
 }
 
-// Whether to warn that a Custom step's colour is missing from a sibling whole-silhouette Bloom / Glow halo. A
-// Bloom / Glow rasters the pre-custom colour because a Custom step has no emission variant in the emission
+// Whether to warn that a Custom step's color is missing from a sibling whole-silhouette Bloom / Glow halo. A
+// Bloom / Glow rasters the pre-custom color because a Custom step has no emission variant in the emission
 // raster — true for an UNDECLARED custom, whose step has no emission pass at all. An emission-DECLARED custom
 // joins the emission grammar by construction (it carries its own field), so the "no emission pass" message does
 // not describe it and the warning is suppressed. Pure predicate so the branch is asserted device-free.
@@ -2248,7 +2248,7 @@ struct EmissionRectEntry {
 // Where a placed field's content sits, and how a fragment gets to it.
 //
 // A read is clamped into the INNER BOX, not the whole rect: the margin ring around it is where the blur
-// spills, and where a neighbour's spill may land, so nothing may read there. The same offset moves the
+// spills, and where a neighbor's spill may land, so nothing may read there. The same offset moves the
 // raster, so the pixel a fragment reads is the pixel the raster wrote — one authority for both directions.
 [[nodiscard]] inline EmissionRectEntry emissionRectEntry(const EmissionDemand& d, const EmissionPlacement& p,
                                                          int sheet = 0) noexcept {
@@ -2270,9 +2270,9 @@ struct EmissionRectEntry {
 // read puts it back on the compose grid. A halo holds nothing sharper than its blur kernel allows, so a
 // filtered read of viewport-resolution data reconstructs the halo a compose-resolution field would carry.
 //
-// The steps a sample point is quantized to per texel. Reaching a texel's exact centre through a divide and a
+// The steps a sample point is quantized to per texel. Reaching a texel's exact center through a divide and a
 // couple of adds leaves a few ULPs of float noise, and a linear tap returns the stored texel unchanged only
-// when it lands ON the centre — so the point is held to a grid fine enough to be invisible and coarse enough
+// when it lands ON the center — so the point is held to a grid fine enough to be invisible and coarse enough
 // to swallow that noise. The crisp read is then exact on every backend, rather than depending on each one's
 // subtexel precision.
 inline constexpr float kEmissionSampleSteps = 256.0f;
@@ -2282,7 +2282,7 @@ inline constexpr float kEmissionSampleSteps = 256.0f;
 // `composeScale` maps that down to the viewport grid the field lives on.
 //
 // `snap` is the evaluation grid, and it is the whole difference between the two. Set — EvaluationGrid's
-// Viewport default — the point moves to the centre of the viewport cell holding the fragment, which is the
+// Viewport default — the point moves to the center of the viewport cell holding the fragment, which is the
 // cell the field was rastered for: the sample lands exactly on a texel anchor and a linear tap there returns
 // that texel bit for bit, so the halo quantizes to whole viewport pixels like the art it grades. Clear —
 // Output — the point stays continuous and the halo resolves smoothly between the stored texels. At
@@ -2290,7 +2290,7 @@ inline constexpr float kEmissionSampleSteps = 256.0f;
 //
 // The point is held inside the content box grown by ONE texel. That ring is where a tap at the quad's edge
 // draws support, and emissionMargin sizes the rect so the ring carries this field's own light and no
-// neighbour's. The zeroed row an unplaced field reads collapses to a single texel of the idle store, so a
+// neighbor's. The zeroed row an unplaced field reads collapses to a single texel of the idle store, so a
 // step naming a field it never got adds no light instead of reading somewhere arbitrary.
 [[nodiscard]] inline Point emissionFieldSamplePoint(const EmissionRectEntry& rect, Point fragPx,
                                                     float composeScale, bool snap) noexcept {
@@ -2397,7 +2397,7 @@ groupSpriteEmissionBuckets(std::span<const SpriteEmissionStep> steps) {
 // sprite can carry both: Layer effects shape the art, Below effects shape the scene showing through it.
 // The below-sprite pass realizes these (the sprite draws through the scene-reading spriteBelow_ pipeline,
 // its rasterized art alpha the silhouette mask). Records pack identically (packSpriteFxRecord) — the
-// below-sprite fragment interprets displacement amplitude / centre as VIEWPORT px (it distorts the scene),
+// below-sprite fragment interprets displacement amplitude / center as VIEWPORT px (it distorts the scene),
 // where the Layer path reads them as the sprite's own ART px (it re-reads the art). A Below-scope Custom
 // effect routes through a generated scene-read variant (its own pipeline — spriteBelowInlineCustomShader
 // selects it, the renderer builds it), so a game's custom shader distorts / grades the scene through the
@@ -2439,8 +2439,8 @@ groupSpriteEmissionBuckets(std::span<const SpriteEmissionStep> steps) {
 
 // Whether a Below-scope kind is realized by the BUILT-IN below-sprite fragment (the spriteBelow_ pipeline).
 // ColorFill / Gleam / ColorSaturation grade the scene sample; RowDisplacement / Ripple / Swirl re-read the
-// scene at a displaced screen position; Bloom sums a scene neighbourhood into a glow added over the sample; Glow sums a
-// scene emission mask into an authored-colour aura added over the sample; Transparency scales the lens's
+// scene at a displaced screen position; Bloom sums a scene neighborhood into a glow added over the sample; Glow sums a
+// scene emission mask into an authored-color aura added over the sample; Transparency scales the lens's
 // output alpha (its strength), blending the grade back toward the untouched scene. Custom routes through a
 // generated scene-read variant (a distinct pipeline — spriteBelowInlineCustomShader selects it), NOT this
 // built-in path.
@@ -2484,7 +2484,7 @@ groupSpriteEmissionBuckets(std::span<const SpriteEmissionStep> steps) {
             if (e.kind == ScreenSpaceEffectKind::None) continue;
             if (!effectIsBelowScope(e)) continue;
             // A displacing kind re-reads the whole silhouette (no confined-region meaning, and its packed
-            // centre / decay would collide with the region's shape lanes); a Custom runs whole-silhouette (its
+            // center / decay would collide with the region's shape lanes); a Custom runs whole-silhouette (its
             // cbuffer params fill the same lanes the region shape needs); a Glow's tint fills those same lanes —
             // none is a region-confined below step.
             if (e.kind == ScreenSpaceEffectKind::RowDisplacement || e.kind == ScreenSpaceEffectKind::Ripple ||
@@ -2513,7 +2513,7 @@ groupSpriteEmissionBuckets(std::span<const SpriteEmissionStep> steps) {
 // additively instead of forcing the type open.
 enum class EmissionExtract : std::uint8_t {
     Bloom  = 0,   // the scene's own light above the threshold, carrying its chroma
-    Glow   = 1,   // a scalar coverage mask; the halo's colour is the authored tint, applied per lens
+    Glow   = 1,   // a scalar coverage mask; the halo's color is the authored tint, applied per lens
     Custom = 2,   // a game-registered emission stage authored the content: its `emission()` body over the
                   //   rect (the `<ns>_emission_rect` extract variant), or — absent a body — the stock
                   //   brightpass at the demand's threshold. The consuming Custom lens samples the blurred
@@ -2788,9 +2788,9 @@ inline void writeSpriteFxCustomParams(SpriteFxRecord& r, std::span<const std::by
 }
 
 // Evaluate a sprite's flattened effect run at one covered pixel — the device-free oracle the sprite fragment
-// reproduces. `base` is the sprite's own straight-RGBA pixel (palette colour, before the layer/sprite alpha
+// reproduces. `base` is the sprite's own straight-RGBA pixel (palette color, before the layer/sprite alpha
 // multiply); `u`/`v` are its within-sprite coordinates in [0,1]; `w`/`h` the sprite pixel size. Chain steps
-// transform the running colour in order (ColorFill replaces rgb, Gleam adds a keyed sheen, ColorSaturation
+// transform the running color in order (ColorFill replaces rgb, Gleam adds a keyed sheen, ColorSaturation
 // desaturates, Transparency makes
 // the whole silhouette see-through); region steps gate on the quad-space shape and grade over the pixel by
 // the region's alpha + blend (Transparency instead scales alpha by the stencil survival). Returns nullopt when
@@ -2826,7 +2826,7 @@ evalSpriteFxRecords(Vec4 base, float u, float v, int w, int h,
                 }
                 default: break;  // None / displacing / Bloom / Glow pass through here — displacement is the
                                  // read pre-pass oracle (spriteDisplacedRead); the Bloom / Glow
-                                 // art-neighbourhood sum lives in the fragment, with its pure pieces
+                                 // art-neighborhood sum lives in the fragment, with its pure pieces
                                  // (applyBrightpass / gaussianKernelWeight / applyBloomAdd; glowMask /
                                  // applyGlowAdd) composed by the tests
             }
@@ -2848,7 +2848,7 @@ evalSpriteFxRecords(Vec4 base, float u, float v, int w, int h,
         const bool inside = (d <= 0.0f) != ((r.flags & kSpriteFxInvert) != 0u);
         if (!inside) continue;
         if (kind == ScreenSpaceEffectKind::Bloom) continue;  // the fragment's in-loop art sum — its params
-                                                             // are kernel knobs, never a fill colour
+                                                             // are kernel knobs, never a fill color
         Vec4 src{r.params[0], r.params[1], r.params[2], r.alpha};  // ColorFill: the fill
         if (kind == ScreenSpaceEffectKind::Gleam) {
             const ColorFillRgb g = applyGleam(ColorFillRgb{c.x, c.y, c.z}, u, v,
@@ -2864,7 +2864,7 @@ evalSpriteFxRecords(Vec4 base, float u, float v, int w, int h,
 }
 
 // Whether a sprite carries any displacing chain effect (RowDisplacement / Ripple / Swirl) — the fragment's
-// displacement pre-pass runs only for such a sprite; a pure-colour sprite reads its art at the plain
+// displacement pre-pass runs only for such a sprite; a pure-color sprite reads its art at the plain
 // coordinate.
 [[nodiscard]] inline bool spriteHasDisplacement(const Sprite& s) noexcept {
     for (const ScreenSpaceEffect& e : s.effects)

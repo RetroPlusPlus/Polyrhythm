@@ -123,7 +123,7 @@ public:
     }
 
     // Wall time until the machine is owed `cycles` in total, at the factor as it stands — the owed
-    // arithmetic run backwards. A stepping loop parks on this: a step lands a whole frame of the
+    // arithmetic run backward. A stepping loop parks on this: a step lands a whole frame of the
     // machine's own time at once, so the wait is what the wall clock still owes for it, and a park
     // measured this way ends when the next step is due rather than at a poll boundary. Cycles
     // already owed are no wait at all. The answer is bounded by kMaxFold — a paused factor never

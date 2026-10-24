@@ -27,9 +27,9 @@ You never tell the platform "now change this register for the next scanline." Yo
 entire frame," as data, and the renderer draws it. Effects that old hardware achieved with timing
 tricks (a status bar that doesn't scroll with the world, a day/night tint, a screen flash, parallax)
 are all expressed as ordinary data in that description: more layers, different scroll values, a
-whole-frame colour grade. This is what keeps the platform portable and the API small.
+whole-frame color grade. This is what keeps the platform portable and the API small.
 
-A direct consequence: **out of the box the platform reproduces a game's original behaviour faithfully.**
+A direct consequence: **out of the box the platform reproduces a game's original behavior faithfully.**
 Enhancements (output scaling, world zoom, audio packs, display filters) are opt-in and off by default
 — never something you have to opt *out* of.
 
@@ -98,15 +98,15 @@ state each frame and the platform interpolates it.
 ## How drawing is described
 
 The thing you submit each frame is a **`FrameDrawState`**: a stack of **layers**, plus optional
-whole-frame colour effects. Each **layer** is tiles *or* sprites at a depth (`z`), with its own scroll
+whole-frame color effects. Each **layer** is tiles *or* sprites at a depth (`z`), with its own scroll
 and size. The compositor draws layers back-to-front by `z`. There are **no fixed roles** — the platform
 has no "background" or "sprite" or "window" layer; a layer is just content at a depth, and *you*
 decide what each one means. "The player walks behind a tree" is just the tree on a higher-`z` layer.
 
-Colour is **indexed**: art (an **atlas**) stores a palette *index* per pixel, and a **palette** turns
-indices into actual colours at render time. The same art renders in any colour scheme by pointing it
-at a different palette — that's how recolouring, day/night, and palette animation work without new
-art. [draw-state.md](draw-state.md) + [tiles-and-colour.md](tiles-and-colour.md).
+Color is **indexed**: art (an **atlas**) stores a palette *index* per pixel, and a **palette** turns
+indices into actual colors at render time. The same art renders in any color scheme by pointing it
+at a different palette — that's how recoloring, day/night, and palette animation work without new
+art. [draw-state.md](draw-state.md) + [tiles-and-color.md](tiles-and-color.md).
 
 You can rebuild the whole `FrameDrawState` every frame, or keep it and mutate only what changed — both
 are supported and neither is "more correct." See
@@ -114,7 +114,7 @@ are supported and neither is "more correct." See
 
 ## Every surface is console-parameterized
 
-The defaults are Game-Boy-flavoured, but every surface generalizes across the 8-/16-bit family
+The defaults are Game-Boy-flavored, but every surface generalizes across the 8-/16-bit family
 and accepts arbitrary values: viewport resolutions
 (`ViewportResolution::Nes`, `Snes`, … or any `{w, h}`), palette sizes (`PaletteSize::Genesis`, … or any
 count), and timing (`TickPeriodNs::Hz60`, … or any period). Input has no preset axis — a game
@@ -130,13 +130,13 @@ The Game Boy presets are the proven defaults, not constraints.
 | **`alpha`** | Interpolation factor ∈ [0,1): how far between the last two ticks a render falls. The platform eases by it automatically; a game reads it only to own the blend itself. |
 | **viewport** | The platform's internal render resolution (160×144 by default). Drawn small, then scaled to the window. |
 | **atlas** | A sheet of indexed art — one palette *index* per pixel — uploaded once and referenced by `AtlasId`. |
-| **palette** | A small table mapping indices → output colours (`Rgba8`), uploaded once and referenced by `PaletteId`. |
+| **palette** | A small table mapping indices → output colors (`Rgba8`), uploaded once and referenced by `PaletteId`. |
 | **named sheet / palette** | Each tile and sprite carries its own `AtlasId` + `PaletteId` directly, so one layer mixes any number of sheets and palettes — there is no per-layer set or cap. |
 | **layer** | One entry in the frame's stack: tiles or sprites, at a depth `z`, with its own scroll/size/alpha. |
 | **`z`** | A layer's back-to-front sort key. Depth is `z` alone — there are no role-based layers. |
 | **`key`** | A layer / sprite / region's REQUIRED reconciliation identity (an `ObjectKey`, e.g. `"HUD"`) — the stable name the renderer matches an object to its previous tick by, and interpolates from. Unique per frame, not a depth key; omitting it is a compile error. |
-| **`FrameDrawState`** | The whole description of one frame: the layer stack + whole-frame colour and screen-space effects. |
-| **indexed colour** | The faithful model: pixels are palette indices; colour is applied from a selected palette at render time. |
+| **`FrameDrawState`** | The whole description of one frame: the layer stack + whole-frame color and screen-space effects. |
+| **indexed color** | The faithful model: pixels are palette indices; color is applied from a selected palette at render time. |
 | **immediate-mode / retained** | Two equally-valid ways to produce the frame: rebuild it each frame, or keep it and mutate what changed. |
 
 ## Where to go next

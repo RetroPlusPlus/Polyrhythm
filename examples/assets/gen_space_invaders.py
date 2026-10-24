@@ -5,12 +5,12 @@ single row of 8x8 cells so Renderer::loadAtlas can slice it into addressable slo
 This is the ASSET-LOAD route, contrasting Centipede's embedded-bytes route: examples/centipede_demo.cpp
 builds its indexed atlas from in-code byte grids and uploadAtlas; examples/space_invaders_demo.cpp loads
 THIS committed indexed PNG via loadAtlas(...) and uses the returned manifest's slots. Both are indexed
-(the pixels are palette INDICES, colour comes from palettes the demo uploads) — only the atlas SOURCE
+(the pixels are palette INDICES, color comes from palettes the demo uploads) — only the atlas SOURCE
 differs.
 
-Index 0 = transparent background (the sprite path discards it), 1 = the sprite's main colour slot, 2 = an
+Index 0 = transparent background (the sprite path discards it), 1 = the sprite's main color slot, 2 = an
 accent slot (the cannon tip, the UFO windows). The PNG's own PLTE is a neutral default so the file is a
-valid viewable indexed image; the demo selects its own palettes per sprite (per-row alien colours, etc.).
+valid viewable indexed image; the demo selects its own palettes per sprite (per-row alien colors, etc.).
 
 Engine-original art (no Taito / arcade-ROM content). One-time authoring tool, kept committed so the PNG
 stays regenerable and its index plane is auditable — same posture + dependency-free PNG encoder as the

@@ -398,14 +398,14 @@ here is what they are on this hardware.
 - **A call into a running cartridge lands at the next instruction boundary.** A cycle budget parks the
   machine wherever the cycle fell — inside an instruction, more often than not — and the routine runs
   between two of the guest's instructions: the one in flight finishes first, then the landing is pushed.
-  The register file that goes back afterwards is the file at that boundary, with the interrupt lines as
+  The register file that goes back afterward is the file at that boundary, with the interrupt lines as
   they then stand.
 - **The guest's stack is page one in emulation mode.** A call on the core's own scratch stack pushes
   its landing at `$1FFF` for a guest in native mode and at `$01FF` for one in emulation mode, where the
   chip keeps the stack in page one.
 - **A call spends the machine's own time.** The cycles a routine runs are the machine's — the beam moves,
   the sound chip is paced — and `advanceClock(cycles)` on a routine machine idles it for `cycles` more
-  from where its clock stands, the register file put back afterwards.
+  from where its clock stands, the register file put back afterward.
 - **A register's value is answered as the machine stands.** A program's read ticks the beam through
   its own cycle before it answers and a place's read spends no cycle, so a bit the beam decides —
   `$4212`'s blank flags, `$213F`'s field bit — is answered at the position the machine is parked at,

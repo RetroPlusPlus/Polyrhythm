@@ -10,10 +10,10 @@
 //     (TileCatalogEntry::rotation rides onto each emitted cell). One source slot per shape, not four.
 //   - A square glyph sprite that rotates with A, so the sprite rotation path is visible.
 //   - A 16×16 view of the SOURCE block (drawn once) so the green's origin is visible: an up-arrow in the
-//     left 8 columns, a green neighbour in the right 8. Then two non-square (8×16) sprites that read only
+//     left 8 columns, a green neighbor in the right 8. Then two non-square (8×16) sprites that read only
 //     the arrow column of that block: the LEFT stays unrotated (a clean up-arrow, direction at a glance);
 //     the RIGHT rotates with A. Rot180 is dimension-safe → a clean upside-down arrow. But Rot90/Rot270
-//     TRANSPOSE a non-square cell's read (the extents swap): the arrow shears and the GREEN neighbour —
+//     TRANSPOSE a non-square cell's read (the extents swap): the arrow shears and the GREEN neighbor —
 //     the one you can see in the source view — bleeds in. A kept fantasy-console quirk, not a bug; use the
 //     geometric transform for true quad rotation of non-square art.
 //
@@ -99,16 +99,16 @@ int main() {
     for (int y = 0; y < 8; ++y) px(art, 3, 0, 0, y, kGlyph);          // left stem
 
     // Non-square showcase: a directional up-arrow in the LEFT column (cells (4,0)+(4,1), over a transparent
-    // background) so its orientation reads at a glance, and a solid GREEN neighbour in the RIGHT column
+    // background) so its orientation reads at a glance, and a solid GREEN neighbor in the RIGHT column
     // (cells (5,0)+(5,1)). An 8×16 sprite (tile 4) reads the left column = the whole arrow. Rot180 is
     // dimension-safe → a clean upside-down arrow. Rot90/Rot270 transpose the read into a 16×8 strip that
-    // reaches into the green neighbour — the arrow shears and green bleeds in: the neighbour-cell read made
+    // reaches into the green neighbor — the arrow shears and green bleeds in: the neighbor-cell read made
     // visible while the arrow keeps the demo directional.
     for (int y = 0; y < 8; ++y)
         for (int x = 0; x < 8; ++x) {
             px(art, 4, 0, x, y, kHole);    // arrow cells: transparent background
             px(art, 4, 1, x, y, kHole);
-            px(art, 5, 0, x, y, kGreen);   // neighbour column: solid green
+            px(art, 5, 0, x, y, kGreen);   // neighbor column: solid green
             px(art, 5, 1, x, y, kGreen);
         }
     // The up-arrow across the left column (8 wide × 16 tall): a head widening over the first 4 rows, then a
@@ -129,7 +129,7 @@ int main() {
         {48, 92, 158},   // 2 fill
         {245, 210, 70},  // 3 glyph
         {240, 120, 40},  // 4 orange (arrow)
-        {70, 200, 110},  // 5 green  (the neighbour column the transpose pulls in)
+        {70, 200, 110},  // 5 green  (the neighbor column the transpose pulls in)
         {0, 0, 0},       // 6 unused
         {0, 0, 0},       // 7 transparent (never drawn)
     }};
@@ -206,12 +206,12 @@ int main() {
         sprites[0] = Sprite{.key = "glyph", .x = 40,  .y = 64, .size = AssetDimensions::GameBoy8x8,
                             .atlas = atlas, .tile = 3, .palette = palette, .rotation = kCycle[spriteRot]};
         // The full 16×16 SOURCE block, drawn once so the green's origin is visible: the up-arrow fills the
-        // left 8 columns, a green neighbour the right 8. This is the sheet the narrow sprites read from.
+        // left 8 columns, a green neighbor the right 8. This is the sheet the narrow sprites read from.
         sprites[1] = Sprite{.key = "block16", .x = 72,  .y = 60, .size = AssetDimensions::Snes16x16,
                             .atlas = atlas, .tile = 4, .palette = palette, .rotation = Rotation::None};
         // Two 8×16 sprites that read only the arrow (left) column of that block: the LEFT stays at None (a
         // clean up-arrow); the RIGHT rotates. Rot180 stays a clean upside-down arrow; Rot90/Rot270 transpose
-        // the read and pull the green neighbour — the one visible in the source at left — in.
+        // the read and pull the green neighbor — the one visible in the source at left — in.
         sprites[2] = Sprite{.key = "narrowL", .x = 104, .y = 60, .size = AssetDimensions::GameBoy8x16,
                             .atlas = atlas, .tile = 4, .palette = palette, .rotation = Rotation::None};
         sprites[3] = Sprite{.key = "narrowR", .x = 120, .y = 60, .size = AssetDimensions::GameBoy8x16,

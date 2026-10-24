@@ -2,8 +2,8 @@
 
 The submission envelope: the C++ shape a game hands the renderer each frame. This is the heart of
 the "how do I draw something" path — an arbitrary stack of Z-sorted layers, each carrying tiles or
-sprites, plus whole-frame colour and screen-space effects. The colour *model* (indexed atlases + palettes) is
-[tiles-and-colour.md](tiles-and-colour.md); how a frame is composited and presented is
+sprites, plus whole-frame color and screen-space effects. The color *model* (indexed atlases + palettes) is
+[tiles-and-color.md](tiles-and-color.md); how a frame is composited and presented is
 [rendering.md](rendering.md).
 
 ```cpp
@@ -20,10 +20,10 @@ sprites, plus whole-frame colour and screen-space effects. The colour *model* (i
   - [`TileContent` — a scrolling tile map](#tilecontent--a-scrolling-tile-map)
   - [`SpriteContent` + `Sprite` — placed sprites](#spritecontent--sprite--placed-sprites)
   - [`RasterContent` — a raster of pixels](#rastercontent--a-raster-of-pixels)
-- [Whole-frame colour](#whole-frame-colour)
+- [Whole-frame color](#whole-frame-color)
 - [Screen-space effects](#screen-space-effects)
   - [Confining an effect to a shape (`Region`)](#confining-an-effect-to-a-shape-region)
-  - [Painting a colour into a region (`ColorFill`)](#painting-a-colour-into-a-region-colorfill)
+  - [Painting a color into a region (`ColorFill`)](#painting-a-color-into-a-region-colorfill)
   - [Making a layer see-through (the `stencil()` helper)](#making-a-layer-see-through-the-stencil-helper)
   - [Frame edge: `DisplacementEdge`](#frame-edge-displacementedge)
   - [Custom shader stages — your own effect (`kind = Custom`)](#custom-shader-stages--your-own-effect-kind--custom)
@@ -39,8 +39,8 @@ mid-frame state-change API, no reconstructed scanline interrupt, no register pok
 and resubmits a fresh `FrameDrawState` each frame — layer existence, z, scroll, size, alpha, and
 effect parameters are all fresh every frame (the one amortized exception is the atlas/palette texels,
 uploaded when they change). Effects a Game Boy expressed through hardware tricks are expressed here
-as **layers, per-tile/per-region colour attributes, and screen-space-effect declarations** (whole-frame
-colour included) — never as a hardware-register idiom.
+as **layers, per-tile/per-region color attributes, and screen-space-effect declarations** (whole-frame
+color included) — never as a hardware-register idiom.
 
 **Identity is a typed, first-class field throughout** — the reconciliation `ObjectKey`, `AtlasId`, the
 `*Kind` enums — never an array position, never a packed byte behind a comment.
@@ -73,7 +73,7 @@ struct DrawLayer {
 ```
 
 `LayerScroll` is a plain `{int x, int y}` value pair (with `==` defined); `PixelSize` is the layer's
-`{width, height}`. Both default to zero-initialised.
+`{width, height}`. Both default to zero-initialized.
 
 The compositor draws the layers **back-to-front by `z`**. There is **no semantic layer model** — the
 platform imposes no "background" / "sprite" / "window" roles. A layer is just tiles-or-sprites at a
@@ -142,7 +142,7 @@ enum class TileWrap : std::uint8_t { Repeat, Clamp, Blank };
 struct TileCell {
     AtlasId       atlas{};         // which uploaded sheet this cell draws from
     std::uint16_t tile    = 0;     // cell index within its OWN sheet (`atlas`), on the 8px grid
-    PaletteId     palette{};       // which uploaded palette colours it
+    PaletteId     palette{};       // which uploaded palette colors it
     bool          flipX   = false;
     bool          flipY   = false;
     Rotation      rotation = Rotation::None;  // 90° texture rotation; composes with the flips
@@ -153,7 +153,7 @@ A tile layer is a row-major grid of cells sampled per-pixel in the shader agains
 so arbitrary layer sizes and wrapping are handled on the GPU. Each cell names its own sheet (`atlas`)
 and palette and a tile within that sheet, plus flips — so one layer mixes any number of sheets and
 palettes, and `TileContent` carries no atlas or palette of its own (see
-[tiles-and-colour.md](tiles-and-colour.md) for the colour mechanism). `cells` is game-owned and must
+[tiles-and-color.md](tiles-and-color.md) for the color mechanism). `cells` is game-owned and must
 outlive the `renderFrame` call. Depth is `z` alone; "the player walks behind the treetops" is just a
 higher-`z` layer.
 
@@ -184,7 +184,7 @@ struct Sprite {
     AssetDimensions size = AssetDimensions::GameBoy8x8;
     AtlasId         atlas{};           // which uploaded sheet this sprite draws from
     std::uint16_t   tile = 0;          // top-left atlas cell (8px grid) within its own sheet
-    PaletteId       palette{};         // which uploaded palette colours it
+    PaletteId       palette{};         // which uploaded palette colors it
     float           alpha = 1.0f;      // per-sprite opacity [0,1]; multiplies UNDER the layer alpha
     BlendMode       blend = BlendMode::Normal;  // how the sprite grades over its container (Multiply shadow, Add flare)
     bool          flipX = false, flipY = false;
@@ -352,12 +352,12 @@ it, and its `effects` run over it.
 `examples/image_layer/` shows one over a drifting star field, moved, fitted, spun, faded and rippled
 from the keyboard.
 
-## Whole-frame colour
+## Whole-frame color
 
-Whole-frame colour — day/night, a cutscene flash, a fade, a tint — is a screen-space effect, not a
+Whole-frame color — day/night, a cutscene flash, a fade, a tint — is a screen-space effect, not a
 bespoke frame member. Each is a `ColorFill` paired with a blend mode and an `alpha` / `fillIntensity`,
 pushed onto `frame.regions` (a region with no shape covers the whole viewport). `ColorFill` is a pure
-source colour; its container's blend decides how it grades the scene:
+source color; its container's blend decides how it grades the scene:
 
 ```cpp
 // Day/night: a Multiply ColorFill — scene · tint (darkens / cools the whole frame).
@@ -383,9 +383,9 @@ A Multiply `ColorFill` **darkens** (a shadow / tint); to **brighten**, use `Add`
 lift), `Screen`, or a `Multiply` with `fillIntensity > 1` — a multiplicative exposure that scales the scene up
 while preserving contrast (the float16 offscreen pipeline carries the > 1 fill; the blit clamps to the screen).
 The same effect works at any scope: confine it with a shape for a glow / shadow / sunlit
-patch (`frame.regions` / `layer.regions`), or run it per-layer. There is no colouring of source art here —
+patch (`frame.regions` / `layer.regions`), or run it per-layer. There is no coloring of source art here —
 that is index + palette; this grades the already-composited frame. The runnable showcase is
-[`examples/colour_effects_demo`](../../examples/colour_effects_demo/main.cpp); the blend math is [blend-modes.md](blend-modes.md).
+[`examples/color_effects_demo`](../../examples/color_effects_demo/main.cpp); the blend math is [blend-modes.md](blend-modes.md).
 
 ## Screen-space effects
 
@@ -403,16 +403,16 @@ struct ScreenSpaceEffect {             // frame-level (postEffects) and per-laye
     float phase     = 0;   // animation phase (advance it per frame) (RowDisplacement, Ripple);
                            // Swirl ADDS it to `amplitude` (degrees) so advancing it spins the vortex
     Axis  axis = Axis::Horizontal;            // Horizontal = displace columns by row; Vertical = rows by column (RowDisplacement)
-    DisplacementEdge edge = DisplacementEdge::Blank;  // frame-edge behaviour, below (RowDisplacement)
+    DisplacementEdge edge = DisplacementEdge::Blank;  // frame-edge behavior, below (RowDisplacement)
     ScreenSpaceEffectScope scope = ScreenSpaceEffectScope::Layer;  // per-layer reach (DrawLayer::effects only)
-    Point center{};        // ripple centre, in viewport pixels (Ripple); the swirl centre (Swirl)
+    Point center{};        // ripple center, in viewport pixels (Ripple); the swirl center (Swirl)
     float decay = 0;       // ripple radial falloff rate; 0 = no falloff (Ripple)
     StencilMode stencil = StencilMode::TransparentInside;  // Transparency: which side of its region goes see-through (TransparentInside | TransparentOutside)
     float       feather = 0;   // Transparency: soft-edge width in shape-local px; 0 = hard edge
-    Rgba8 fill{};   // ColorFill: the colour painted into the region; Glow: the aura's tint (out = fill · fillIntensity)
+    Rgba8 fill{};   // ColorFill: the color painted into the region; Glow: the aura's tint (out = fill · fillIntensity)
     float fillIntensity = 1.0f;  // ColorFill/Glow: scales `fill` — a Multiply/Add/Screen container (or a Glow aura) can exceed 1; 1 = plain fill
     float sweep = 0, width = 0.1f, gain = 0, slant = 0.35f;  // Gleam: a diagonal sheen band — sweep/width/slant place it (UV); gain 0 = identity
-    std::uint8_t saturation = 255;  // ColorSaturation: pull each pixel toward its luminance; 255 = full colour (identity), 0 = greyscale
+    std::uint8_t saturation = 255;  // ColorSaturation: pull each pixel toward its luminance; 255 = full color (identity), 0 = grayscale
     float        radius    = 0;     // Bloom/Glow: halo reach in the site's own pixels (viewport px; a sprite's own art px)
                                     // Swirl: the twisted disc's extent, same units
     std::uint8_t threshold = 0;     // Bloom: luminance floor — 0 blooms everything, higher keeps only the bright.
@@ -430,11 +430,11 @@ put it in a **`Region`** (next section), which owns the shape and the effects ap
 region owns the effect, not the reverse*.
 
 `RowDisplacement` (axis-aligned wave), `Ripple` (radial droplet), `Swirl` (an angular twist about a
-centre — the whirlpool; Ripple pushes the sample along the radius, Swirl carries it around), `ColorFill` (paint a colour into the
-region — see "Painting a colour into a region" below), `Gleam` (a luminance-keyed diagonal sheen sweep —
-the marquee "shine"), `ColorSaturation` (pull each pixel toward its own luminance — a colour drain),
+center — the whirlpool; Ripple pushes the sample along the radius, Swirl carries it around), `ColorFill` (paint a color into the
+region — see "Painting a color into a region" below), `Gleam` (a luminance-keyed diagonal sheen sweep —
+the marquee "shine"), `ColorSaturation` (pull each pixel toward its own luminance — a color drain),
 `Bloom` (a threshold-blur-add glow — bright content radiates its OWN light as a soft halo), and `Glow`
-(an authored-colour aura — a colour YOU pick radiates from the content, dark art included; the halo's
+(an authored-color aura — a color YOU pick radiates from the content, dark art included; the halo's
 chroma is the tint, never the source hue) are the platform's **built-in
 effects** — name the kind and set parameters, the platform owns the shader; `Custom` runs **your own
 shader** (see "Custom shader stages" below). Build one with plain **designated-init** — set `.kind` and
@@ -443,9 +443,9 @@ the fields that kind consults; every field is settable inline, so you keep full 
 phase, axis, edge; **Ripple** → amplitude, frequency, phase, center, decay; **Swirl** → center, radius,
 amplitude, phase (the turn in DEGREES — `amplitude` + `phase` summed; positive turns the content clockwise,
 matching `Transform::rotation`; a zero turn or a zero radius = identity); **ColorFill** →
-fill, fillIntensity (`out.rgb = fill · fillIntensity`); **Gleam** → sweep, width, gain, slant (`gain` 0 = identity); **ColorSaturation** → saturation (a `uint8`; `255` = full colour identity, `0` = greyscale); **Bloom** → radius, threshold, intensity (`intensity` 0 or `radius` 0 = identity; a glow past the art's edges); **Glow** → radius, threshold, intensity as Bloom's, plus fill × fillIntensity as the aura's tint (`threshold` 0 = the whole silhouette emits; `fillIntensity` > 1 = an HDR-hot aura); **Custom** →
+fill, fillIntensity (`out.rgb = fill · fillIntensity`); **Gleam** → sweep, width, gain, slant (`gain` 0 = identity); **ColorSaturation** → saturation (a `uint8`; `255` = full color identity, `0` = grayscale); **Bloom** → radius, threshold, intensity (`intensity` 0 or `radius` 0 = identity; a glow past the art's edges); **Glow** → radius, threshold, intensity as Bloom's, plus fill × fillIntensity as the aura's tint (`threshold` 0 = the whole silhouette emits; `fillIntensity` > 1 = an HDR-hot aura); **Custom** →
 `.customShader` (which registered shader) + **your shader's own reflected params** (set by name, inline);
-**Transparency** → stencil, feather (it makes its region **see-through** rather than colouring it — see
+**Transparency** → stencil, feather (it makes its region **see-through** rather than coloring it — see
 "Making a layer see-through" below). `scope` applies to every kind, and confinement comes from the
 `Region` that owns the effect (below). All built-ins flow through the same two
 attachment points — the same type drives the effect at two places:
@@ -632,15 +632,15 @@ the boundary it is sign-independent, so an **open** `fromCurve(...)` strokes int
 follows an arbitrary curved path, not just a closed loop. `strokeWidth = 0` (default) is the filled region.
 `curve_region_demo` toggles fill ↔ stroke with **A**.
 
-### Painting a colour into a region (`ColorFill`)
+### Painting a color into a region (`ColorFill`)
 
-`ColorFill` is the built-in that **paints a colour** onto the pixels its region covers instead of warping
-them. It carries one field — an `Rgba8 fill` — and the pixels it covers become that colour (`out.rgb =
-fill`). The shape you give the region decides what the colour draws:
+`ColorFill` is the built-in that **paints a color** onto the pixels its region covers instead of warping
+them. It carries one field — an `Rgba8 fill` — and the pixels it covers become that color (`out.rgb =
+fill`). The shape you give the region decides what the color draws:
 
-- **A solid shape** — a **filled** region: the interior becomes the colour.
+- **A solid shape** — a **filled** region: the interior becomes the color.
 - **A drawn line / path** — a **stroked** region (`shape.strokeWidth > 0`): the band along the boundary
-  becomes the colour. A stroked circle is a coloured ring; a stroked **open** `fromCurve` is a coloured
+  becomes the color. A stroked circle is a colored ring; a stroked **open** `fromCurve` is a colored
   curved line. This is how you draw real vector lines — no hand-walking a curve into sprites.
 
 ```cpp
@@ -653,7 +653,7 @@ ShapePoints line = ShapePoints::capsule({20, 20}, {140, 60}, 2.0f);  // a 4 px-t
 frame.regions.push_back(Region{ .key = "line", .shape = line, .effects = {cyan} });  // a drawn cyan line over the scene
 ```
 
-**Opacity is the `Region`'s, not the colour's.** Give the owning `Region` an `alpha` below 1 to blend its
+**Opacity is the `Region`'s, not the color's.** Give the owning `Region` an `alpha` below 1 to blend its
 fill (and any other effect it holds) over the scene — a translucent tint:
 
 ```cpp
@@ -664,8 +664,8 @@ frame.regions.push_back(Region{ .key     = "wash",
                                 .alpha   = 0.5f });  // a 50% warm wash over the backdrop
 ```
 
-**It emits the colour into the region's shape**, so it fills that shape wherever you attach it. The
-`Region`'s `alpha` and `blend` are what compose the colour over the scene, and the attachment point
+**It emits the color into the region's shape**, so it fills that shape wherever you attach it. The
+`Region`'s `alpha` and `blend` are what compose the color over the scene, and the attachment point
 picks which scene that is:
 
 - **Frame-level (`FrameDrawState::regions`) or a `Below`-scope layer effect** composes over the
@@ -673,7 +673,7 @@ picks which scene that is:
 - **`Layer` scope (`DrawLayer::regions`)** composes over **that layer's own content** — flat-shading a
   sprite, re-tinting a band of tiles.
 
-Under `Normal` at full alpha the result is the colour itself at either attachment point. A mode that
+Under `Normal` at full alpha the result is the color itself at either attachment point. A mode that
 reads its destination — `Multiply`, `Add`, `Screen`, `Subtract`, `Half`, `HalfSubtract` — differs between
 them, because the destination differs.
 
@@ -692,7 +692,7 @@ bg.regions.push_back(Region{.key = "porthole", .shape = ShapePoints::circle({cx,
 
 // or hold the shape and warp it instead:
 ShapePoints box = ShapePoints::rectangle({40, 42}, 80, 60);
-box.transform = Transform::scale(1.5f, 1.0f, 80, 72);  // stretch about the centre
+box.transform = Transform::scale(1.5f, 1.0f, 80, 72);  // stretch about the center
 bg.regions.push_back(Region{.key = "box", .shape = box, .effects = {wave}});
 ```
 
@@ -791,7 +791,7 @@ effect.edge = DisplacementEdge::Stretch;  // duplicate the edge pixel outward (s
 ```
 
 `Blank` is the default. What "blank" means depends on the scope: at frame-level and for a `Below`
-effect it is the backdrop colour (those displace an opaque image, so the strip shows the backdrop
+effect it is the backdrop color (those displace an opaque image, so the strip shows the backdrop
 rather than a stretched edge); for a `Layer` (isolated) effect it is *transparent*, so the exposed
 strip reveals the layers composited below this one. `Stretch` (edge-duplicate) is offered for the look
 some effects want, at any scope. (A genuinely *seamless* wrapping water — where a pulled-in row reveals
@@ -812,7 +812,7 @@ source texture + sampler:
 // game/shaders/swirl.frag.hlsl — your own params, your own names
 cbuffer Params : register(b1, space3) { float2 center; float angle; };
 float4 main(float2 uv : TEXCOORD0) : SV_Target0 {
-    /* swirl uv about center by angle … then: */ return sampleSource(swirledUv);  // honours the edge policy
+    /* swirl uv about center by angle … then: */ return sampleSource(swirledUv);  // honors the edge policy
 }
 ```
 
@@ -834,7 +834,7 @@ frame.postEffects.push_back(ScreenSpaceEffect{
 ```
 
 `amplitude`/`frequency`/`phase`/`axis` are **not** read for a `Custom` effect — your shader + its own
-params define its behaviour. `edge` and `scope` still apply: `edge` governs how your shader's
+params define its behavior. `edge` and `scope` still apply: `edge` governs how your shader's
 `sampleSource()` treats the frame border (`Blank` vs `Stretch`), and `scope` makes a per-layer `Custom`
 effect `Layer`-isolated or a `Below` adjustment, exactly like a built-in — both are compositing
 decisions the platform makes, not the shader. Order is purely list order: a `Custom` entry and a built-in `RowDisplacement` in the same
@@ -848,7 +848,7 @@ ones — ripple, the wave — are built-ins).
 
 An effect's params are scalars, so a closed-form per-row effect — `f(row, time)`: a sine wave, a gradient —
 lives entirely in the shader. When the per-row values are an **arbitrary array** the game computed that
-frame (a per-scanline scroll that isn't a clean curve, a digitized warp ramp, a per-region colour),
+frame (a per-scanline scroll that isn't a clean curve, a digitized warp ramp, a per-region color),
 `ScreenSpaceEffect::paramTable` carries it: an inline span of `Vec4`, one entry per row — the table
 counterpart to the scalar params.
 
@@ -884,7 +884,7 @@ float4 main(float2 uv : TEXCOORD0) : SV_Target0 {
 composes everywhere an effect does — frame `postEffects`, per-layer `effects`, and region-confined via a
 `Region`. It is game-owned and valid for the `renderFrame` call, like a layer's `cells` / `sprites` /
 `palettes`. What the row index *means* is the shader's choice — a scanline (per-line scroll / warp /
-colour) or a region id. `row_data_table_demo` drives a domed per-line horizontal scale from the table,
+color) or a region id. `row_data_table_demo` drives a domed per-line horizontal scale from the table,
 shown whole-frame and confined to a circle region.
 
 ## Transforms
@@ -904,13 +904,13 @@ compose with `.then()`:
 
 ```cpp
 DrawLayer floor{.key = "floor"};   // key is required — the reconciliation identity (see Layer identity above)
-floor.transform = Transform::rotation(degrees, 80.0f, 72.0f)   // yaw about the viewport centre …
+floor.transform = Transform::rotation(degrees, 80.0f, 72.0f)   // yaw about the viewport center …
                       .then(Transform::perspective(0.0f, -0.0045f));  // … then a receding Mode-7 floor
 ```
 
 - `Transform::identity()`, `translation(dx,dy)`, `scale(sx,sy, pivotX,pivotY)`, `rotation(deg, pivotX,pivotY)`,
   `skew(kx,ky, pivotX,pivotY)`, `perspective(gx,gy)`. Pivots are in **content-local pixels** (a 160×144 layer
-  rotates about its centre with pivot `(80, 72)`).
+  rotates about its center with pivot `(80, 72)`).
 - `a.then(b)` applies `a` first, then `b`. The affine constructors are `constexpr`; `rotation` is not (it uses
   `std::sin`/`cos`). `perspective` adds the foreshortening that makes a rotating ground recede — the spinning
   "Mode-7" floor — done per-pixel on the GPU, **not** as any per-scanline hardware trick.
@@ -939,19 +939,19 @@ geometry, so it has no footprint edge — see below.)
 A `Sprite` carries its own `Transform`, applied in **sprite-local pixel space** — the `[0, width) × [0, height)`
 rectangle of the sprite's own art. It composes with the sprite's layer transform: the sprite's transform runs
 **first** (in sprite-local space), then the layer's transform (in viewport space), exactly the order a tile
-layer's content travels. So a single sprite can spin about its own centre while its whole layer also rotates.
+layer's content travels. So a single sprite can spin about its own center while its whole layer also rotates.
 
 ```cpp
 Sprite s{.key = "spinner"};   // key is required — see sprites.md
 s.size   = AssetDimensions{16, 16};
-s.origin = s.center(Space::Quad);               // x/y place this point — here the sprite's centre
+s.origin = s.center(Space::Quad);               // x/y place this point — here the sprite's center
 s.pivot  = s.center(Space::Quad);               // the transform spins about this point
-s.transform = Transform::rotation(degrees);     // spins about the pivot — the sprite's own centre
+s.transform = Transform::rotation(degrees);     // spins about the pivot — the sprite's own center
 // …and the layer it rides can carry its own transform too — the two compose:
 spriteLayer.transform = Transform::rotation(slow, 80.0f, 72.0f);  // the whole layer orbits
 ```
 
-- The transform applies about **`Sprite::pivot`** (the spin centre), while `x`/`y` place **`Sprite::origin`**
+- The transform applies about **`Sprite::pivot`** (the spin center), while `x`/`y` place **`Sprite::origin`**
   (the placement handle); set both to one point to place and spin on the same spot. Default `{0,0}` for each
   = the top-left, which is why a plain `Transform::rotation(deg)` on a sprite that sets neither turns about
   its corner. (A pivot baked into the matrix by a named constructor — `Transform::rotation(deg, 4, 4)` —
@@ -988,6 +988,6 @@ spriteLayer.transform = Transform::rotation(slow, 80.0f, 72.0f);  // the whole l
 - **Fade one sprite in a shared layer:** `Sprite::alpha` — per-sprite opacity, multiplies under the layer
   alpha; see *`SpriteContent` + `Sprite`* above.
 - **Day/night, fades, flashes, tints:** a `ColorFill` region + a blend mode (Multiply for day/night, Normal
-  for flash/fade) on `frame.regions` — see *Whole-frame colour* above.
-- **The colour of the art itself:** each cell's / sprite's `atlas` + `palette` handle
-  ([tiles-and-colour.md](tiles-and-colour.md)).
+  for flash/fade) on `frame.regions` — see *Whole-frame color* above.
+- **The color of the art itself:** each cell's / sprite's `atlas` + `palette` handle
+  ([tiles-and-color.md](tiles-and-color.md)).

@@ -4,11 +4,11 @@
 
 This page covers building a tile layer's content from **authored images** instead of hand-written
 cell arrays: a *map* image of tile indices plus one or more *atlas* sheets, assembled into the `cells`
-a [`TileContent`](tiles-and-colour.md) wants. Because every cell names its own sheet and palette, one
+a [`TileContent`](tiles-and-color.md) wants. Because every cell names its own sheet and palette, one
 layer can draw tiles from **several sheets at once** — this path produces exactly that.
 
 If you only need the low-level draw-state surface (hand-built `cells`, the palette model, flips, wrap
-modes), read [tiles-and-colour.md](tiles-and-colour.md) and [draw-state.md](draw-state.md) first; this
+modes), read [tiles-and-color.md](tiles-and-color.md) and [draw-state.md](draw-state.md) first; this
 page builds on both. Loading the atlas sheets themselves (PNG → atlas) is in
 [images-and-transparency.md](images-and-transparency.md).
 
@@ -28,7 +28,7 @@ page builds on both. Loading the atlas sheets themselves (PNG → atlas) is in
 ## The shape of it
 
 A tile layer is `cells` (a grid of `TileCell`), and each cell names the *sheet* it draws from (the
-tile art) and the *palette* that colours it. The hand-written way is to fill the `cells` yourself. The
+tile art) and the *palette* that colors it. The hand-written way is to fill the `cells` yourself. The
 image-driven way is:
 
 ```
@@ -56,7 +56,7 @@ Each `TileCell` names its **own** sheet (`atlas`, an `AtlasId`) and palette (`Pa
 struct TileCell {
     AtlasId       atlas{};       // which uploaded sheet this cell draws from
     std::uint16_t tile    = 0;   // cell index within its own sheet (`atlas`), on the 8px grid
-    PaletteId     palette{};     // which uploaded palette colours it
+    PaletteId     palette{};     // which uploaded palette colors it
     bool          flipX   = false;
     bool          flipY   = false;
     Rotation      rotation = Rotation::None;  // 90° texture rotation; composes with the flips
@@ -84,7 +84,7 @@ or palette set and no slot cap: a layer draws from as many sheets and palettes a
 `TileContent` itself carries no atlas or palette; the cells are self-describing.
 
 Under the hood the renderer keeps every uploaded atlas in one *flat atlas store* (the same pattern the
-palette store uses — see [tiles-and-colour.md](tiles-and-colour.md)) and a global atlas-region table
+palette store uses — see [tiles-and-color.md](tiles-and-color.md)) and a global atlas-region table
 the tile and sprite shaders index by a cell's `atlas` handle. You don't manage any of that — you set
 `atlas` and `palette` per cell (or let `assembleTilemap` do it from a catalog, below).
 
@@ -113,10 +113,10 @@ read with `loadMapPngFromMemory(readFile(...))`.
 - **16-bit grayscale is the headline format** — a tilemap may reference more than 256 tiles, and a
   16-bit sample carries ids up to 65535. (8-bit and sub-byte grayscale, and palette PNGs, also decode —
   their indices just widen into the `uint16` grid.)
-- The sample value is the index, **never** scaled or reverse-derived from a colour — the same "the
+- The sample value is the index, **never** scaled or reverse-derived from a color — the same "the
   stored value is the index" rule the atlas path uses.
-- **Truecolour is rejected** (`loadMapPng` throws): a map carries indices, not colours.
-- A 16-bit map of small ids looks near-black in an image viewer (id 15 is `15/65535` grey) — that's
+- **Truecolor is rejected** (`loadMapPng` throws): a map carries indices, not colors.
+- A 16-bit map of small ids looks near-black in an image viewer (id 15 is `15/65535` gray) — that's
   inherent to an index map, not a bug. If you want a map you can eyeball, spread the ids across the
   range (the demo does — see below).
 
@@ -134,7 +134,7 @@ struct TileCatalogEntry {
     std::uint16_t id      = 0;   // the map value that selects this tile — identity, first field
     AtlasId       sheet{};       // which loaded atlas
     std::uint16_t slot    = 0;   // the 8px cell index within that sheet (an AssetSlot::tile)
-    PaletteId     palette{};     // which uploaded palette colours it
+    PaletteId     palette{};     // which uploaded palette colors it
     bool          flipX = false, flipY = false;
     Rotation      rotation = Rotation::None;  // 90° texture rotation; composes with the flips
 };
@@ -212,7 +212,7 @@ doesn't dangle. The fully-manual route (set `TileContent::cells` yourself, no `A
 is always available for layers that rebuild their tiles every frame; for a run of cells all drawing from
 one sheet + palette, the `tiles(atlas, palette, {slots…})` helper (also in `tilemap.h`) fills the
 repeated handles — see
-[the `tiles()` helper](tiles-and-colour.md#the-tiles-helper--a-single-combo-cell-run).
+[the `tiles()` helper](tiles-and-color.md#the-tiles-helper--a-single-combo-cell-run).
 
 ---
 
@@ -238,7 +238,7 @@ single submission — the headline of this feature.
 A non-game consumer of the same path is [`examples/Numberator`](../../examples/Numberator/main.cpp), a calculator: it assembles its window
 chrome — the title bar and the sunken display well — from a map PNG and a `TileCatalog`, with the well's
 four corners produced from **one** corner tile flipped four ways, and the map's ids spread across the
-16-bit range so it reads as distinct grey levels. (Its keys are sprites and its digits are glyph sprites,
+16-bit range so it reads as distinct gray levels. (Its keys are sprites and its digits are glyph sprites,
 layered over the chrome by `z`.)
 
 ---

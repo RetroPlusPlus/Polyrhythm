@@ -51,7 +51,7 @@ namespace retropp {
 // playback routing is the original hardware's natural channel-stealing. Music and Vocals are sustained —
 // the game opens and closes them and they are never auto-closed; Sfx is fire-and-forget and auto-closes
 // when its output goes silent. Vocals is simply a third bus alongside Music and Sfx — a separate volume
-// channel a game can tag voice/dialogue-style audio with; it is not tied to any particular kind (chiptune
+// channel a game can tag voice/dialog-style audio with; it is not tied to any particular kind (chiptune
 // or PCM). Like Music, it is sustained.
 //
 // VMDriver is the hosted-driver bus: a resident sound driver (below) rides it as a straight amplifier over

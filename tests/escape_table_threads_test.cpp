@@ -206,7 +206,7 @@ TEST(EscapeTableThreads, ChangesLandInTheOrderTheyWereIssued) {
     // Two switches with nothing running to apply them, and they disagree: the machine ends on the
     // LAST one, which is only true of a queue that keeps its order. Read the other way round it
     // would end disarmed, so the pair is what tells the two apart — a sequence that reads the same
-    // backwards would pass either way.
+    // backward would pass either way.
     r.machine.escapes()["first"].armed(false);
     r.machine.escapes()["first"].armed(true);
 

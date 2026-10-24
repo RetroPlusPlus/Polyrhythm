@@ -307,7 +307,7 @@ public:
     // Returns nothing. The cycles the routine spent are the guest's own, and they are counted where
     // the machine was already being run from.
     //
-    // The whole register file is restored afterwards, so the interrupted instruction stream resumes
+    // The whole register file is restored afterward, so the interrupted instruction stream resumes
     // as if nothing had happened; what the routine changed in memory stands, because that is the
     // routine's own work. A call made from inside a call is the same call, at any depth.
     virtual void callInContext(std::uint32_t entry, std::span<const ResidentRegister> presets,
@@ -344,7 +344,7 @@ public:
     virtual void armEscape(std::uint32_t address, bool replacesRoutine) = 0;
     virtual void disarmEscape(std::uint32_t address) = 0;
 
-    // Write one register of the PARKED machine's live register file, for the escape marshalling path.
+    // Write one register of the PARKED machine's live register file, for the escape marshaling path.
     // Distinct from writeRegister, which marshals into the pending frame a beginCall applies: an
     // escape fires mid-run with no pending frame, and what it establishes must be in the register the
     // guest's own next instruction reads. Only meaningful on the thread stepping the machine, while it

@@ -43,7 +43,7 @@ FerrymanAssets loadFerrymanAssets(Renderer& renderer) {
                                    /*framesPerAnimation=*/0, AssetPolicy::Embed);
 
     // ── Every palette from a PALETTE IMAGE: a 16×1 RGBA PNG, one pixel per entry, loaded with
-    //    loadPaletteImage (its per-type default policy is Embed — bespoke build-time colour
+    //    loadPaletteImage (its per-type default policy is Embed — bespoke build-time color
     //    data). Alpha rides in the image: the floating-text palettes carry an alpha-0 entry 0.
     //    Sprite palettes, in Pal-enum order:
     a.spritePals.push_back(renderer.loadPaletteImage("examples/ferryman/assets/palettes/ferry.png"));

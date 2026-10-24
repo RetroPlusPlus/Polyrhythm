@@ -132,7 +132,7 @@ struct Curve {
     [[nodiscard]] static Curve quadratic(Vec2 p0, Vec2 ctrl, Vec2 p1);
     [[nodiscard]] static Curve cubic(Vec2 p0, Vec2 c0, Vec2 c1, Vec2 p1);
     // Catmull-Rom through the points: the curve passes THROUGH every input point. `closed` wraps the
-    // neighbour tangents (a loop); open reflects phantom endpoints. ≥2 points required (fewer → empty).
+    // neighbor tangents (a loop); open reflects phantom endpoints. ≥2 points required (fewer → empty).
     [[nodiscard]] static Curve throughPoints(std::span<const Vec2> pts, bool closed = false);
     // Hermite: a cubic leaving p0 along tangent0 and arriving at p1 along tangent1 (a `directional
     // vector` IS a tangent — the sprite-path {origin, direction} form). Exact Hermite↔Bézier identity.

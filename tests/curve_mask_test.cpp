@@ -162,13 +162,13 @@ TEST(CurveMaskRegionContains, TransformTranslationMovesTheRegion) {
     const CurveMaskField f = bakeCurveMaskField(c, 8.0f, 256);
     ShapePoints region     = ShapePoints::fromCurve(c);
     region.curveMask       = static_cast<CurveMaskId>(1);
-    // Translate the region by +80 px in x: the centre (80,72) interior is now reached at (160,72), which is
+    // Translate the region by +80 px in x: the center (80,72) interior is now reached at (160,72), which is
     // far outside the un-moved region — so the same fragment flips with the transform, proving it composes.
     ShapePoints moved = region;
     moved.transform   = Transform::translation(80, 0);
-    EXPECT_TRUE(curveMaskRegionContains({80, 72}, region, f));    // centre inside the un-moved region
+    EXPECT_TRUE(curveMaskRegionContains({80, 72}, region, f));    // center inside the un-moved region
     EXPECT_FALSE(curveMaskRegionContains({160, 72}, region, f));  // (160,72) far outside the un-moved region
-    EXPECT_TRUE(curveMaskRegionContains({160, 72}, moved, f));    // and inside the translated one (maps to centre)
+    EXPECT_TRUE(curveMaskRegionContains({160, 72}, moved, f));    // and inside the translated one (maps to center)
 }
 
 TEST(CurveMaskRegionContains, InvertFlipsInsideAndOutside) {

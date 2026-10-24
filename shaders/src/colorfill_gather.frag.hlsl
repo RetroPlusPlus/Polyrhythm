@@ -133,7 +133,7 @@ float4 main(float2 uv : TEXCOORD0) : SV_Target0 {
 
     // Fragment UV → viewport pixels through the reciprocal, the exact arithmetic region_select.frag
     // uses (uv / uMisc.x where uMisc.x = 1/viewportW) — a multiply by the dimension can differ in the
-    // last ULP. Crisp evaluation snaps the test point to its viewport-cell centre, mirroring the gate.
+    // last ULP. Crisp evaluation snaps the test point to its viewport-cell center, mirroring the gate.
     float2 invVp = 1.0 / float2(uViewportW, uViewportH);
     float2 fragPx = uv / invVp;
     if (uSnap != 0u) fragPx = floor(fragPx) + 0.5;

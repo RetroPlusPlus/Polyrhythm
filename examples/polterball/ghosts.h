@@ -3,8 +3,8 @@
 // Polterball — the GHOST AI, its own translation unit. Three ghosts patrol the maze's cell grid and
 // hunt THE BALL (never the player) with the classic junction rules:
 //
-//   • Movement is cell-centre to cell-centre. A ghost picks its next direction only when it arrives
-//     at a cell centre, and it NEVER reverses except on a mode change — which is why the boards are
+//   • Movement is cell-center to cell-center. A ghost picks its next direction only when it arrives
+//     at a cell center, and it NEVER reverses except on a mode change — which is why the boards are
 //     authored dead-end-free (a no-reverse ghost in a dead end would be stuck forever).
 //   • The pick is GREEDY, not pathfinding: among the open non-reverse directions, take the one whose
 //     next cell is straight-line closest to the target (tie order Up, Left, Down, Right).
@@ -45,7 +45,7 @@ struct Ghost {
     GhostState state = GhostState::InPen;
     bool       frightened = false;  // meaningful while Active/Exiting; cleared on a down / calm
 
-    // The cell walk: position = centre of `from` + `dir` * t (t px progressed toward the next cell).
+    // The cell walk: position = center of `from` + `dir` * t (t px progressed toward the next cell).
     CellRC from{};
     int    dirC = 0, dirR = -1;
     float  t = 0.0f;
@@ -65,7 +65,7 @@ public:
     void reset();
 
     // Advance every ghost one tick. `ignited` pauses the scatter/chase clock (frightened time doesn't
-    // burn the schedule); the ball's centre + velocity feed the personalities' targets.
+    // burn the schedule); the ball's center + velocity feed the personalities' targets.
     void tick(const Board& board, retropp::Vec2 ballCenter, retropp::Vec2 ballVel, float ghostSpeed,
               bool ignited, std::uint32_t& rng);
 
@@ -74,7 +74,7 @@ public:
     void down(int i);     // ghost i was smashed: its eyes fly home, it respawns from the pen
 
     [[nodiscard]] const Ghost&   ghost(int i) const { return ghosts_[static_cast<std::size_t>(i)]; }
-    [[nodiscard]] retropp::Vec2  center(int i) const;  // the ghost's centre, in viewport px
+    [[nodiscard]] retropp::Vec2  center(int i) const;  // the ghost's center, in viewport px
 
 private:
     void chooseDir(Ghost& g, const Board& board, CellRC target, bool randomPick,

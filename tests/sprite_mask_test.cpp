@@ -71,7 +71,7 @@ bool inPolygon(Point p, const std::vector<Point>& poly) {
     return inside;
 }
 
-// Every visible pixel's centre lies inside the polygon (the containment proof).
+// Every visible pixel's center lies inside the polygon (the containment proof).
 bool coversAll(const std::vector<Point>& poly, const ArtMask& mask) {
     for (int y = 0; y < mask.height; ++y)
         for (int x = 0; x < mask.width; ++x)
@@ -81,7 +81,7 @@ bool coversAll(const std::vector<Point>& poly, const ArtMask& mask) {
     return true;
 }
 
-// The furthest a polygon vertex sits from the nearest visible pixel centre — a proxy for how far the
+// The furthest a polygon vertex sits from the nearest visible pixel center — a proxy for how far the
 // boundary bulges out. Conservative apexes bulge; Balanced vertices ride the true contour.
 double maxVertexSlack(const std::vector<Point>& poly, const ArtMask& mask) {
     double worst = 0.0;
@@ -167,7 +167,7 @@ TEST(Containment, DonutHoleIsBridgedNoInteriorBoundary) {
     const ArtMask m = maskFromRows(kDonut8);
     const auto poly = traceSilhouette(m, 32);
     EXPECT_TRUE(coversAll(poly, m));
-    EXPECT_TRUE(inPolygon(Point{4.0f, 4.0f}, poly));  // the hole centre is inside the bridged shape
+    EXPECT_TRUE(inPolygon(Point{4.0f, 4.0f}, poly));  // the hole center is inside the bridged shape
 }
 
 TEST(Containment, TwoBlobsBecomeOneSpanningShape) {
@@ -199,7 +199,7 @@ TEST(ExactMask, ContainsMatchesCoverageUnderEveryOrientation) {
         for (bool fx : {false, true}) {
             for (bool fy : {false, true}) {
                 const FrozenSpriteMask shape = frozenOf(base, Space::Quad, rot, fx, fy);
-                // A quad point that is the oriented image of an art pixel centre must report the pixel's
+                // A quad point that is the oriented image of an art pixel center must report the pixel's
                 // own coverage — the inverse-orientation round trip.
                 for (int y = 0; y < base.height; ++y) {
                     for (int x = 0; x < base.width; ++x) {
@@ -359,7 +359,7 @@ TEST_F(SpriteMaskDevice, MaskShapeContainsEveryVisiblePixel) {
 TEST_F(SpriteMaskDevice, MaskShapeGeometryAnswersContainsInItsOwnSpace) {
     // The geometry form under a flipped + rotated placement, tested through ShapePoints::contains in BOTH
     // spaces — each polygon answers points in the space it was asked for. Conservative geometry contains
-    // the mask, so every visible pixel centre (mapped into that space) tests true.
+    // the mask, so every visible pixel center (mapped into that space) tests true.
     Renderer     r{device_, nullptr};
     const AtlasId atlas = uploadL(r);
     Sprite        s     = spriteOn(atlas);

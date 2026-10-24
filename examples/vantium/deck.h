@@ -55,7 +55,7 @@ public:
 
     // The shootable pod under a world-px point (-1 if none alive there).
     [[nodiscard]] int podAt(float x, float y) const;
-    void scorchPod(int i, const VantAssets& assets);   // restamp the burnt art, mark dead
+    void scorchPod(int i, const VantAssets& assets);   // restamp the burned art, mark dead
     [[nodiscard]] const std::vector<Pod>& pods() const { return pods_; }
 
     [[nodiscard]] const std::vector<VCell>& mineSpawns() const { return mineSpawns_; }

@@ -25,9 +25,9 @@ namespace {
 }
 
 // Unpack a raw (unconverted) PNG buffer into one index byte per pixel. `channels` is the per-pixel
-// sample count (1 for palette/grayscale, 2 for grayscale+alpha — the grey sample is the first channel
+// sample count (1 for palette/grayscale, 2 for grayscale+alpha — the gray sample is the first channel
 // and the only one we keep); `bitdepth` is the per-sample bit width. Faithful: the sample value IS the
-// index, never scaled or reverse-derived from a colour.
+// index, never scaled or reverse-derived from a color.
 //
 // The buffer is lodepng's raw output, which packs sub-byte samples tightly across the whole image: a
 // row begins where the row before it ended, not at the next byte. So a pixel's position is its flat
@@ -39,7 +39,7 @@ namespace {
     std::vector<std::uint8_t> indices(static_cast<std::size_t>(width) * height);
     for (unsigned y = 0; y < height; ++y) {
         for (unsigned x = 0; x < width; ++x) {
-            // The grey/palette sample is the pixel's first channel (alpha, if any, follows).
+            // The gray/palette sample is the pixel's first channel (alpha, if any, follows).
             const std::size_t pixel  = static_cast<std::size_t>(y) * width + x;
             const std::size_t bitPos = pixel * bitsPerPixel;
             indices[pixel] = readSample(raw.data(), bitPos, bitdepth);
@@ -62,7 +62,7 @@ namespace {
 
 // Unpack a raw (unconverted) PNG buffer into one uint16 index per pixel — the map path's widened
 // unpackIndices, reading the same tightly packed buffer by the same flat bit offset. `channels` is the
-// per-pixel sample count (1 for palette/grayscale, 2 for grayscale+alpha — the grey sample is the first
+// per-pixel sample count (1 for palette/grayscale, 2 for grayscale+alpha — the gray sample is the first
 // channel, the only one kept); `bitdepth` the per-sample bit width. Faithful: the sample value IS the
 // index, never scaled or reverse-derived.
 [[nodiscard]] std::vector<std::uint16_t> unpackIndices16(const std::vector<unsigned char>& raw,
@@ -86,8 +86,8 @@ IndexGrid loadMapPngFromMemory(std::span<const std::uint8_t> bytes) {
     const unsigned char* data = bytes.data();
     const std::size_t    size = bytes.size();
 
-    // Inspect IHDR first so a truecolour source is rejected before any pixel decode, and so the
-    // colour type / bit depth route the unpack. lodepng::State IS-A LodePNGState.
+    // Inspect IHDR first so a truecolor source is rejected before any pixel decode, and so the
+    // color type / bit depth route the unpack. lodepng::State IS-A LodePNGState.
     lodepng::State state;
     unsigned width = 0, height = 0;
     if (const unsigned err = lodepng_inspect(&width, &height, &state, data, size)) {
@@ -97,12 +97,12 @@ IndexGrid loadMapPngFromMemory(std::span<const std::uint8_t> bytes) {
     const LodePNGColorType colortype = state.info_png.color.colortype;
     const unsigned         bitdepth  = state.info_png.color.bitdepth;
 
-    // A map carries INDICES, not colour — truecolour is meaningless here and rejected.
+    // A map carries INDICES, not color — truecolor is meaningless here and rejected.
     if (colortype == LCT_RGB || colortype == LCT_RGBA) {
         throw std::runtime_error("loadMapPng: a map PNG must be grayscale or palette, not truecolour");
     }
 
-    // Decode WITHOUT colour conversion: palette indices and grey sample values come through unscaled;
+    // Decode WITHOUT color conversion: palette indices and gray sample values come through unscaled;
     // we unpack the (possibly sub-byte, possibly 16-bit) samples to one uint16 index per pixel.
     state.decoder.color_convert = 0;
     std::vector<unsigned char> raw;
@@ -142,8 +142,8 @@ LoadedImage loadPngFromMemory(std::span<const std::uint8_t> bytes) {
     const unsigned char* data = bytes.data();
     const std::size_t    size = bytes.size();
 
-    // Inspect the IHDR first so a truecolour source is rejected before any pixel decode, and so the
-    // colour type / bit depth route the unpack. lodepng::State IS-A LodePNGState.
+    // Inspect the IHDR first so a truecolor source is rejected before any pixel decode, and so the
+    // color type / bit depth route the unpack. lodepng::State IS-A LodePNGState.
     lodepng::State state;
     unsigned width = 0, height = 0;
     if (const unsigned err = lodepng_inspect(&width, &height, &state, data, size)) {
@@ -153,7 +153,7 @@ LoadedImage loadPngFromMemory(std::span<const std::uint8_t> bytes) {
     const LodePNGColorType colortype = state.info_png.color.colortype;
     const unsigned         bitdepth  = state.info_png.color.bitdepth;
 
-    // Truecolour / truecolour-alpha → the RGBA path: one colour per pixel in 16-bit channels. lodepng
+    // Truecolor / truecolor-alpha → the RGBA path: one color per pixel in 16-bit channels. lodepng
     // converts to canonical LCT_RGBA (filling a missing alpha with the opaque max); an 8-bit source
     // then widens ×257 (lossless — see widen8), a 16-bit source assembles each big-endian sample direct.
     if (colortype == LCT_RGB || colortype == LCT_RGBA) {
@@ -195,9 +195,9 @@ LoadedImage loadPngFromMemory(std::span<const std::uint8_t> bytes) {
         throw std::runtime_error("loadPng: 16-bit samples are not supported on the indexed path");
     }
 
-    // Decode WITHOUT colour conversion: the output stays in the PNG's own format, so palette indices
-    // and grey sample values come through unscaled. We unpack the (possibly sub-byte) samples to one
-    // index per pixel ourselves — exact for any bit depth, never reverse-derived from a colour.
+    // Decode WITHOUT color conversion: the output stays in the PNG's own format, so palette indices
+    // and gray sample values come through unscaled. We unpack the (possibly sub-byte) samples to one
+    // index per pixel ourselves — exact for any bit depth, never reverse-derived from a color.
     state.decoder.color_convert = 0;
     std::vector<unsigned char> raw;
     if (const unsigned err = lodepng::decode(raw, width, height, state, data, size)) {
@@ -212,7 +212,7 @@ LoadedImage loadPngFromMemory(std::span<const std::uint8_t> bytes) {
     const unsigned channels = (colortype == LCT_GREY_ALPHA) ? 2u : 1u;
     image.indices = unpackIndices(raw, width, height, channels, bitdepth);
 
-    // A PLTE PNG carries its palette; grayscale carries none (the consumer supplies colour).
+    // A PLTE PNG carries its palette; grayscale carries none (the consumer supplies color).
     if (colortype == LCT_PALETTE) {
         const unsigned char* p   = state.info_png.color.palette;
         const std::size_t    n   = state.info_png.color.palettesize;
@@ -366,8 +366,8 @@ std::optional<AssetSlot> sliceSlot(PixelSize imageSize, AssetDimensions assetSiz
 }
 
 std::vector<Rgba16> slicePaletteImage(const LoadedImage& img, ReadOrder order, int count) {
-    // A palette image carries COLOURS, not indices — an indexed source is a misuse (the inverse of the
-    // map path's truecolour reject).
+    // A palette image carries COLORS, not indices — an indexed source is a misuse (the inverse of the
+    // map path's truecolor reject).
     if (img.kind != ImageColorKind::Rgba) {
         throw std::runtime_error(
             "slicePaletteImage: a palette image must be truecolour (RGBA), not indexed");

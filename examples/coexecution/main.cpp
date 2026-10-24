@@ -80,7 +80,7 @@ constexpr int kTrackRow = 6;   // the first of the eight
 // Where the cartridge's pieces live. Each block is assembled on its own and placed here, so the
 // loop's `call` and this program's declarations name an address both sides agree on. Each address
 // is also the limit of the block before it, and authoring checks that — a block that grows into its
-// neighbour puts the guest's own `call` in the middle of somebody else's code.
+// neighbor puts the guest's own `call` in the middle of somebody else's code.
 constexpr std::uint32_t kProgram  = 0x0150;  // the game loop
 constexpr std::uint32_t kPaceRule = 0x0200;  // the cartridge's own rule for a walker's pace
 constexpr std::uint32_t kRandom   = 0x0220;  // the cartridge's own generator

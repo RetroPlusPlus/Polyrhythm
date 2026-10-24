@@ -55,7 +55,7 @@ constexpr std::uint32_t kDefence = 0xC001;
 constexpr std::uint32_t kDamaged = 0xC002;  // what the guest's loop publishes each frame
 constexpr std::uint32_t kUnpacked = 0xC010; // where the decompressor leaves its work
 
-// The loop: every frame, ask the damage routine what this attack does to this defence, and publish
+// The loop: every frame, ask the damage routine what this attack does to this defense, and publish
 // the answer. The seed the generator keeps lives in high RAM, where the cartridge put it.
 constexpr std::string_view kGameSource = R"(
     ld a, $01
@@ -81,7 +81,7 @@ loop:
     jr loop
 )";
 
-// The damage routine, and its convention: attack in B, defence in C, answer in A. Its rule is the
+// The damage routine, and its convention: attack in B, defense in C, answer in A. Its rule is the
 // cartridge's own — and this program answers instead of it.
 constexpr std::string_view kDamageSource = R"(
     ld a, b
@@ -208,7 +208,7 @@ int main(int argc, char** argv) {
         kRandom, retropp::RoutineBinding{.output = retropp::gb::A});
 
     // ── Act one: a native answer built from the guest's own routine ──────────────────────────────
-    // The replacement speaks the damage routine's convention (attack in B, defence in C, answer in
+    // The replacement speaks the damage routine's convention (attack in B, defense in C, answer in
     // A) and, inside it, calls the cartridge's generator. That call runs the guest's own code on the
     // guest's own stack and gives every register back, so the loop that was interrupted mid-`call`
     // carries on without noticing — while the seed the generator keeps really does advance.

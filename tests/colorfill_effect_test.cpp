@@ -4,9 +4,9 @@
 
 #include "retropp/draw_state.h"
 
-// The built-in colour-fill effect. Device-free coverage of the CPU side: the uniform resolution
-// (colorFillParams — the Rgba8 fill's rgb normalized to [0,1]) and the colour transform the colorfill.frag
-// GPU stage mirrors (applyColorFill: the output rgb IS the fill colour — a solid fill, opacity is the layer
+// The built-in color-fill effect. Device-free coverage of the CPU side: the uniform resolution
+// (colorFillParams — the Rgba8 fill's rgb normalized to [0,1]) and the color transform the colorfill.frag
+// GPU stage mirrors (applyColorFill: the output rgb IS the fill color — a solid fill, opacity is the layer
 // alpha). The transform is pure arithmetic — genuinely constexpr — so it is static_assert-testable. The
 // live GPU path is build-compiled + dev-verified across all three backends (the documented CI-headless
 // boundary).
@@ -71,7 +71,7 @@ TEST(ColorFillIntensity, BelowOneDimsTheFill) {
     EXPECT_FLOAT_EQ(p.b, (50.0f / 255.0f) * 0.5f);
 }
 
-// Zero intensity resolves to the zero (black) params regardless of the fill colour.
+// Zero intensity resolves to the zero (black) params regardless of the fill color.
 TEST(ColorFillIntensity, ZeroIsBlack) {
     EXPECT_TRUE(colorFillParamsOf(Rgba8{255, 200, 100}, 0.0f) == ColorFillParams{});
     static_assert(colorFillParamsOf(Rgba8{255, 200, 100}, 0.0f) == ColorFillParams{},
@@ -80,7 +80,7 @@ TEST(ColorFillIntensity, ZeroIsBlack) {
 
 // ── applyColorFill — the solid-fill transform mirror ──────────────────────────────────
 
-// The output rgb is exactly the fill colour — a fill is a pure source colour, so the params are all of it.
+// The output rgb is exactly the fill color — a fill is a pure source color, so the params are all of it.
 TEST(ApplyColorFill, OutputIsTheFillColour) {
     constexpr ColorFillParams p{.r = 0.9f, .g = 0.1f, .b = 0.4f};
     const ColorFillRgb out = applyColorFill(p);

@@ -60,7 +60,7 @@ constexpr int kMapW = 20, kMapH = 18;  // 20×18 tiles cover the 160×144 viewpo
     return c;
 }
 
-// One centred 8×8 marker at (x, y), drawing from `atlas` through `palette`.
+// One centered 8×8 marker at (x, y), drawing from `atlas` through `palette`.
 [[nodiscard]] Sprite marker(float x, float y, AtlasId atlas, PaletteId palette) {
     Sprite s{.key = "marker"};  // placeholder key; the caller assigns a unique per-index key
     s.x       = static_cast<int>(std::lround(x)) - 4;

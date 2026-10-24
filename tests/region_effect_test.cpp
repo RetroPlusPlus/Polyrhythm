@@ -91,9 +91,9 @@ TEST(RegionContains, NoRegionIsAlwaysInside) {
 
 TEST(RegionContains, CircleInsideAndOutside) {
     const ShapePoints c = ShapePoints::circle({80, 72}, 30);
-    EXPECT_TRUE(regionContains({80, 72}, c));         // centre
-    EXPECT_TRUE(regionContains({80, 100}, c));        // 28 px below centre, inside r=30
-    EXPECT_FALSE(regionContains({80, 110}, c));       // 38 px below centre, outside
+    EXPECT_TRUE(regionContains({80, 72}, c));         // center
+    EXPECT_TRUE(regionContains({80, 100}, c));        // 28 px below center, inside r=30
+    EXPECT_FALSE(regionContains({80, 110}, c));       // 38 px below center, outside
     EXPECT_FALSE(regionContains({80, 72 + 31}, c));   // 31 px out — just past the radius
 }
 
@@ -117,25 +117,25 @@ TEST(RegionContains, RadiusInflationFlipsAPoint) {
 
 TEST(RegionContains, RectangleBounds) {
     const ShapePoints r = ShapePoints::rectangle({20, 20}, 40, 40);  // [20,60] × [20,60]
-    EXPECT_TRUE(regionContains({40, 40}, r));   // centre
+    EXPECT_TRUE(regionContains({40, 40}, r));   // center
     EXPECT_TRUE(regionContains({21, 21}, r));   // inside near a corner
     EXPECT_FALSE(regionContains({10, 40}, r));  // left of the rect
     EXPECT_FALSE(regionContains({40, 70}, r));  // below the rect
 }
 
 TEST(RegionContains, TransformScaleEnlargesShape) {
-    // A small circle that excludes a far point; scaling the region 3× about its centre includes it.
+    // A small circle that excludes a far point; scaling the region 3× about its center includes it.
     ShapePoints c = ShapePoints::circle({80, 72}, 10);
-    const Point probe{80, 95};  // 23 px from centre — outside r=10
+    const Point probe{80, 95};  // 23 px from center — outside r=10
     EXPECT_FALSE(regionContains(probe, c));
-    c.transform = Transform::scale(3.0f, 3.0f, 80.0f, 72.0f);  // effective r ≈ 30 about the centre
+    c.transform = Transform::scale(3.0f, 3.0f, 80.0f, 72.0f);  // effective r ≈ 30 about the center
     EXPECT_TRUE(regionContains(probe, c));
 }
 
 TEST(RegionContains, TransformTranslationMovesShape) {
     ShapePoints c = ShapePoints::circle({40, 40}, 15);
     EXPECT_FALSE(regionContains({100, 40}, c));
-    c.transform = Transform::translation(60, 0);  // shape centre effectively at (100, 40)
+    c.transform = Transform::translation(60, 0);  // shape center effectively at (100, 40)
     EXPECT_TRUE(regionContains({100, 40}, c));
 }
 
@@ -143,9 +143,9 @@ TEST(RegionContains, UnboundedPolygonPointCount) {
     // A 64-gon (well past any former 16-cap) approximating a circle of radius 40 about (80,72).
     const ShapePoints poly = ShapePoints::regularPolygon({80, 72}, 40, 64);
     EXPECT_EQ(poly.points.size(), 64u);
-    EXPECT_TRUE(regionContains({80, 72}, poly));    // centre
-    EXPECT_TRUE(regionContains({80, 100}, poly));   // 28 px from centre, inside
-    EXPECT_FALSE(regionContains({80, 120}, poly));  // 48 px from centre, outside the ~40 radius
+    EXPECT_TRUE(regionContains({80, 72}, poly));    // center
+    EXPECT_TRUE(regionContains({80, 100}, poly));   // 28 px from center, inside
+    EXPECT_FALSE(regionContains({80, 120}, poly));  // 48 px from center, outside the ~40 radius
 }
 
 // A hand-built arbitrary polygon (a concave arrow) — what unbounded points unlock: a shape no preset
@@ -169,8 +169,8 @@ TEST(RegionContains, SnapDefaultsToUnsnapped) {
     EXPECT_EQ(regionContains({80, 101}, c), regionContains({80, 101}, c, /*snap=*/false));
 }
 
-// Snapping tests the fragment at its viewport-cell centre (floor + 0.5): regionContains(frag, r, true)
-// equals evaluating the pre-snapped centre unsnapped — the crisp-evaluation contract.
+// Snapping tests the fragment at its viewport-cell center (floor + 0.5): regionContains(frag, r, true)
+// equals evaluating the pre-snapped center unsnapped — the crisp-evaluation contract.
 TEST(RegionContains, SnapEvaluatesAtCellCentre) {
     const ShapePoints c = ShapePoints::circle({80, 72}, 30);
     const Point frag{80.7f, 101.3f};
@@ -178,13 +178,13 @@ TEST(RegionContains, SnapEvaluatesAtCellCentre) {
               regionContains(snapFragToCellCenter(frag), c, /*snap=*/false));
 }
 
-// Teeth: a fragment can be outside on the continuous grid but inside once snapped to its cell centre — the
+// Teeth: a fragment can be outside on the continuous grid but inside once snapped to its cell center — the
 // snap genuinely changes the evaluation point (a no-op harness would pass both settings identically).
 TEST(RegionContains, SnapCanChangeContainmentNearBoundary) {
     const ShapePoints c = ShapePoints::circle({80, 72}, 29.7f);
-    const Point frag{80.0f, 101.9f};                       // 29.9 px below centre → OUTSIDE on the raw grid
+    const Point frag{80.0f, 101.9f};                       // 29.9 px below center → OUTSIDE on the raw grid
     EXPECT_FALSE(regionContains(frag, c, /*snap=*/false));
-    EXPECT_TRUE(regionContains(frag, c, /*snap=*/true));   // cell centre (80.5, 101.5) is 29.5 px → inside
+    EXPECT_TRUE(regionContains(frag, c, /*snap=*/true));   // cell center (80.5, 101.5) is 29.5 px → inside
 }
 
 // ── region invert — confine to the OUTSIDE of the shape ───────────────────────────────
@@ -195,10 +195,10 @@ TEST(RegionContains, InvertDefaultsToInside) {
 
 TEST(RegionContains, InvertFlipsInsideAndOutside) {
     ShapePoints c = ShapePoints::circle({80, 72}, 30);
-    EXPECT_TRUE(regionContains({80, 72}, c));    // centre — inside
+    EXPECT_TRUE(regionContains({80, 72}, c));    // center — inside
     EXPECT_FALSE(regionContains({80, 120}, c));  // 48 px out — outside
     c.invert = true;                             // now the region is the OUTSIDE of the circle
-    EXPECT_FALSE(regionContains({80, 72}, c));    // centre is no longer in the region
+    EXPECT_FALSE(regionContains({80, 72}, c));    // center is no longer in the region
     EXPECT_TRUE(regionContains({80, 120}, c));    // the outside now IS the region
 }
 
@@ -219,7 +219,7 @@ TEST(ShapeInverted, FlipsInsideOutsideNonDestructively) {
     EXPECT_EQ(inv.points, c.points);              // geometry preserved
     EXPECT_FLOAT_EQ(inv.radius, c.radius);
     EXPECT_FALSE(inv.inverted().invert);          // flipping twice returns to the inside
-    EXPECT_FALSE(regionContains({80, 72}, inv));  // the centre is no longer in the region
+    EXPECT_FALSE(regionContains({80, 72}, inv));  // the center is no longer in the region
     EXPECT_TRUE(regionContains({80, 120}, inv));  // the outside now IS the region
 }
 
@@ -232,7 +232,7 @@ TEST(RegionStroke, DefaultIsZeroFilledRegion) {
 TEST(RegionStroke, CircleStrokeIsARingNotADisk) {
     ShapePoints c = ShapePoints::circle({80, 72}, 30);
     c.strokeWidth = 8.0f;                            // a ring of width 8 centered on radius 30 → dist ∈ [26,34]
-    EXPECT_FALSE(regionContains({80, 72}, c));       // the centre (deep interior) is NOT in the stroke
+    EXPECT_FALSE(regionContains({80, 72}, c));       // the center (deep interior) is NOT in the stroke
     EXPECT_TRUE(regionContains({80, 72 + 30}, c));   // on the boundary (30 px out) → in the ring
     EXPECT_TRUE(regionContains({80, 72 + 27}, c));   // 27 px out → within ±4 of the boundary
     EXPECT_TRUE(regionContains({80, 72 + 33}, c));   // 33 px out → within ±4, still in the ring
@@ -253,7 +253,7 @@ TEST(RegionStroke, InvertMasksTheComplementOfTheBand) {
     ShapePoints c = ShapePoints::circle({80, 72}, 30);
     c.strokeWidth = 8.0f;
     c.invert      = true;                            // the region is everything EXCEPT the ring
-    EXPECT_TRUE(regionContains({80, 72}, c));        // the centre is now in the region
+    EXPECT_TRUE(regionContains({80, 72}, c));        // the center is now in the region
     EXPECT_FALSE(regionContains({80, 72 + 30}, c));  // the boundary band is excluded
 }
 

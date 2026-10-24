@@ -11,7 +11,7 @@ Dependency-free: a minimal PNG encoder over the standard library (zlib + struct)
 runs anywhere Python does — no Pillow. Emits non-interlaced, filter-0 PNGs:
   - 8-bit PLTE (palette) images        → colortype 3
   - 2-/16-bit grayscale images         → colortype 0  (the stored sample value IS the index)
-  - 8-/16-bit truecolour(-alpha) images → colortype 2 / 6  (one colour per pixel)
+  - 8-/16-bit truecolor(-alpha) images → colortype 2 / 6  (one color per pixel)
 
 Run from the engine repo root:  python3 tests/fixtures/gen_fixtures.py
 """
@@ -91,7 +91,7 @@ def write_gray2(path: Path, width: int, height: int, indices: list[list[int]]) -
 
 def write_rgb8(path: Path, width: int, height: int,
                pixels: list[list[tuple[int, int, int]]]) -> None:
-    """8-bit truecolour PNG (colortype 2): three bytes (R, G, B) per pixel, no alpha channel."""
+    """8-bit truecolor PNG (colortype 2): three bytes (R, G, B) per pixel, no alpha channel."""
     raw = bytearray()
     for row in pixels:
         raw.append(0)  # filter type 0 (none)
@@ -102,7 +102,7 @@ def write_rgb8(path: Path, width: int, height: int,
 
 def write_rgba8(path: Path, width: int, height: int,
                 pixels: list[list[tuple[int, int, int, int]]]) -> None:
-    """8-bit truecolour-alpha PNG (colortype 6): four bytes (R, G, B, A) per pixel."""
+    """8-bit truecolor-alpha PNG (colortype 6): four bytes (R, G, B, A) per pixel."""
     raw = bytearray()
     for row in pixels:
         raw.append(0)  # filter type 0 (none)
@@ -113,7 +113,7 @@ def write_rgba8(path: Path, width: int, height: int,
 
 def write_rgba16(path: Path, width: int, height: int,
                  pixels: list[list[tuple[int, int, int, int]]]) -> None:
-    """16-bit truecolour-alpha PNG (colortype 6, bitdepth 16): four big-endian uint16 samples per
+    """16-bit truecolor-alpha PNG (colortype 6, bitdepth 16): four big-endian uint16 samples per
     pixel. Carries channel values above 0xFF00 so a decode that crushed to 8 bits would be caught."""
     raw = bytearray()
     for row in pixels:
@@ -131,7 +131,7 @@ DIAGONAL_4x4 = [
     [3, 0, 1, 2],
 ]
 
-# Four distinct opaque palette entries (consumer may ignore these — the demo hand-builds colour).
+# Four distinct opaque palette entries (consumer may ignore these — the demo hand-builds color).
 PALETTE4 = [(10, 20, 30, 255), (40, 50, 60, 255), (70, 80, 90, 255), (100, 110, 120, 255)]
 
 # A 4×4 16-bit map plane: raw index values, several ABOVE 255 to prove the wide decode
@@ -154,32 +154,32 @@ LINKAGE_PROBE_2x2 = [
 ]
 
 
-# A 2×2 8-bit truecolour-alpha plane: includes a fully transparent pixel (a=0) so the decode is
+# A 2×2 8-bit truecolor-alpha plane: includes a fully transparent pixel (a=0) so the decode is
 # proven to carry alpha, and an opaque white so the channel endpoints (0 and 255) both appear.
 RGBA8_2x2 = [
     [(0,  0,  0,  255), (255, 255, 255, 255)],
     [(10, 20, 30, 40),  (200, 100, 50,  0)],
 ]
 
-# A 2×2 8-bit truecolour (no alpha) plane: decode must synthesize opaque alpha (→ 65535 widened).
+# A 2×2 8-bit truecolor (no alpha) plane: decode must synthesize opaque alpha (→ 65535 widened).
 RGB8_2x2 = [
     [(0,  0,  0),  (255, 128, 0)],
     [(12, 34, 56), (78,  90,  255)],
 ]
 
-# A 2×2 16-bit truecolour-alpha plane: exact uint16 samples, several ABOVE 0xFF00 (e.g. 0xFF01,
+# A 2×2 16-bit truecolor-alpha plane: exact uint16 samples, several ABOVE 0xFF00 (e.g. 0xFF01,
 # 0xFFFF) so an 8-bit crush would be caught, plus a transparent pixel (a=0). Hand-verifiable.
 RGBA16_2x2 = [
     [(0,      65535,  257,    32896), (0xFFFF, 0xFF01, 0x0100, 0x00FF)],
     [(1000,   2000,   3000,   4000),  (65280,  60000,  65535,  0)],
 ]
 
-# A 4×2 8-bit truecolour strip for the palette-image slicer: each pixel's colour ENCODES its grid
+# A 4×2 8-bit truecolor strip for the palette-image slicer: each pixel's color ENCODES its grid
 # position (r = col·10, g = row·10), so the entry order a given ReadOrder produces is verifiable from
-# the colours alone. 8 entries; an 8-bit source, so each channel widens ×257 in the decoded Rgba16.
+# the colors alone. 8 entries; an 8-bit source, so each channel widens ×257 in the decoded Rgba16.
 PALETTE_STRIP_4x2 = [[(c * 10, r * 10, 0, 255) for c in range(4)] for r in range(2)]
 
-# A 2×2 16-bit truecolour-alpha strip for the palette slicer: exact uint16 channels (several above
+# A 2×2 16-bit truecolor-alpha strip for the palette slicer: exact uint16 channels (several above
 # 0xFF00 / not 8-bit-representable) and varied alpha incl. a fully transparent entry — so the slicer is
 # proven to carry 16-bit precision AND alpha into the entries (the whole point of palette images).
 PALETTE_STRIP16_2x2 = [
@@ -198,16 +198,16 @@ def sheet16x32_indices() -> list[list[int]]:
 
 def demo_tiles_indices() -> list[list[int]]:
     """16×16 (2×2-tile) indexed tileset with a central diamond of index 0 (holes) ringed by a
-    coloured band — so the transparent-index demo shows the lower layer through an obvious shape."""
+    colored band — so the transparent-index demo shows the lower layer through an obvious shape."""
     rows = []
     for y in range(16):
         row = []
         for x in range(16):
-            d = abs(x - 8) + abs(y - 8)         # Manhattan distance from centre
+            d = abs(x - 8) + abs(y - 8)         # Manhattan distance from center
             if d <= 5:
                 row.append(0)                   # central diamond → transparent hole
             else:
-                row.append(1 + ((x // 2 + y // 2) % 3))  # 1..3 coloured bands
+                row.append(1 + ((x // 2 + y // 2) % 3))  # 1..3 colored bands
         rows.append(row)
     return rows
 

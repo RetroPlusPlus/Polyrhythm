@@ -7,7 +7,7 @@ other six are the standard separable blend operators a retro look reaches for �
 multiplicative shadows, screen bloom, a halved-average translucency, a halved-difference dimming.
 
 Blend is a property of the **container that owns the pixels**, never of a screen-space effect. An effect is
-a colour *source*; the region / layer / frame that holds it decides how that source merges.
+a color *source*; the region / layer / frame that holds it decides how that source merges.
 
 ## Contents
 
@@ -36,7 +36,7 @@ a colour *source*; the region / layer / frame that holds it decides how that sou
 enum class BlendMode : std::uint8_t { Normal, Add, Subtract, Multiply, Screen, Half, HalfSubtract };
 ```
 
-For a source colour `src` combining over a destination `dst`, each mode applies a per-channel operator
+For a source color `src` combining over a destination `dst`, each mode applies a per-channel operator
 `B(dst, src)`:
 
 | Mode | `B(dst, src)` | Looks like |
@@ -59,7 +59,7 @@ out.a   = clamp( src.a + dst.a·(1 − src.a) )          // standard over alpha,
 `Normal` reduces to standard alpha-over, so a container left at the default is unchanged. A non-`Normal`
 container combines from its own isolated render (a `Sprite`, an effected or blended `DrawLayer`); that render
 arrives premultiplied, and the composite un-premultiplies it before evaluating `B`, so `src.rgb` above is the
-container's straight colour and `src.a` weights it exactly once — the fill's intended strength at any `alpha`.
+container's straight color and `src.a` weights it exactly once — the fill's intended strength at any `alpha`.
 
 ## Where blend lives
 
@@ -84,9 +84,9 @@ frame's `postEffects` apply first and its `regions` after them, so a frame regio
 
 ## Scope: what a grade combines over
 
-A whole-container colour grade is a `ColorFill` under a container blend — a `Region` carrying one `ColorFill`,
+A whole-container color grade is a `ColorFill` under a container blend — a `Region` carrying one `ColorFill`,
 its `blend` the grade and its `alpha` the strength. A region with **no shape** covers its whole container, so
-an empty-shape region on a layer or the frame is the whole-layer / whole-frame colour modifier: day/night, a
+an empty-shape region on a layer or the frame is the whole-layer / whole-frame color modifier: day/night, a
 tint, a flash, a fade.
 
 Where that grade lands is the effect's `scope` (`ScreenSpaceEffectScope`, on a per-layer effect):
@@ -129,7 +129,7 @@ on the sprite's silhouette — its transparent texels contribute nothing.
 ```cpp
 // A soft shadow decal under a character, and a bright muzzle flare, in one sprite layer:
 Sprite shadow{.key = "shadow", .x = 64, .y = 96, .atlas = decals, .tile = kShadow,
-              .palette = greys, .alpha = 0.7f, .blend = BlendMode::Multiply};
+              .palette = grays, .alpha = 0.7f, .blend = BlendMode::Multiply};
 Sprite flare {.key = "flare",  .x = 80, .y = 60, .atlas = decals, .tile = kFlare,
               .palette = warm,  .blend = BlendMode::Add};
 ```
@@ -163,7 +163,7 @@ A `Sprite` also carries an effect **chain** and a **regions** list — the same 
 ```cpp
 struct Sprite {
     // … placement, art, alpha, blend, anchors …
-    std::vector<ScreenSpaceEffect> effects;  // whole-silhouette colour transforms, in list order
+    std::vector<ScreenSpaceEffect> effects;  // whole-silhouette color transforms, in list order
     std::vector<Region>            regions;   // confined effects: a quad-space shape ∩ the silhouette
 };
 ```
@@ -172,8 +172,8 @@ Both default empty; a sprite that sets neither composites exactly as a plain spr
 the **sprite**, not the atlas texture behind it — the art sits in an infinite transparent field, so an
 effect lands on the sprite's visible pixels and its transparent texels stay clear.
 
-`effects` transforms the sprite's own pixel in list order: `ColorFill` replaces the colour, `Gleam` adds a
-luminance-keyed sheen, `ColorSaturation` drains the colour toward grey, `Bloom` and `Glow` radiate a halo
+`effects` transforms the sprite's own pixel in list order: `ColorFill` replaces the color, `Gleam` adds a
+luminance-keyed sheen, `ColorSaturation` drains the color toward gray, `Bloom` and `Glow` radiate a halo
 past the silhouette (through a buffer shared by the layer's glowing sprites, so a field of them costs what
 one does; `radius` is in the sprite's own art pixels — `Bloom`'s halo is the art's own light, `Glow`'s the
 authored `fill` tint — see [sprites.md](sprites.md#the-effect-carrier--effects--regions)),
@@ -215,7 +215,7 @@ flat in the sprite count. The CPU mirror is `retropp::evalSpriteFxRecords`.
 
 `RowDisplacement`, `Ripple` and `Swirl` in a sprite's `effects` chain re-read the sprite's own art at a displaced
 within-sprite position — a wavy-water sprite, a heat shimmer, a droplet ring on one sprite. They move **where**
-the art is sampled, so they run before the colour effects; a colour effect and a displacing effect in the same
+the art is sampled, so they run before the color effects; a color effect and a displacing effect in the same
 chain compose in one pass.
 
 On a sprite these effects work in the sprite's **own art pixels** — `amplitude` and (for `Ripple` and
@@ -236,7 +236,7 @@ water.effects = {{.kind = ScreenSpaceEffectKind::RowDisplacement,
                   .phase = wavePhase,     // advance per tick to animate; Blank edge ⇒ the pulled-in strip is clear
                   .axis = Axis::Horizontal}};
 
-// A droplet ring centred on a 16px sprite, its rings fading outward:
+// A droplet ring centered on a 16px sprite, its rings fading outward:
 Sprite pond{.key = "pond", .x = 80, .y = 96, .atlas = sheet, .tile = kPond, .palette = pal};
 pond.effects = {{.kind = ScreenSpaceEffectKind::Ripple, .amplitude = 2.0f, .frequency = 3.0f,
                  .phase = ringPhase, .center = Point{8, 8}, .decay = 1.5f}};
@@ -266,7 +266,7 @@ layer custom effect sets; the sprite draws through the shader's own pipeline, so
 still cost one pass.
 
 A custom step reads the raw art through `sampleSource`, so place it **first** in the chain to have the built-in
-colour effects ride over its output:
+color effects ride over its output:
 
 ```cpp
 hero.effects = {custom, {.kind = ScreenSpaceEffectKind::Gleam, .gain = 1.5f}};  // Gleam sheens the custom result
@@ -294,7 +294,7 @@ sprite counterpart of a `Below`-scope layer effect.
 ```cpp
 // A refraction lens: the disc's Ripple distorts the SCENE it covers, not the disc's own art.
 ScreenSpaceEffect refract{.kind = ScreenSpaceEffectKind::Ripple, .amplitude = 6.0f,
-                          .frequency = 14.0f, .center = Point{88, 64}, .decay = 1.0f};  // centre in viewport px
+                          .frequency = 14.0f, .center = Point{88, 64}, .decay = 1.0f};  // center in viewport px
 refract.scope = ScreenSpaceEffectScope::Below;   // distort the scene, not the disc's own art
 
 Sprite lens{.key = "lens", .x = 80, .y = 56, .size = AssetDimensions::Snes16x16,
@@ -306,9 +306,9 @@ The rules of the below-scope path:
 
 - **The silhouette is the confinement; the art is the mask.** The art's alpha coverage shapes the lens and
   sets its strength — an opaque mask fully replaces the scene on the silhouette, a partial-alpha mask blends the
-  distortion with the original scene. Where the art is transparent, the scene is untouched. The mask's colour is
+  distortion with the original scene. Where the art is transparent, the scene is untouched. The mask's color is
   unused (the art is not drawn).
-- **Displacement amplitude / centre are VIEWPORT px** here (the effect distorts the scene), where a `Layer`-scope
+- **Displacement amplitude / center are VIEWPORT px** here (the effect distorts the scene), where a `Layer`-scope
   displacement reads them as the sprite's own **art** px (it re-reads the art). Set a Ripple's `center` to the
   lens's on-screen position.
 - **One pass per below-pipeline per layer, not per sprite.** A layer's built-in lenses draw through the
@@ -322,7 +322,7 @@ The rules of the below-scope path:
   a `Bloom` / `Glow` lens radiates the SCENE's light through the silhouette, its `radius` in **viewport**
   pixels (like a Below displacement's `amplitude`, unlike a `Layer` glow's art pixels) — see
   [sprites.md](sprites.md#below-scope--the-sprite-as-a-refraction-lens);
-  and the colour kinds can be confined to a `Sprite::regions` entry (below). What **cannot** be confined — a
+  and the color kinds can be confined to a `Sprite::regions` entry (below). What **cannot** be confined — a
   displacing kind (`RowDisplacement` / `Ripple` / `Swirl`), a `Custom` kind, a `Glow` (its tint occupies the record
   lanes a region's shape needs), or a curve-boundary region — is **skipped
   with a log line** when placed inside a region (it does *not* fall back to running whole-silhouette; only the
@@ -366,13 +366,13 @@ differently whole-silhouette versus inside a region:
 - **Whole-silhouette** it is a binary switch. `TransparentInside` drops the lens strength to zero — the
   silhouette reveals the untouched scene, dialing out a co-resident `ColorFill` / `Gleam` / `ColorSaturation` / `Bloom` / `Glow` grade;
   `TransparentOutside` leaves it at full. A whole-silhouette `Transparency` *alone* is a visual no-op: the
-  lens colour IS the scene, so revealing it changes nothing — it earns its keep dialing the OTHER below kinds
+  lens color IS the scene, so revealing it changes nothing — it earns its keep dialing the OTHER below kinds
   in the chain.
 - **Inside a region** it feathers. `stencilCoverage` ramps over the region's `feather` (shape-local px), so a
   circle punches a soft porthole of untouched scene through an otherwise-graded lens.
 
 ```cpp
-// A cyan haze over the scene, with a soft porthole at the centre that reveals the untouched scene through it.
+// A cyan haze over the scene, with a soft porthole at the center that reveals the untouched scene through it.
 ScreenSpaceEffect haze{.kind = ScreenSpaceEffectKind::ColorFill, .fill = Rgba8{70, 200, 230, 255}};
 haze.scope = ScreenSpaceEffectScope::Below;
 
@@ -389,14 +389,14 @@ lens.regions = {Region{.key = "porthole", .shape = ShapePoints::circle({40, 40},
 A `Below`-scope effect inside a `Sprite::regions` entry grades the scene only where the region's shape,
 intersected with the silhouette, covers — the below counterpart of a layer region. The shape is read in the
 sprite's **quad space** (art-pixel units, like a `Layer`-scope sprite region), so it rides the sprite's
-transform with the art. `regions` applies after the whole-silhouette `effects`, in list order. The colour
+transform with the art. `regions` applies after the whole-silhouette `effects`, in list order. The color
 kinds (`ColorFill`, `Gleam`, `ColorSaturation`, `Bloom`, `Transparency`) confine; a displacing kind (`RowDisplacement` / `Ripple` / `Swirl`), a
 `Custom`, or a `Glow` cannot — placed inside a region it is **skipped with a log line** (such an effect only
 runs whole-silhouette, through the `effects` chain, never confined to a region shape; a `Glow`'s tint
 occupies the record lanes the region's shape needs).
 
 ```cpp
-// Recolour the scene only inside a centred circle of the lens — the outer ring shows the untouched scene.
+// Recolor the scene only inside a centered circle of the lens — the outer ring shows the untouched scene.
 ScreenSpaceEffect grade{.kind = ScreenSpaceEffectKind::ColorFill, .fill = Rgba8{70, 200, 230, 255}};
 grade.scope = ScreenSpaceEffectScope::Below;
 lens.regions = {Region{.key = "core", .shape = ShapePoints::circle({40, 40}, 22), .effects = {grade}}};
@@ -428,14 +428,14 @@ An additive glow and a multiply shadow, each a `Region` with a `ColorFill` sourc
 
 ```cpp
 const ScreenSpaceEffect warm{.kind = ScreenSpaceEffectKind::ColorFill, .fill = Rgba8{90, 60, 20}};
-const ScreenSpaceEffect grey{.kind = ScreenSpaceEffectKind::ColorFill, .fill = Rgba8{120, 120, 130}};
+const ScreenSpaceEffect gray{.kind = ScreenSpaceEffectKind::ColorFill, .fill = Rgba8{120, 120, 130}};
 
 frame.regions.push_back(Region{.shape   = ShapePoints::circle(Point{120, 48}, 26),
                                .effects = {warm},
                                .blend   = BlendMode::Add});       // a glow that brightens the scene
 
 frame.regions.push_back(Region{.shape   = ShapePoints::rectangle(Point{16, 84}, 56, 40),
-                               .effects = {grey},
+                               .effects = {gray},
                                .blend   = BlendMode::Multiply});  // a soft shadow that darkens it
 ```
 
@@ -447,12 +447,12 @@ frame.postEffects.push_back(
 frame.blend = BlendMode::Screen;            // lift the whole scene gently toward light
 ```
 
-A `ColorFill` is a pure source colour; the owning container's blend decides whether it replaces (`Normal`),
-multiplies into a shadow, adds into a glow, or screens into a bloom — one fill colour, every grade. To
+A `ColorFill` is a pure source color; the owning container's blend decides whether it replaces (`Normal`),
+multiplies into a shadow, adds into a glow, or screens into a bloom — one fill color, every grade. To
 **darken** use `Multiply` (`scene · fill`); to **brighten** use `Add` (`scene + fill`), `Screen`, or a
-`Multiply` whose fill exceeds 1 (see `fillIntensity` below). This is how whole-frame colour looks are built —
+`Multiply` whose fill exceeds 1 (see `fillIntensity` below). This is how whole-frame color looks are built —
 day/night is a Multiply `ColorFill`, a cutscene flash a `Normal` white `ColorFill` at `alpha = strength`, a
-fade a `Normal` black one; see [draw-state.md](draw-state.md#whole-frame-colour).
+fade a `Normal` black one; see [draw-state.md](draw-state.md#whole-frame-color).
 
 ### Multiplicative exposure — `Multiply` that brightens
 
@@ -479,7 +479,7 @@ the compositor shaders reproduce. It is `static_assert`-anchored and unit-tested
 verifiable without a GPU:
 
 ```cpp
-// Multiply grades a 50%-grey fill over a scene to a half-strength shadow:
+// Multiply grades a 50%-gray fill over a scene to a half-strength shadow:
 Vec4 shadow = applyBlendMode(scene, Vec4{0.5f, 0.5f, 0.5f, 1.0f}, BlendMode::Multiply);
 ```
 
@@ -488,7 +488,7 @@ Vec4 shadow = applyBlendMode(scene, Vec4{0.5f, 0.5f, 0.5f, 1.0f}, BlendMode::Mul
 - A container left at `BlendMode::Normal` (the default everywhere) renders exactly as it did without the
   mode — the plain alpha-over path.
 - Operators clamp to `[0, 1]`: `Add` saturates at white, `Subtract` floors at black.
-- Alpha composites with the standard over rule regardless of mode — the blend grades colour, not coverage.
+- Alpha composites with the standard over rule regardless of mode — the blend grades color, not coverage.
   A partially transparent source contributes proportionally (a hole in a blended layer reveals what is
   beneath).
 - Blend never appears on `ScreenSpaceEffect`. To grade an effect, set the blend on the `Region` that owns
@@ -508,5 +508,5 @@ Vec4 shadow = applyBlendMode(scene, Vec4{0.5f, 0.5f, 0.5f, 1.0f}, BlendMode::Mul
 ## See also
 
 - [draw-state.md](draw-state.md) — the `Region` / `DrawLayer` / `FrameDrawState` containers, `alpha`, and
-  the `ColorFill` source colour.
+  the `ColorFill` source color.
 - [rendering.md](rendering.md) — the compositor and the post-process chain blend lands in.

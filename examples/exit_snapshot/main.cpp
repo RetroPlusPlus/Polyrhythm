@@ -74,7 +74,7 @@ void printSnapshot(const char* label, const std::optional<Snapshot>& s) {
     std::printf("\n");
 }
 
-// A colour-fill bar whose length encodes a number (0–255 → 0–maxLen viewport px).
+// A color-fill bar whose length encodes a number (0–255 → 0–maxLen viewport px).
 Region bar(std::string key, float x, float y, std::uint8_t value, float maxLen, Rgba8 colour) {
     const float len = 2.0f + (static_cast<float>(value) / 255.0f) * maxLen;  // min stub so a 0 still reads
     return Region{
@@ -173,7 +173,7 @@ int main() {
         layer.size = PixelSize{config.viewport.width, config.viewport.height};
 
         std::vector<Region> regions;
-        // A dim backdrop so the bars read; then a labelled column per snapshot.
+        // A dim backdrop so the bars read; then a labeled column per snapshot.
         regions.push_back(Region{
             .key     = "backdrop",
             .shape   = ShapePoints::rectangle(Point{0.0f, 0.0f},

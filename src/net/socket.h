@@ -34,7 +34,7 @@ enum class Status : std::uint8_t {
     Other,
     // A datagram arrived larger than the buffer offered it. What fit was copied and the rest is gone —
     // a datagram is delivered once, and the remainder cannot be asked for again. Appended rather than
-    // placed among its neighbours so no existing enumerator's value moves.
+    // placed among its neighbors so no existing enumerator's value moves.
     Truncated,
     // The peer's certificate is not one this side accepts. A verdict rather than a stall: it does not
     // change on a later call, and it is deliberately distinguishable from the catch-all, because "the

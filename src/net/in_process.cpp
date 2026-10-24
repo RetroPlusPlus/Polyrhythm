@@ -37,7 +37,7 @@ std::mutex& registryMutex() {
 }
 
 // Held weakly, so a name releases itself once both its ends are gone and the same name opens a fresh
-// pair afterwards.
+// pair afterward.
 using Registry = std::map<std::string, std::weak_ptr<detail::InProcessPair>, std::less<>>;
 
 Registry& registry() {

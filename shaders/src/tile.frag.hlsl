@@ -4,15 +4,15 @@
 // the layer scroll, wrap into the tilemap (mirroring retropp::sampleTilemap), Load the two-word tilemap
 // cell (tile + flip in word0, atlas + palette handle in word1 — mirroring retropp::unpackTileCell),
 // resolve the cell's atlas to its region in the flat store via the global atlas-region table, Load the
-// palette INDEX from the indexed atlas, Load the colour from the palette store at the cell's palette
+// palette INDEX from the indexed atlas, Load the color from the palette store at the cell's palette
 // offset, and scale by the layer alpha. Everything is integer Load — there is NO sampler on the tile
-// path. Faithful GB/C model: colour is an index plus a palette chosen at render time, applied per-pixel.
+// path. Faithful GB/C model: color is an index plus a palette chosen at render time, applied per-pixel.
 //
 // SDL_GPU HLSL conventions (see SDL_CreateGPUShader docs): with no sampled textures, the read-only
 // storage textures take t0..t3 in space2; the uniform buffer is b0 in space3.
 //   - t0 space2 : flat ATLAS STORE (R32_UINT; integer Load; all sheets stacked vertically)
 //   - t1 space2 : tilemap cells (R32G32_UINT; integer Load; packTileCell two-word layout)
-//   - t2 space2 : palette store (RGBA8; integer Load; FLAT colours wrapped W wide → texel (flat%W, flat/W))
+//   - t2 space2 : palette store (RGBA8; integer Load; FLAT colors wrapped W wide → texel (flat%W, flat/W))
 //   - t3 space2 : global atlas-region table (R32G32B32A32_UINT; texel x = AtlasId → (storeY, cols, transpMaskLo, transpMaskHi))
 //   - b0 space3 : per-layer uniforms
 
@@ -27,7 +27,7 @@ cbuffer TileUniforms : register(b0, space3) {
     float2 uTilemapSize;  // tilemap dimensions, tiles (width, height)                         — reg 1
     float  uTilePx;            // tile edge length, pixels (8)
     float  uAlpha;             // layer alpha, [0,1]
-    float  uPaletteStoreW;     // palette-store row width (colours); flat offset → (f%W, f/W)  — reg 2
+    float  uPaletteStoreW;     // palette-store row width (colors); flat offset → (f%W, f/W)  — reg 2
     float  uComposeScale;      // compose grid ÷ viewport (1 = faithful); output pixel → viewport
     float  uSnap;              // 1 = snap the transform's destination pixel to the viewport grid (crisp)
     float  _pad2;
@@ -56,7 +56,7 @@ float4 main(float2 uv : TEXCOORD0) : SV_Target0 {
     // floor) to the CONTENT pixel to sample, then apply the FOOTPRINT edge policy outside [0, vpSize):
     // Blank discards (transparent, the layers below show through), Stretch clamps to the footprint edge.
     // When absent (identity), `sample` stays `local` and the path below is byte-identical to the
-    // untransformed faithful behaviour.
+    // untransformed faithful behavior.
     float2 sample = local;
     if (uTransformCtl.x != 0u) {
         // Crisp evaluation (uSnap): floor the destination pixel to the viewport grid before the inverse

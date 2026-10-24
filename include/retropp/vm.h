@@ -251,7 +251,7 @@ private:
     std::size_t handle_ = 0;
 };
 
-// A marshalled call value crossing from the typed template into the non-template VM core: the value
+// A marshaled call value crossing from the typed template into the non-template VM core: the value
 // zero-extended to 64 bits + its width in bytes. Internal to the call path; consumers never build one.
 struct CallValue {
     std::uint64_t value;
@@ -716,8 +716,8 @@ public:
     [[nodiscard]] RegionMapId<S> registerRegions(const RegionMap<S>& map);
 
     // Read one entry of a declared place, and write one back. The bytes are the caller's — a plain
-    // buffer, not a catalogued handle, because minting one for a pile of bytes about to be converted
-    // and discarded is ceremony. Hand the result to uploadData if it should be catalogued, or to
+    // buffer, not a cataloged handle, because minting one for a pile of bytes about to be converted
+    // and discarded is ceremony. Hand the result to uploadData if it should be cataloged, or to
     // uploadAtlas after converting it.
     //
     // `index` names which entry of the place to move; a place declared with the default count of 1
@@ -771,7 +771,7 @@ public:
     // an image that has not been loaded is not reachable yet.
     //
     // Registration hands back nothing. Keys are unique within the machine, so the machine itself
-    // answers every question about its escapes afterwards — see escapes() below.
+    // answers every question about its escapes afterward — see escapes() below.
     //
     // Throws std::invalid_argument (an empty batch, or any entry that does not pass) and
     // std::logic_error (the machine is running).
@@ -805,7 +805,7 @@ public:
     // inside an image that has not been loaded is not reachable yet.
     //
     // Registration hands back nothing. Keys are unique within the machine, so the machine itself
-    // answers every question about its watches afterwards — see watches() below.
+    // answers every question about its watches afterward — see watches() below.
     //
     // Throws std::invalid_argument (an empty batch, or any entry that does not pass) and
     // std::logic_error (the machine is running).
@@ -840,7 +840,7 @@ public:
     // writes and entry calls), call the tick entry to its return, then idle the machine for the
     // remainder of `cyclesPerFrame` (pass TimingProfile::cpuCyclesPerTick()) so the APU synthesizes at
     // the hardware cadence. Returns the CPU cycles consumed by the performed instructions + the tick
-    // call (the idle pads the frame to `cyclesPerFrame`). Read the published slots afterwards with
+    // call (the idle pads the frame to `cyclesPerFrame`). Read the published slots afterward with
     // readSlot. Throws std::logic_error if no driver is hosted on this VM.
     std::uint64_t tickDriver(std::span<const Instruction> queued, std::uint64_t cyclesPerFrame);
 

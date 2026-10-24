@@ -188,7 +188,7 @@ public:
     }
 
     // Append another map's rows — how a preset bundle merges in. The bundle's rows are
-    // indistinguishable from hand-written ones afterwards.
+    // indistinguishable from hand-written ones afterward.
     void add(const ActionMap& bundle);
 
     [[nodiscard]] std::span<const ActionBinding> rows() const noexcept { return rows_; }

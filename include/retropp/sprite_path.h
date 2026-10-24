@@ -24,7 +24,7 @@ struct Sprite;  // draw_state.h — applyTo() writes into one; only a reference 
 // player one level up from PathWalker. Where PathWalker resolves elapsed ticks → a position + facing and
 // nothing else, SpritePath composes that movement with concurrent rotation and scale tracks, a frame
 // animation, and a facing policy, all off ONE elapsed-tick clock, and writes the composed result into a
-// Sprite. It is the movement analogue of the whole player family: pure-data content (SpritePathNode) plus a
+// Sprite. It is the movement analog of the whole player family: pure-data content (SpritePathNode) plus a
 // pure resolver internally, wrapped in a game-owned cursor whose state lives in the game's object, not the
 // platform. The renderer never sees it.
 //
@@ -45,8 +45,8 @@ struct SpritePathMove {
     enum class Kind : std::uint8_t { Line, ThroughPoints, Hermite, Curve };
     Kind                kind = Kind::Line;              // identity, first member
     std::optional<Vec2> origin{};             // absent → the inherited origin (start, or a previous node's end)
-    Vec2                destination{};         // Line / Hermite: the point travelled to
-    std::vector<Vec2>   points;               // ThroughPoints: travelled through in order, ending at back()
+    Vec2                destination{};         // Line / Hermite: the point traveled to
+    std::vector<Vec2>   points;               // ThroughPoints: traveled through in order, ending at back()
     Vec2                originTangent{};        // Hermite: the departure directional vector
     Vec2                destinationTangent{};   // Hermite: the arrival directional vector
     retropp::Curve      curve{};              // Curve: travel this exact curve — origin defaulting does NOT
@@ -67,7 +67,7 @@ struct SpritePathMove {
 // exposed for a game to override afterward.
 enum class FacingPolicy : std::uint8_t {
     None,            // facing does not touch the sprite (default)
-    FlipX,           // flipX true while travelling toward -x (from the horizontal tangent sign; holds its
+    FlipX,           // flipX true while traveling toward -x (from the horizontal tangent sign; holds its
                      //   previous value while the horizontal component is 0, so vertical travel does not
                      //   flip-flop a mirrored sprite)
     RotateToFacing,  // rotation from the tangent angle (atan2), summed with the rotation track; art is
@@ -98,13 +98,13 @@ struct SpritePathNode {
     const Animation*            animation = nullptr;            // frames track (game-owned; nullptr = none)
     PlaybackMode                animationMode = PlaybackMode::loopIndefinitely();
     std::optional<Vec2>         pivot{};      // sprite-local pixels for rotation/scale; absent = the sprite's
-                                              //   centre at the write
+                                              //   center at the write
 };
 
 // ── The composed sample ────────────────────────────────────────────────────────────────────────────
 
 // The composed per-tick result, as RAW VALUES — no pre-composed Transform, because the rotation/scale pivot
-// defaults to the sprite's centre and the sprite's size is only known at the write (the frame track may
+// defaults to the sprite's center and the sprite's size is only known at the write (the frame track may
 // change it). applyTo() composes for the common case; a consumer reading these composes its own.
 struct SpritePathSample {
     Vec2                  position{};              // float — quantized at the write

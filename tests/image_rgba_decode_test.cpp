@@ -8,8 +8,8 @@
 
 #include <gtest/gtest.h>
 
-// Truecolour PNG decode → the RGBA pixel plane (LoadedImage::pixels, kind == Rgba), 16-bit per
-// channel. Pure CPU (lodepng), so the suite is fully headless: it decodes the committed truecolour
+// Truecolor PNG decode → the RGBA pixel plane (LoadedImage::pixels, kind == Rgba), 16-bit per
+// channel. Pure CPU (lodepng), so the suite is fully headless: it decodes the committed truecolor
 // fixtures and asserts the exact 16-bit pixel plane. The fixtures and their planes are authored by
 // tests/fixtures/gen_fixtures.py; RETROPP_FIXTURES_DIR points at that directory at build time.
 
@@ -51,7 +51,7 @@ constexpr Rgba16 kRgba16Exact[4] = {
     {65280, 60000, 65535, 0},
 };
 
-// ── 8-bit truecolour-alpha (RGBA8): kind Rgba, channels widened ×257, alpha carried ──────────────
+// ── 8-bit truecolor-alpha (RGBA8): kind Rgba, channels widened ×257, alpha carried ──────────────
 
 TEST(ImageRgbaDecode, Rgba8WidensEachChannel) {
     const LoadedImage img = loadPngFromMemory(readFile(fixture("rgba8.png")));
@@ -70,7 +70,7 @@ TEST(ImageRgbaDecode, Rgba8WidensEachChannel) {
     EXPECT_EQ(img.pixels[3].a, 0u) << "a fully transparent 8-bit pixel must decode to alpha 0";
 }
 
-// ── 8-bit truecolour without alpha (RGB8): decode synthesizes opaque alpha (65535) ───────────────
+// ── 8-bit truecolor without alpha (RGB8): decode synthesizes opaque alpha (65535) ───────────────
 
 TEST(ImageRgbaDecode, Rgb8WithoutAlphaDecodesOpaque) {
     const LoadedImage img = loadPngFromMemory(readFile(fixture("rgb8.png")));
@@ -86,7 +86,7 @@ TEST(ImageRgbaDecode, Rgb8WithoutAlphaDecodesOpaque) {
     }
 }
 
-// ── 16-bit truecolour-alpha (RGBA16): decoded direct, no precision loss above 0xFF00 ─────────────
+// ── 16-bit truecolor-alpha (RGBA16): decoded direct, no precision loss above 0xFF00 ─────────────
 
 TEST(ImageRgbaDecode, Rgba16DecodesDirectWithoutCrush) {
     const LoadedImage img = loadPngFromMemory(readFile(fixture("rgba16.png")));
@@ -104,7 +104,7 @@ TEST(ImageRgbaDecode, Rgba16DecodesDirectWithoutCrush) {
     EXPECT_GT(img.pixels[1].g, 0xFF00u) << "the value must exceed the 8-bit-crush ceiling";
 }
 
-// ── loadPng(path) routes truecolour identically to loadPngFromMemory ─────────────────────────────
+// ── loadPng(path) routes truecolor identically to loadPngFromMemory ─────────────────────────────
 
 TEST(ImageRgbaDecode, FilePathMatchesMemory) {
     const std::vector<std::uint8_t> bytes = readFile(fixture("rgba16.png"));

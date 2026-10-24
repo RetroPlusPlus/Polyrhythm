@@ -1,20 +1,20 @@
 // =====================================================================================================
-//  Tempest — a vector-tube shooter on Polyrhythm, drawn as REAL coloured vector lines.
+//  Tempest — a vector-tube shooter on Polyrhythm, drawn as REAL colored vector lines.
 //
 //  Tempest is a vector game: the whole playfield is glowing line work — a tube of radial lanes seen in
 //  perspective, a claw straddling the near rim, enemies crawling up the lanes, bolts streaking down. Every
-//  one of those lines is a stroked Region filled with a colour. A Region binds a ShapePoints (here a curve
+//  one of those lines is a stroked Region filled with a color. A Region binds a ShapePoints (here a curve
 //  of Bezier segments) to a ColorFill effect; giving the ShapePoints a strokeWidth makes the region a thin
-//  BAND along the path rather than a filled interior, and the ColorFill paints that band a solid colour. A
+//  BAND along the path rather than a filled interior, and the ColorFill paints that band a solid color. A
 //  straight lane is a band along a Linear segment; a bolt's tracer is a band along a Quadratic — straight
 //  and curved paths from one primitive. Because a stroke is the union of its segments' bands, many disjoint
 //  segments share ONE region, so the whole tube is a handful of passes, not one per line. The bands paint
-//  onto an opaque backdrop at frame level (ColorFill recolours existing pixels), composited in list order
+//  onto an opaque backdrop at frame level (ColorFill recolors existing pixels), composited in list order
 //  so the dim far ring sits behind the bright tube and the bolts sit in front.
 //
 //  WHAT THIS DEMONSTRATES:
 //    • Region + ScreenSpaceEffectKind::ColorFill as a VECTOR LINE TOOL — a stroked ShapePoints (a curve +
-//      a strokeWidth) filled with a colour is a drawn coloured path. Disjoint segments batch into one
+//      a strokeWidth) filled with a color is a drawn colored path. Disjoint segments batch into one
 //      region (the stroke is the union of per-segment bands).
 //    • Curve boundaries — Linear segments for the straight lanework, Quadratic for the bolts' curved
 //      tracers, both evaluated exactly (no facets).
@@ -25,7 +25,7 @@
 //  THE TUBE:
 //    • A LEVEL is a ring of near-rim "spoke" points (any shape) + a closed/open flag, so one set of
 //      formulas draws a circle, a square, a plus, a flat line, or a V. The far end of each spoke is the
-//      rim point pulled toward the screen centre; depth in [0,1] runs far->rim with a depth-squared rush.
+//      rim point pulled toward the screen center; depth in [0,1] runs far->rim with a depth-squared rush.
 //    • CLOSED tubes wrap (the claw circles the rim); OPEN tubes clamp at the two ends.
 //
 //  THE GAME:
@@ -95,7 +95,7 @@ constexpr int   kScorePerKill  = 30;
 constexpr float kHitWindow     = 0.06f;    // bolt/enemy depth overlap that counts as a hit
 constexpr int   kInvulnTicks   = 50;       // grace after losing a life
 constexpr int   kKillsPerLevel = 14;       // auto-advance to the next tube after this many kills
-constexpr float kFarScale      = 0.16f;    // the far ring is the rim scaled this far toward the centre
+constexpr float kFarScale      = 0.16f;    // the far ring is the rim scaled this far toward the center
 constexpr int   kRimSpokes     = 16;       // points sampled around a closed rim (~ lane count)
 constexpr int   kSpikerPercent = 30;       // share of spawns that are spikers (vs flippers)
 
@@ -223,7 +223,7 @@ int main() {
       const std::vector<Pt> v{at(-a,-1), at(a,-1), at(a,-a), at(1,-a), at(1,a), at(a,a),
                               at(a,1), at(-a,1), at(-a,a), at(-1,a), at(-1,-a), at(-a,-a)};
       webs.push_back(Web{"plus", true, sampleAlong(v, 24, true)}); }
-    // OPEN — flat line across the lower field: 16 spokes -> 15 lanes; the lanes fan UP toward the centre.
+    // OPEN — flat line across the lower field: 16 spokes -> 15 lanes; the lanes fan UP toward the center.
     webs.push_back(Web{"line", false, sampleAlong({at(-1, 0.55f), at(1, 0.55f)}, 16, false)});
     // OPEN — shallow V: ends low, middle high.
     webs.push_back(Web{"vee", false, sampleAlong({at(-1, 0.30f), at(0, 0.75f), at(1, 0.30f)}, 16, false)});
@@ -235,14 +235,14 @@ int main() {
     auto neighbour = [&](int spoke) { return isClosed() ? (spoke + 1) % numSpokes() : spoke + 1; };
 
     // ── 4. Geometry: depth maps a spoke / lane to a screen point. depth^2 so the lanes "rush" near the
-    //       rim (far end compressed), and the far end of every spoke is the rim scaled toward centre. ──
+    //       rim (far end compressed), and the far end of every spoke is the rim scaled toward center. ──
     auto spokeAt = [&](int i, float depth) {
         const Pt rim = webs[static_cast<std::size_t>(level)].spokes[static_cast<std::size_t>(i)];
         const Pt far{kCx + (rim.x - kCx) * kFarScale, kCy + (rim.y - kCy) * kFarScale};
         const float t = depth * depth;
         return Pt{far.x + (rim.x - far.x) * t, far.y + (rim.y - far.y) * t};
     };
-    auto laneAt = [&](int lane, float depth) {  // lane centre = midpoint of its two bounding spokes
+    auto laneAt = [&](int lane, float depth) {  // lane center = midpoint of its two bounding spokes
         const Pt a = spokeAt(lane, depth), b = spokeAt(neighbour(lane), depth);
         return Pt{(a.x + b.x) / 2, (a.y + b.y) / 2};
     };
@@ -429,10 +429,10 @@ int main() {
 
     std::vector<TileCell> bgCells(static_cast<std::size_t>(kMapW) * kMapH);
 
-    // ── Vector line tooling — a stroked Region + ColorFill is a drawn coloured path ──────────────────
-    // Each line is one Bezier segment; many disjoint segments of one colour batch into stroked
+    // ── Vector line tooling — a stroked Region + ColorFill is a drawn colored path ──────────────────
+    // Each line is one Bezier segment; many disjoint segments of one color batch into stroked
     // curve-region(s) (the stroke is the union of the per-segment bands). The curve cbuffer carries up to
-    // 32 segments per region, so a colour's segments are emitted in 32-long chunks.
+    // 32 segments per region, so a color's segments are emitted in 32-long chunks.
     constexpr std::size_t kSegsPerRegion = 32;
     auto lin  = [](Pt a, Pt b) {
         return CurveSegment{.p0 = Vec2{a.x, a.y}, .p1 = Vec2{b.x, b.y}, .degree = CurveDegree::Linear};
@@ -499,15 +499,15 @@ int main() {
             clawSegs.push_back(lin(b, tip));   // claw prong 2
         }
 
-        // 8d. Spikes: a line from the far end up to the spike's current tip, along the lane centre.
+        // 8d. Spikes: a line from the far end up to the spike's current tip, along the lane center.
         spikeSegs.clear();
         for (int l = 0; l < lanes && l < static_cast<int>(laneSpike.size()); ++l)
             if (laneSpike[static_cast<std::size_t>(l)] > 0.02f)
                 spikeSegs.push_back(lin(laneAt(l, 0.0f), laneAt(l, laneSpike[static_cast<std::size_t>(l)])));
 
         // 8e. Enemies. Flippers are a BOWTIE spanning their lane (left/right tips on the two edge spokes at
-        //     the flipper's depth, far/near tips on the lane centre) so they scale with the lane. Spikers
-        //     are a small diamond riding the lane centre at the head of their spike.
+        //     the flipper's depth, far/near tips on the lane center) so they scale with the lane. Spikers
+        //     are a small diamond riding the lane center at the head of their spike.
         flipSegs.clear(); spikerSegs.clear();
         for (const Enemy& e : enemies) {
             if (e.kind == EKind::Spiker) {

@@ -145,7 +145,7 @@ TEST(RegionFieldDemand, ANonBloomRegionEffectAsksForNothing) {
 
 TEST(RegionFieldDemand, TheRecordIndexIsThePackedSlicePositionAndTheStoreIndexOffsetsIt) {
     // The hazard the index convention exists for: a chain step ahead of the region shifts its position, and
-    // the raster walks the colour chain up to that index. It is checked against the packer's own output.
+    // the raster walks the color chain up to that index. It is checked against the packer's own output.
     Sprite s{.key = "glow"};
     s.effects = {fill(Rgba8{.r = 10, .g = 20, .b = 30, .a = 255})};
     s.regions = {regionWith("halo", {bloom(6.0f)})};

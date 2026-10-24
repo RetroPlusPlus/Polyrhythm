@@ -12,7 +12,7 @@ namespace retropp {
 //
 // A field is a blurred image sized to its consumer's footprint rather than to the viewport, and many
 // fields share one atlas texture. The planner decides where each one goes, such that a field's blur can
-// never read a neighbour's content.
+// never read a neighbor's content.
 //
 // That isolation is per-rect, not pairwise. A field's rect is its consumer's quad grown by a margin of
 // m = ceil(reach) + 2 on every side, and a field is only ever READ inside that quad — the inner box — or
@@ -21,7 +21,7 @@ namespace retropp {
 // packed next door. The same holds one texel further out: a texel of the first ring sits at least m - 1
 // from the edge, still more than a tap travels, so its blurred value is composed of this field's content
 // alone. That ring is what the read needs: a filtered sample taken at the inner box's edge draws support from
-// it, so a ring carrying this field's light and no neighbour's is what keeps the quad's edge free of a seam.
+// it, so a ring carrying this field's light and no neighbor's is what keeps the quad's edge free of a seam.
 // Beyond the first ring nothing is guaranteed and nothing reads. Rects therefore pack adjacently, which is
 // what makes many small fields at a wide reach affordable.
 //

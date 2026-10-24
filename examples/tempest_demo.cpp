@@ -24,7 +24,7 @@
 //
 //  THE WEB MODEL (the heart of the fix):
 //    • A LEVEL is a list of near-rim "spoke" points (ANY shape) + a `closed` flag. The FAR end of every
-//      spoke is just that point scaled toward the screen centre (kFarScale), so ONE formula draws a
+//      spoke is just that point scaled toward the screen center (kFarScale), so ONE formula draws a
 //      circle, a square, a plus, a flat line, or a V — the only thing that changes is the rim points.
 //    • CLOSED webs (circle/square/plus): the claw wraps around; flippers flip the short way round.
 //    • OPEN webs (line/V): the claw CLAMPS at the two ends; flippers flip toward the player without
@@ -93,7 +93,7 @@ constexpr int   kScorePerKill = 30;
 constexpr float kHitWindow    = 0.06f;    // bolt/enemy depth overlap that counts as a hit
 constexpr int   kInvulnTicks  = 50;       // grace after losing a life
 constexpr int   kKillsPerLevel = 14;      // auto-advance to the next web after this many kills
-constexpr float kFarScale     = 0.16f;    // the far ring is the rim scaled this far toward the centre
+constexpr float kFarScale     = 0.16f;    // the far ring is the rim scaled this far toward the center
 constexpr int   kRimSpokes    = 16;       // points sampled around a closed rim (≈ lane count)
 
 // A point on the playfield.
@@ -214,7 +214,7 @@ int main() {
       const std::vector<Pt> v{at(-a,-1), at(a,-1), at(a,-a), at(1,-a), at(1,a), at(a,a),
                               at(a,1), at(-a,1), at(-a,a), at(-1,a), at(-1,-a), at(-a,-a)};
       webs.push_back(Web{"plus", true, sampleAlong(v, 24, true)}); }
-    // OPEN — flat line across the lower field: 16 spokes → 15 lanes; the lanes fan UP toward the centre.
+    // OPEN — flat line across the lower field: 16 spokes → 15 lanes; the lanes fan UP toward the center.
     webs.push_back(Web{"line", false, sampleAlong({at(-1, 0.55f), at(1, 0.55f)}, 16, false)});
     // OPEN — shallow V: ends low, middle high.
     webs.push_back(Web{"vee", false, sampleAlong({at(-1, 0.30f), at(0, 0.75f), at(1, 0.30f)}, 16, false)});
@@ -237,7 +237,7 @@ int main() {
     auto neighbour = [&](int spoke) { return isClosed() ? (spoke + 1) % numSpokes() : spoke + 1; };
 
     // ── 4. Geometry: depth maps a spoke / lane to a screen point. depth² so the lanes "rush" near the
-    //       rim (far end compressed), and the far end of every spoke is the rim scaled toward centre. ──
+    //       rim (far end compressed), and the far end of every spoke is the rim scaled toward center. ──
     // The spoke's RIM point, blended from the previous shape to the current one while a morph runs. A spoke
     // index the previous shape did not have snaps straight to the new shape (there is nothing to ease from).
     auto rimAt = [&](int i) -> Pt {
@@ -254,7 +254,7 @@ int main() {
         const float t = depth * depth;
         return Pt{far.x + (rim.x - far.x) * t, far.y + (rim.y - far.y) * t};
     };
-    auto laneAt = [&](int lane, float depth) {  // lane centre = midpoint of its two bounding spokes
+    auto laneAt = [&](int lane, float depth) {  // lane center = midpoint of its two bounding spokes
         const Pt a = spokeAt(lane, depth), b = spokeAt(neighbour(lane), depth);
         return Pt{(a.x + b.x) / 2, (a.y + b.y) / 2};
     };
@@ -481,7 +481,7 @@ int main() {
 
         // 8c. Highlight the player's lane the Tempest way: the TWO SPOKES bounding it (the lines running
         //     INTO the screen) are redrawn in yellow over the blue web, and the claw straddles the rim
-        //     between them. (Flippers travel down lane CENTRES — exactly midway between two spokes,
+        //     between them. (Flippers travel down lane CENTERS — exactly midway between two spokes,
         //     `laneAt()` — and spawn on ANY lane, never specifically the player's; see 7e.)
         {
             const int sL = player, sR = neighbour(player);
@@ -494,7 +494,7 @@ int main() {
         }
 
         // 8d. Flippers: a BOWTIE that SPANS its lane — left/right tips ride the lane's two edge spokes at
-        //     the flipper's depth, far/near tips on the lane centre — so it fills the lane and scales with
+        //     the flipper's depth, far/near tips on the lane center — so it fills the lane and scales with
         //     it (tiny at the far end, large at the rim), making which lane it's in unmistakable.
         for (const Enemy& e : enemies) {
             const float df = std::max(0.0f, e.depth - 0.06f), dn = std::min(1.0f, e.depth + 0.06f);

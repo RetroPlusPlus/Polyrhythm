@@ -1,8 +1,8 @@
 // Ripple demo — a runnable host showcasing the engine's BUILT-IN radial ripple effect.
-// Based on the layer-transparency demo (two scrolling indexed-PNG tile layers in real colour); the
+// Based on the layer-transparency demo (two scrolling indexed-PNG tile layers in real color); the
 // addition is the built-in ripple, named and parameterized like any other screen-space effect.
 //
-// The ripple (ScreenSpaceEffectKind::Ripple) is a RADIAL water-droplet RIPPLE emanating from the centre
+// The ripple (ScreenSpaceEffectKind::Ripple) is a RADIAL water-droplet RIPPLE emanating from the center
 // of the screen — concentric rings expanding slowly outward. It does something the axis-aligned built-in
 // RowDisplacement cannot, and it is now a first-class member of the engine's effect library: the game
 // names the kind (.kind = ScreenSpaceEffectKind::Ripple) and sets its fields — no shader, no registration.
@@ -14,7 +14,7 @@
 // consumer-fragment-generates-on-all-backends CI signal.)
 //
 // Run it on a dev machine and confirm: the two diamond fields scroll as before; pressing Z drops a
-// ripple in the centre and rings expand outward across the whole frame; pressing Up adds the built-in
+// ripple in the center and rings expand outward across the whole frame; pressing Up adds the built-in
 // horizontal wave on top, the two composing; both off restores the faithful frame.
 
 #include <array>
@@ -82,7 +82,7 @@ int main() {
     bool rippleOn = false;  // Z — the built-in radial ripple
     bool waveOn   = false;  // Up — the built-in RowDisplacement (to show the two compose)
 
-    // Load the committed indexed PNG (a 2×2-tile diamond atlas centred on index 0).
+    // Load the committed indexed PNG (a 2×2-tile diamond atlas centered on index 0).
     LoadedImage tiles;
     try {
         tiles = loadPng(assetPath("demo_tiles.png"));
@@ -165,7 +165,7 @@ int main() {
         // exactly where RowDisplacement is. Empty chain (both off) leaves the output untouched.
         frame.postEffects.clear();
         if (rippleOn) {
-            // center in VIEWPORT PIXELS — screen centre (the droplet impact point); the engine normalizes
+            // center in VIEWPORT PIXELS — screen center (the droplet impact point); the engine normalizes
             // it to UV. ±6 px amplitude, ~6 rings, slow outward phase, radial decay (droplet falloff).
             frame.postEffects.push_back(ScreenSpaceEffect{
                 .kind = ScreenSpaceEffectKind::Ripple, .amplitude = 6.0f, .frequency = 6.0f,

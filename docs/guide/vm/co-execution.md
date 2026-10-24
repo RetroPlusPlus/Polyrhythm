@@ -26,7 +26,7 @@ console is behind these verbs — its core, its clock, its vocabulary, its save,
 its own page: [gameboy.md](gameboy.md), [snes.md](snes.md).
 
 **One property holds across all of it: the image is never modified.** Everything here happens against
-bytes exactly as they shipped, in memory this process owns, with the behaviour living in your code.
+bytes exactly as they shipped, in memory this process owns, with the behavior living in your code.
 
 > **The co-execution verbs on this page run on `Vm::GB`, `Vm::GBC` and `Vm::SNES`.** Constructing a `Vm`
 > for a `VMPlatform` with no backend built throws. The verbs, declarations and calling conventions are the
@@ -140,8 +140,8 @@ const std::vector<std::uint8_t> tile = vm.read(places, &Places::tiles, 12);
 vm.write(places, &Places::tiles, patched, 12);
 ```
 
-The bytes are yours — a plain buffer, not a catalogued handle. Hand it to `uploadData` if you want it
-catalogued, or convert it and hand the result to `uploadAtlas`. What the bytes *mean* is never the
+The bytes are yours — a plain buffer, not a cataloged handle. Hand it to `uploadData` if you want it
+cataloged, or convert it and hand the result to `uploadAtlas`. What the bytes *mean* is never the
 the platform's business: a tile in the hardware's two-bitplane layout comes back as sixteen bytes, and
 decoding them is your code's job.
 
@@ -557,7 +557,7 @@ Inputs in B and C, answer in A — so the binding says exactly that. **The pairi
 binding's list and the function's parameter list line up index for index, so `inputs[0]` — `gb::B` —
 is read from the parked machine and arrives as the first parameter, `attack`; `inputs[1]` — `gb::C` —
 arrives as `defense`; the return value goes to `output`. The function never names a register: by the
-time it runs the marshalling has happened, and `attack` *is* B's value, as a plain `uint8_t` whose
+time it runs the marshaling has happened, and `attack` *is* B's value, as a plain `uint8_t` whose
 width came from the signature.
 
 **Which way the values flow.** This is `registerRoutine`'s binding vocabulary with the direction of
@@ -573,8 +573,8 @@ and C are whatever *that call site* loaded, and your answer lands in the registe
 was always going to read. A different call site invoking the same routine gets the same treatment —
 your function answers for all of them, exactly as the original routine did.
 
-**The marshalling is synchronous.** Unlike a `.handler`'s reads and writes, which ride the publish and
-the step boundary, a replacement is marshalled while the machine is parked at the entry — so the
+**The marshaling is synchronous.** Unlike a `.handler`'s reads and writes, which ride the publish and
+the step boundary, a replacement is marshaled while the machine is parked at the entry — so the
 caller reads a correct answer in the *same step*, and register conventions work. Routines whose
 convention is memory-based bind memory the same way: `Location::memory(0xC000)` in place of a
 register.
@@ -774,9 +774,9 @@ vm.registerEscapes(escapes(GuestEscape{
     .key      = "damage",
     .at       = kDamage,
     .replaces = routine(RoutineBinding{.inputs = {gb::B, gb::C}, .output = gb::A},
-                        [&](std::uint8_t attack, std::uint8_t defence) -> std::uint8_t {
+                        [&](std::uint8_t attack, std::uint8_t defense) -> std::uint8_t {
                             const std::uint8_t roll = random();      // into the guest, nested
-                            return (attack - defence) + (roll & 0x0F);
+                            return (attack - defense) + (roll & 0x0F);
                         })}));
 ```
 
@@ -809,7 +809,7 @@ deliberate: a call from inside a call is the same call.
 
 ## Failure modes worth knowing
 
-These are platform behaviour you cannot infer from the surface, so they are stated rather than left to
+These are platform behavior you cannot infer from the surface, so they are stated rather than left to
 be discovered.
 
 - **Power-on RAM is filled the way hardware fills it**, so a value written before `run()` is not the
@@ -860,7 +860,7 @@ Every cartridge in the first six is authored in-code or by a committed generator
 | The weave — where a field lands, what the first fills, the two weaves | `src/vm/vm.cpp` (`weaveField`) |
 
 Registering an extracted routine from bytes or a `.asm` file, the `Throttle` pacing seam, and hosting
-a resident sound driver are the neighbouring surface, in
+a resident sound driver are the neighboring surface, in
 [vm-and-routines.md](vm-and-routines.md).
 
 ## Status

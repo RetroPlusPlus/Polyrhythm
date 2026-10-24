@@ -41,8 +41,8 @@ constexpr Rgba8 kExpectedPalette[4] = {
     {10, 20, 30, 255}, {40, 50, 60, 255}, {70, 80, 90, 255}, {100, 110, 120, 255},
 };
 
-// 77 bytes — 2×2 8-bit truecolour (RGB) PNG, generated once with the gen_fixtures encoder. Inline so
-// the truecolour seam can be exercised (art path decodes it; map path rejects it) without committing a
+// 77 bytes — 2×2 8-bit truecolor (RGB) PNG, generated once with the gen_fixtures encoder. Inline so
+// the truecolor seam can be exercised (art path decodes it; map path rejects it) without committing a
 // fixture. Exact-value RGBA decode coverage lives in image_rgba_decode_test.cpp.
 constexpr std::uint8_t kTruecolorPng[] = {
     0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,
@@ -93,7 +93,7 @@ TEST(Image, GrayscaleDecodeSampleAsIndexNoPalette) {
     EXPECT_TRUE(img.palette.empty()) << "grayscale carries no embedded colour";
 }
 
-// A 2-bit grayscale unpack must never leak bits from neighbouring samples: every value stays in
+// A 2-bit grayscale unpack must never leak bits from neighboring samples: every value stays in
 // 0..3. (Failable: a wrong shift/mask in readSample would surface values > 3 here.)
 TEST(Image, GrayscaleValuesStayWithinTwoBitRange) {
     const LoadedImage img = loadPngFromMemory(readFile(fixture("gray2.png")));
@@ -154,8 +154,8 @@ TEST(Image, MapPngEightBitOrSubByteGrayscaleWidens) {
     }
 }
 
-// A map carries indices, not colour — a truecolour source is rejected (distinct message from the
-// art path's RGBA-deferred seam: the map error names "truecolour", not "B.3.b").
+// A map carries indices, not color — a truecolor source is rejected (distinct message from the
+// art path's RGBA-deferred seam: the map error names "truecolor", not "B.3.b").
 TEST(Image, MapPngTruecolorRejected) {
     const std::span<const std::uint8_t> bytes{kTruecolorPng, sizeof(kTruecolorPng)};
     try {
@@ -185,7 +185,7 @@ TEST(Image, DemoTilesAssetDecodesWithIndexZeroHoles) {
     ASSERT_EQ(img.palette.size(), 4u);
 
     // The asset's central diamond is the transparent index 0 (the hole the demo punches through to
-    // the lower layer); the corners are opaque coloured bands. Pin both so the asset can't silently
+    // the lower layer); the corners are opaque colored bands. Pin both so the asset can't silently
     // change out from under the transparent-index demo.
     EXPECT_EQ(img.indices[8 * 16 + 8], 0u) << "centre pixel should be the index-0 hole";
     EXPECT_NE(img.indices[0], 0u) << "corner pixel should be an opaque coloured band";
@@ -209,7 +209,7 @@ TEST(Image, LoadPngFilePathMatchesMemory) {
 
 // ── Routing / error seams ─────────────────────────────────────────────────────────────────────
 
-// The art path decodes truecolour into the RGBA pixel plane (kind == Rgba); an RGB source is opaque
+// The art path decodes truecolor into the RGBA pixel plane (kind == Rgba); an RGB source is opaque
 // (alpha widens to the 16-bit max). Exact per-pixel values are pinned in image_rgba_decode_test.cpp
 // against known fixtures; this is the routing smoke check.
 TEST(Image, TruecolorDecodesToRgbaKind) {

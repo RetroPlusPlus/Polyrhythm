@@ -9,18 +9,18 @@
 //     flash. Empty region shape ⇒ the whole sprite.
 //   • TINT (B) — a `Multiply` `ColorFill` region confined to a quad-space rectangle over the hero's lower
 //     half: a shadow that darkens only part of the silhouette.
-//   • HOLE (X) — a `Transparency` region over a quad-space circle at the hero's centre: the scene behind
+//   • HOLE (X) — a `Transparency` region over a quad-space circle at the hero's center: the scene behind
 //     shows through a punched hole.
 //   • CHARGE (C) — a game-registered CUSTOM shader running inline on the sprite: sampleSource() reads the
 //     sprite's own art, and the shader remaps it toward an electric blue-white energy look keyed off its
 //     luminance — the warm hero visibly turns cool and blazing, a per-pixel recolor no built-in kind does. It
-//     runs first in the chain, so the Gleam sheen then rides over the recoloured result — a custom step and a
+//     runs first in the chain, so the Gleam sheen then rides over the recolored result — a custom step and a
 //     built-in composing in one pass. Registered by path, exactly like a layer / Below custom effect.
 //
 // A third sprite below the heroes shows the DISPLACING kinds — a striped tile whose art is re-read at a
 // shifted position:
 //   • WAVE (W) — cycles the striped sprite off / RowDisplacement (the bars shear into a wave) / Ripple (they
-//     push radially from the centre). The displacement is in the sprite's own art px; a crest pulled past the
+//     push radially from the center). The displacement is in the sprite's own art px; a crest pulled past the
 //     static quad renders in the inflated footprint, and where the art is pulled aside the exposed strip is
 //     transparent so the scrolling scene shows through.
 //
@@ -31,11 +31,11 @@
 // untouched. `.scope = Below` is the only difference from the corresponding Layer-scope effect (scene instead
 // of art). The one disc cycles the whole Below surface:
 //   • LENS mode 1 — a built-in `Ripple` (its `center` / `amplitude` are VIEWPORT px on the Below path, so the
-//     centre tracks the lens's on-screen position).
+//     center tracks the lens's on-screen position).
 //   • LENS mode 2 — the SAME `chargeShader` custom shader as the heroes, but `.scope = Below`: its
 //     sampleSource() now reads the SCENE, so a game shader recolors the scene beneath into an energy field
 //     through the silhouette.
-//   • LENS mode 3 — a Below `ColorFill` inside a centred REGION: only the region's shape ∩ the silhouette
+//   • LENS mode 3 — a Below `ColorFill` inside a centered REGION: only the region's shape ∩ the silhouette
 //     grades the scene, so the lens's core recolors and its outer ring shows the scene untouched.
 //   • LENS mode 4 — a whole-silhouette Below `ColorFill` with a feathered `Transparency` region at the core:
 //     the porthole scales the lens strength back toward zero, revealing the untouched scene through the grade.
@@ -87,7 +87,7 @@ constexpr int kMapW = 20, kMapH = 18;
 enum class Action : std::uint8_t { Flash, Tint, Hole, Wave, Charge, Lens, Nlens, Fullscreen };
 
 // A 16×16 solid disc: index 1 inside radius 7, index 0 (a GameBoy hole) outside — a round, FLAT sprite
-// (one uniform colour, no internal texture).
+// (one uniform color, no internal texture).
 [[nodiscard]] std::array<std::uint8_t, 16 * 16> discArt() {
     std::array<std::uint8_t, 16 * 16> a{};
     for (int y = 0; y < 16; ++y)
@@ -189,7 +189,7 @@ int main() {
         renderer.registerPostProcessStage("examples/sprite_effects_demo/shaders/sprite_charge.frag.hlsl");
 
     // The opaque scene the sprite's hole reveals: four distinct jewel tones — clearly different hues so the
-    // punched-through hole shows obvious colour, but deeper in value so a full screen of them is easy on the
+    // punched-through hole shows obvious color, but deeper in value so a full screen of them is easy on the
     // eyes.
     std::array<std::uint8_t, 64> sceneArt{};
     for (int y = 0; y < 8; ++y)
@@ -218,7 +218,7 @@ int main() {
 
     // The lens: the same round disc art as the coverage MASK for a Below-scope effect. A Below sprite draws
     // no art (it's a lens) — only its alpha shapes the lens, so an OPAQUE disc gives a full-strength
-    // refraction over the whole silhouette. The colour is unused; index 1 = the lens body (alpha 255), index
+    // refraction over the whole silhouette. The color is unused; index 1 = the lens body (alpha 255), index
     // 0 = a GameBoy hole (outside the disc).
     const std::array<Rgba8, 2> lensPal{{{0, 0, 0}, {255, 255, 255, 255}}};
     const PaletteId lensPalId = renderer.uploadPalette(std::span<const Rgba8>(lensPal));
@@ -323,7 +323,7 @@ int main() {
         // tick); the scrolling scene behind provides the motion the hole reveals.
         const float sweep = static_cast<float>(0.5 + 0.5 * std::sin(t * 0.03));
         // The hero chain. When charge is on, the custom shader runs FIRST (it re-reads the raw art), then the
-        // Gleam sheen rides over the recoloured result — a chain step and a custom step composing in one pass.
+        // Gleam sheen rides over the recolored result — a chain step and a custom step composing in one pass.
         std::vector<ScreenSpaceEffect> heroChain;
         if (charge) {
             ScreenSpaceEffect g{.kind = ScreenSpaceEffectKind::Custom, .customShader = chargeShader};
@@ -348,7 +348,7 @@ int main() {
                                                                        .fill = Rgba8{90, 90, 130, 255}}},
                                          .blend = BlendMode::Multiply});
         }
-        if (holeMode != 0) {  // a see-through circle at the centre (quad-space); the scene shows through it
+        if (holeMode != 0) {  // a see-through circle at the center (quad-space); the scene shows through it
             const StencilMode mode = holeMode == 1 ? StencilMode::TransparentInside   // punch the circle out
                                                    : StencilMode::TransparentOutside;  // keep only the circle
             heroRegions.push_back(Region{.key = "hole",
@@ -371,7 +371,7 @@ int main() {
 
         // The displacing striped sprite below — its art is re-read at a shifted within-sprite position; the
         // phase advances off the tick to animate. RowDisplacement shears the bars into a wave; Ripple pushes
-        // them radially from the centre.
+        // them radially from the center.
         if (waveMode != 0) {
             const float phase = static_cast<float>(t * 0.02);
             const ScreenSpaceEffect disp =
@@ -391,25 +391,25 @@ int main() {
         // visible result inside is the transformed scene, and the disc's own art is NOT drawn (a lens is its
         // mask). Off the silhouette the scene is untouched. The one disc cycles the whole Below surface:
         //   • mode 1 — a built-in Ripple (its `center` / `amplitude` are VIEWPORT px on the Below path, so the
-        //     centre tracks the lens's on-screen position); `.scope = Below` is the only difference from the
+        //     center tracks the lens's on-screen position); `.scope = Below` is the only difference from the
         //     striped sprite's own-art displacement above.
         //   • mode 2 — the SAME `chargeShader` custom shader as the heroes, but `.scope = Below`: its
         //     sampleSource() now reads the SCENE, so it recolors the scene beneath into an energy field
         //     through the silhouette — a game shader driving the lens.
-        //   • mode 3 — a Below-scope ColorFill inside a centred REGION: the scene recolors only where the
+        //   • mode 3 — a Below-scope ColorFill inside a centered REGION: the scene recolors only where the
         //     region covers ∩ the silhouette, so the lens's outer ring shows the untouched scene and its core
         //     grades — region-confined scene grading.
         //   • mode 4 — a whole-silhouette Below ColorFill over the scene, then a Below-scope Transparency
         //     region (a feathered circle, TransparentInside) that scales the lens strength back toward zero at
         //     the core: a soft porthole revealing the untouched scene through the graded lens.
         //   • mode 5 — a Below Bloom and a Below Glow together, both keyed to the scene's own bright content:
-        //     the Bloom spreads the scene's colour, the wide amber Glow pulses an authored aura over it. Their
+        //     the Bloom spreads the scene's color, the wide amber Glow pulses an authored aura over it. Their
         //     reaches differ, so they are two distinct emission fields — the renderer prepares both before the
         //     lens draws and the one draw samples each from its own layer of the shared field array.
         if (lensMode != 0) {
-            const int lensX = static_cast<int>(80.0 - kLensD / 2 + 30.0 * std::sin(t * 0.012));  // drifts round centre
+            const int lensX = static_cast<int>(80.0 - kLensD / 2 + 30.0 * std::sin(t * 0.012));  // drifts round center
             const int lensY = 72 - kLensD / 2;
-            const Point lensCore{kLensD * 0.5f, kLensD * 0.5f};   // the lens's own centre, quad-space px
+            const Point lensCore{kLensD * 0.5f, kLensD * 0.5f};   // the lens's own center, quad-space px
             Sprite lensSprite{.key = "lens", .x = lensX, .y = lensY,
                               .size = AssetDimensions{.width = kLensD, .height = kLensD},
                               .atlas = lensAtlas, .tile = 0, .palette = lensPalId};
@@ -444,7 +444,7 @@ int main() {
                                              .effects = {reveal}}};
             } else {  // mode 5 — the lamps' light, bloomed and glowed through the silhouette
                 // Two emission steps at different reaches on ONE lens: a tight Bloom spreading the lamps'
-                // own colour, and a wide amber Glow keyed to the same light. Each samples its own layer of
+                // own color, and a wide amber Glow keyed to the same light. Each samples its own layer of
                 // the shared emission field, so both land in the one draw the lens already costs.
                 //
                 // `threshold` 170 is the load-bearing number: it sits above the brightest scene tile

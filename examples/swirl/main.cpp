@@ -1,9 +1,9 @@
 // Swirl demo — a runnable host that teaches and shows off the built-in SWIRL effect
-// (ScreenSpaceEffectKind::Swirl): an angular twist about a centre. The whirlpool.
+// (ScreenSpaceEffectKind::Swirl): an angular twist about a center. The whirlpool.
 //
-// WHAT IT IS. Swirl is Ripple's angular sibling. Ripple pushes each sample ALONG the radius from a centre
-// (concentric rings, a dropped stone); Swirl carries it AROUND the centre. Content inside `radius` of
-// `center` rotates — the full turn at the exact centre, easing smoothly to nothing at the rim — and content
+// WHAT IT IS. Swirl is Ripple's angular sibling. Ripple pushes each sample ALONG the radius from a center
+// (concentric rings, a dropped stone); Swirl carries it AROUND the center. Content inside `radius` of
+// `center` rotates — the full turn at the exact center, easing smoothly to nothing at the rim — and content
 // outside the disc is untouched, pixel for pixel. `amplitude` is that turn in DEGREES (the engine's angle
 // unit, the same one Transform::rotation takes), `phase` ADDS to it, and positive turns the content
 // clockwise.
@@ -18,7 +18,7 @@
 //
 // Advancing `phase` a few degrees per tick spins the vortex, which is what this demo does. The effect works
 // at every site: a frame postEffect (as here), a DrawLayer::effects step, inside a layer/frame Region, on a
-// sprite's chain (where centre and radius are the sprite's OWN art pixels and the footprint grows so a
+// sprite's chain (where center and radius are the sprite's OWN art pixels and the footprint grows so a
 // twisted crest is never clipped), and as a Below-scope sprite lens (the scene twists through the
 // silhouette).
 //
@@ -145,7 +145,7 @@ int main() {
 
     // The whirlpool. `spin` is the per-tick advance in DEGREES — the vortex turns a little further every
     // tick and `phase` carries the accumulation.
-    constexpr float kBaseTurn = 150.0f;  // degrees of turn at the centre
+    constexpr float kBaseTurn = 150.0f;  // degrees of turn at the center
     constexpr float kRadius   = 56.0f;   // the disc, viewport px
     constexpr float kSpin     = 1.5f;    // degrees per sim tick
     float phase     = 0.0f;
@@ -182,7 +182,7 @@ int main() {
         frame.layers.push_back(pond);
 
         if (whirling) {
-            // The whole effect: a kind, a turn in degrees, a centre, a disc. `amplitude` and `phase` SUM,
+            // The whole effect: a kind, a turn in degrees, a center, a disc. `amplitude` and `phase` SUM,
             // so the accumulating phase spins the vortex while the base turn sets its depth.
             ScreenSpaceEffect whirl{.kind = ScreenSpaceEffectKind::Swirl};
             whirl.amplitude = direction * kBaseTurn;

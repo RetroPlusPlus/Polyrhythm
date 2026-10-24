@@ -8,8 +8,8 @@
 //
 // The sprite's own chain runs here up to the emission step, which is named by bits 8..15 of the record's
 // flags word (retropp::kSpriteEmissionIndexShift; the renderer ORs it into the emission copy of the art
-// record). Colour steps before it transform the pixel exactly as they do for the art, so a recoloured
-// sprite radiates its new colour; the step at that index resolves the emission from the running colour:
+// record). Color steps before it transform the pixel exactly as they do for the art, so a recolored
+// sprite radiates its new color; the step at that index resolves the emission from the running color:
 //
 //   Bloom:  e = premultiply(c) · f(lum(premultiply(c)), threshold) · intensity     // its own light
 //   Glow:   m = c.a · survive(lum(c), threshold);  e = (tint · m · intensity, m · intensity)
@@ -18,7 +18,7 @@
 // result scales by the layer alpha and the per-sprite alpha, so a fading sprite's halo fades with it.
 //
 // A Custom chain step is a no-op here — a game shader has no emission variant, so the emission sees the
-// colour as it stood before that step (the renderer warns). Region steps never precede a chain step in the
+// color as it stood before that step (the renderer warns). Region steps never precede a chain step in the
 // record slice, and are skipped defensively.
 //
 // The displacement pre-pass, the art read, and the transparent-field semantics are the art shader's, quoted
@@ -36,13 +36,13 @@ Texture2D<float4> uFxStore      : register(t3, space2);
 cbuffer SpriteFragUniforms : register(b0, space3) {
     float uTilePx;          // tile edge length, pixels (8)
     float uAlpha;           // layer alpha, [0,1]
-    float uPaletteStoreW;   // palette-store row width (colours); flat offset → (f%W, f/W)
+    float uPaletteStoreW;   // palette-store row width (colors); flat offset → (f%W, f/W)
     float uComposeScale;    // compose grid ÷ viewport (1 = faithful); output pixel → viewport
 };
 
 // ── Effect math (mirrors the retropp:: CPU authorities in postprocess.h) ──────────────────
 
-#include "sprite_color.hlsli"  // applyGleam, applySaturation — the per-pixel colour operators
+#include "sprite_color.hlsli"  // applyGleam, applySaturation — the per-pixel color operators
 
 // ── Displacement re-read (identical to sprite.frag — the halo follows the displaced art) ──
 
@@ -76,7 +76,7 @@ float4 main(float2 spriteUV : TEXCOORD0,
     bool analytic = (flags & 16u) != 0u;
     float2 fxUv;
     if (analytic) {
-        float2 c  = floor(pos.xy / uComposeScale) + 0.5f;      // viewport-cell centre
+        float2 c  = floor(pos.xy / uComposeScale) + 0.5f;      // viewport-cell center
         float  cw = inv2.x * c.x + inv2.y * c.y + inv2.z;
         if (cw <= 0.0f) discard;                               // behind the projection
         fxUv = float2((inv0.x * c.x + inv0.y * c.y + inv0.z) / cw,
@@ -128,8 +128,8 @@ float4 main(float2 spriteUV : TEXCOORD0,
     float4 c = retroppSpriteArtSample(readUv, hasDisp && dispEdge == 1u);
     if (c.a == 0.0f) discard;            // an uncovered pixel radiates nothing
 
-    // Colour steps BEFORE the emission step, in chain order — what the sprite looks like is what it
-    // radiates. Kinds with no colour transform (displacement, another glow) pass through.
+    // Color steps BEFORE the emission step, in chain order — what the sprite looks like is what it
+    // radiates. Kinds with no color transform (displacement, another glow) pass through.
     [loop]
     for (uint i = 0u; i < emitIndex; i++) {
         int    ri     = int(fxOffset + i);

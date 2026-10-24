@@ -76,13 +76,13 @@ TEST(StencilSurvival, ModeSelectsWhichSideGoesTransparent) {
 
 TEST(StencilPolygon, TransparentInsidePunchesAHole) {
     const ShapePoints circle = ShapePoints::circle({80, 72}, 30);
-    EXPECT_FLOAT_EQ(polySurvival({80, 72}, circle, StencilMode::TransparentInside, 0.0f), 0.0f);   // centre transparent
+    EXPECT_FLOAT_EQ(polySurvival({80, 72}, circle, StencilMode::TransparentInside, 0.0f), 0.0f);   // center transparent
     EXPECT_FLOAT_EQ(polySurvival({80, 120}, circle, StencilMode::TransparentInside, 0.0f), 1.0f);  // 48 px out, kept
 }
 
 TEST(StencilPolygon, TransparentOutsideKeepsAPorthole) {
     const ShapePoints circle = ShapePoints::circle({80, 72}, 30);
-    EXPECT_FLOAT_EQ(polySurvival({80, 72}, circle, StencilMode::TransparentOutside, 0.0f), 1.0f);   // centre kept
+    EXPECT_FLOAT_EQ(polySurvival({80, 72}, circle, StencilMode::TransparentOutside, 0.0f), 1.0f);   // center kept
     EXPECT_FLOAT_EQ(polySurvival({80, 120}, circle, StencilMode::TransparentOutside, 0.0f), 0.0f);  // outside transparent
 }
 

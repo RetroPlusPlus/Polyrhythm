@@ -98,7 +98,7 @@ int main() {
 
     // ── Build one indexed atlas: 5 solid/striped/shaded 8×8 tiles laid in a row (40×8 indices). ───
     // Indices: 0 hole · 1 sky · 2 ocean deep · 3 ocean foam · 4 sand · 5 wet sand · 6 rock · 7 rock
-    // shadow · 8 rock highlight. Colour comes from the palette below; index 0 is the transparent marker
+    // shadow · 8 rock highlight. Color comes from the palette below; index 0 is the transparent marker
     // (declared transparent on the ocean/sand uploads; the rock tile has no index-0, so it stays solid).
     constexpr int kAtlasTiles = 5;
     constexpr int kAtlasW     = kAtlasTiles * 8;  // 40
@@ -113,7 +113,7 @@ int main() {
                     case TileSky:   idx = 1; break;                            // solid sky
                     case TileOcean: idx = (y < 2) ? 3 : 2; break;              // foam stripe over deep
                     case TileSand:  idx = ((x + y) % 5 == 0) ? 5 : 4; break;   // sand with sparse speckle
-                    case TileRock:                                             // shaded grey boulder block
+                    case TileRock:                                             // shaded gray boulder block
                         idx = 6;
                         if (x == 0 || y == 0) idx = 8;                         // top/left highlight
                         if (x == 7 || y == 7) idx = 7;                         // bottom/right shadow
@@ -165,7 +165,7 @@ int main() {
     });
 
     // ── The rock, out in the water, split across the ocean's z so the surf passes over its base. ──
-    // 8×8 grey boulder sprites stacked into a chunky crag near x≈100. The waterline is y = 40 (the
+    // 8×8 gray boulder sprites stacked into a chunky crag near x≈100. The waterline is y = 40 (the
     // horizon): everything above is the dry crag (composited IN FRONT of the ocean, z=15); everything at
     // and below is the wave-washed base (composited BEHIND the ocean, z=5, so the wavy foam washes over
     // its top and the deep ocean submerges the rest). Index 0 in the sprite path is transparent, but the

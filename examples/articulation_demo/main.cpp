@@ -4,11 +4,11 @@
 //     re-feeding anchor queries: each child's x/y is the parent's anchor(joint, Space::Layer) and each
 //     child's origin and pivot are its own anchor(socket, Space::Quad) — the mount and the hinge are the
 //     same point, so every joint rotates about its socket by construction. The body rocks gently about
-//     its centre (origin = pivot = center(Space::Quad)) and the whole creature rides the rock coherently,
+//     its center (origin = pivot = center(Space::Quad)) and the whole creature rides the rock coherently,
 //     because every child re-resolves its parent's anchor each tick.
 //   • PER-SPRITE Z within the one layer: the parts are deliberately submitted front-first (claw first,
 //     body last) and their z keys restore the stacking. Toggle the keys off (Z) and the same submission
-//     stacks backwards — the claw vanishes behind the arm.
+//     stacks backward — the claw vanishes behind the arm.
 //   • ANCHORS FOLLOW THE ART: flip the facing (X) and every socket mirrors with its pixels — the chain
 //     math just negates its angles; no hand-mirrored anchor tables.
 //   • A CURVE PINNED TO AN ANCHOR: a trail of dots rides a quadratic Curve whose origin is the body's
@@ -112,7 +112,7 @@ std::array<std::uint8_t, kAtlasW * kAtlasH> makeCreatureAtlas() {
     rect(3, 21, 6, 22, 1, 2);          // bottom finger
     set(6, 17, 4); set(6, 22, 4);      // tips
     set(2, 20, 3);                     // hinge rivet
-    // Trail dot (px 8,16 .. 15,23): a 2×2 accent dot, centred.
+    // Trail dot (px 8,16 .. 15,23): a 2×2 accent dot, centered.
     set(11, 19, 4); set(12, 19, 4); set(11, 20, 4); set(12, 20, 4);
     return px;
 }
@@ -212,7 +212,7 @@ int main() {
 
         Sprite body{.key = "body", .size = AssetDimensions{16, 16}, .atlas = creature, .tile = 0,
                     .palette = palC, .flipX = facingLeft};
-        body.origin    = body.center(Space::Quad);      // x/y place the shell's centre…
+        body.origin    = body.center(Space::Quad);      // x/y place the shell's center…
         body.pivot     = body.center(Space::Quad);      // …and it rocks about that same point
         body.x         = 76;
         body.y         = 84;
@@ -250,7 +250,7 @@ int main() {
         attach(claw, "hinge", fore, "wrist", wrist);
 
         // Deliberately FRONT-FIRST submission; the z keys are what put the claw in front of the arm
-        // and the arm in front of the body. Toggling them off shows the raw order stacking backwards.
+        // and the arm in front of the body. Toggling them off shows the raw order stacking backward.
         claw.z  = zKeys ? 30 : 0;
         fore.z  = zKeys ? 20 : 0;
         upper.z = zKeys ? 10 : 0;
@@ -259,7 +259,7 @@ int main() {
 
         // ── The trail: a quadratic Curve PINNED to the tail anchor — its start point is re-read each
         // tick, so the whole path rides the body's rock. Dots sit at equal arc lengths; each places by
-        // its centre (origin = the dot's centre, so x/y IS the curve point) and stacks BEHIND the body
+        // its center (origin = the dot's center, so x/y IS the curve point) and stacks BEHIND the body
         // (negative z).
         const Point tail = body.anchor("tail", Space::Layer);
         const float sway = 10.0f * std::sin(t * 0.013f);
@@ -274,8 +274,8 @@ int main() {
             Sprite dot{.key = std::string("dot") + std::to_string(i),
                        .z = zKeys ? -10 : 0, .size = AssetDimensions{8, 8},
                        .atlas = creature, .tile = 9, .palette = palC};
-            dot.origin = dot.center(Space::Quad);  // x/y place the dot's centre — the curve point itself
-            dot.pivot  = dot.center(Space::Quad);  // spin centre matches (the dot carries no transform)
+            dot.origin = dot.center(Space::Quad);  // x/y place the dot's center — the curve point itself
+            dot.pivot  = dot.center(Space::Quad);  // spin center matches (the dot carries no transform)
             dot.x     = static_cast<int>(std::lround(p.x));
             dot.y     = static_cast<int>(std::lround(p.y));
             trailDots.push_back(std::move(dot));

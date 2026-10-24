@@ -1,7 +1,7 @@
 // Layer transparency demo — a runnable host showcasing the INDEXED-tile/palette compositor + opt-in
 // per-source index-hole transparency. Open a window, LOAD A REAL COMMITTED PNG
 // (examples/assets/demo_tiles.png) via loadPng, upload its index plane TWICE through the existing
-// uploadAtlas — once OPAQUE (no transparent index) and once with transparent index 0 — colour each
+// uploadAtlas — once OPAQUE (no transparent index) and once with transparent index 0 — color each
 // through a hand-built palette set, and composite two role-free tile layers: a fully-opaque lower
 // background (z=0) and, above it (z=10), the SAME art with index 0 declared transparent so its
 // diamond-shaped index-0 regions become HOLES that reveal the opaque layer beneath. Then blit it
@@ -9,7 +9,7 @@
 // input to the tick callback.
 //
 // Run it on a dev machine and confirm: the window shows two scrolling diamond fields in REAL
-// COLOUR; the LOWER field is fully opaque (its central diamonds are a solid palette colour — the
+// COLOR; the LOWER field is fully opaque (its central diamonds are a solid palette color — the
 // "no transparent index → faithful opaque background" control); the UPPER field's central diamonds
 // are PUNCHED THROUGH (holes), revealing the lower field sliding past underneath as the two layers
 // scroll at different rates — the same PNG, one upload opaque, one with an opt-in transparent index.
@@ -99,8 +99,8 @@ int main() {
     int waveMode = 0;  // frame-level row-displacement: 0 off, 1 blank edge, 2 stretch edge
 
     // Load the real committed PNG (an engine-authored, license-clean indexed tileset: a 2×2-tile
-    // atlas whose four tiles assemble a diamond centred on index 0 — the hole). loadPng extracts its
-    // index plane; the embedded palette is ignored here (the demo hand-builds colour).
+    // atlas whose four tiles assemble a diamond centered on index 0 — the hole). loadPng extracts its
+    // index plane; the embedded palette is ignored here (the demo hand-builds color).
     LoadedImage tiles;
     try {
         tiles = loadPng(assetPath("demo_tiles.png"));
@@ -117,7 +117,7 @@ int main() {
     const AtlasId holeAtlas =
         renderer.uploadAtlas(tiles.indices.data(), tiles.width, tiles.height, TransparentIndices::of({0})).atlasId;
 
-    // Two hand-built 4-entry palettes (index 0 = the would-be hole colour on the opaque layer). Warm
+    // Two hand-built 4-entry palettes (index 0 = the would-be hole color on the opaque layer). Warm
     // for the opaque lower field, cool for the holed upper field — so revealing one through the other
     // is unmistakable.
     const std::array<Rgba8, 4> warm{{ {40, 18, 18}, {180, 70, 60}, {225, 130, 95}, {255, 220, 180} }};
@@ -140,7 +140,7 @@ int main() {
         }
     }
 
-    // The labelled actions the demo prints edges for.
+    // The labeled actions the demo prints edges for.
     constexpr auto kLabels = std::to_array<std::pair<Action, const char*>>({
         {Action::Up, "Up"}, {Action::Down, "Down"}, {Action::Left, "Left"},
         {Action::Right, "Right"}, {Action::ScaleCycle, "ScaleCycle"},

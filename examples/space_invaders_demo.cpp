@@ -2,18 +2,18 @@
 //  Space Invaders — a sprite + palette demo on Polyrhythm, using the ASSET-LOAD route. Where Centipede
 //  built its indexed atlas from in-code byte grids (uploadAtlas), THIS demo loads a committed indexed
 //  PNG sprite sheet via Renderer::loadAtlas(...) and slices it into addressable sprite slots.
-//  Both routes are indexed (pixels are palette INDICES; colour comes from palettes) — only the atlas
+//  Both routes are indexed (pixels are palette INDICES; color comes from palettes) — only the atlas
 //  SOURCE differs. The art is authored by examples/assets/gen_space_invaders.py → space_invaders.png.
 // ============================================================================================
 //
-//  WHAT THIS DEMONSTRATES (the focus is the asset-load route + colour):
+//  WHAT THIS DEMONSTRATES (the focus is the asset-load route + color):
 //    • Renderer::loadAtlas("space_invaders.png", AssetDimensions{8,8}, ContentKind::SpriteSeries) — load
 //      a committed INDEXED PNG and slice it into a grid of 8×8 cells. The returned AtlasManifest gives
 //      `atlas` + `slots[i]`; `slots[i].tile` is the i-th sprite's atlas cell — exactly Sprite::tile.
 //      (Contrast Centipede's embedded-bytes route: same indexed-palette model, different atlas source.)
 //    • Palette SELECTION over the loaded atlas: every sprite picks its palette out of one set; the five
-//      alien rows are five colours, the cannon/bomb/UFO/bunker each their own — "nice colours" on the
-//      colourless arcade original, with NO art change (only the chosen palette).
+//      alien rows are five colors, the cannon/bomb/UFO/bunker each their own — "nice colors" on the
+//      colorless arcade original, with NO art change (only the chosen palette).
 //    • EngineConfig viewport + timing (ViewportResolution::Snes 256×224 + TimingProfile{TickPeriodNs::Hz60}).
 //
 //  THE GAME:
@@ -173,8 +173,8 @@ int main() {
     const PaletteId voidPal = renderer.uploadPalette(std::span<const Rgba8>(palVoid));
     const PaletteId hudPal  = renderer.uploadPalette(std::span<const Rgba8>(palHud));
 
-    // ── 4. Palettes — colour the loaded INDICES (index 1 = main, 2 = accent). The five alien rows get
-    //       five colours; the same loaded art recolours purely by which palette a sprite selects. ─────
+    // ── 4. Palettes — color the loaded INDICES (index 1 = main, 2 = accent). The five alien rows get
+    //       five colors; the same loaded art recolors purely by which palette a sprite selects. ─────
     std::vector<PaletteId> palSet;
     auto up = [&](const std::array<Rgba8, 16>& p) {
         palSet.push_back(renderer.uploadPalette(std::span<const Rgba8>(p)));
@@ -376,7 +376,7 @@ int main() {
         // cell for an invader, a grid cell for a bunker, a per-spawn id for a bomb / explosion, and a
         // fixed name for each singleton. Emission ORDER no longer determines identity, so a changing
         // population never shifts a sprite onto another object's history.
-        // invaders — tile by row type + the current march frame; palette by ROW (five colours).
+        // invaders — tile by row type + the current march frame; palette by ROW (five colors).
         for (int r = 0; r < kRowsF; ++r)
             for (int c = 0; c < kColsF; ++c)
                 if (alien[static_cast<std::size_t>(r)][static_cast<std::size_t>(c)])

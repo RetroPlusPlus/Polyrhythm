@@ -8,7 +8,7 @@
 Texture2D<float4> SourceTexture : register(t0, space2);
 SamplerState      SourceSampler : register(s0, space2);
 cbuffer GleamUniforms : register(b0, space3) {
-    float uSweep;   // band centre along the slant axis, UV
+    float uSweep;   // band center along the slant axis, UV
     float uWidth;   // band half-width, UV (> 0)
     float uGain;    // sheen boost at the crest — 0 = identity
     float uSlant;   // diagonal lean of the band axis

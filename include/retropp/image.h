@@ -14,16 +14,16 @@
 
 namespace retropp {
 
-// How a decoded image carries colour. The PNG's colour type routes the load: a palette or
-// grayscale PNG is INDEXED (one palette index per pixel, faithful console model); a truecolour
-// PNG is RGBA (one colour per pixel). Identity is this field — first member.
+// How a decoded image carries color. The PNG's color type routes the load: a palette or
+// grayscale PNG is INDEXED (one palette index per pixel, faithful console model); a truecolor
+// PNG is RGBA (one color per pixel). Identity is this field — first member.
 enum class ImageColorKind : std::uint8_t { Indexed, Rgba };
 
 // A decoded image. For an INDEXED source, `indices` holds one palette index per pixel (row-major)
 // and `palette` holds the embedded palette (PLTE) when the PNG carries one — empty for grayscale
-// (grayscale carries no embedded colour; the consumer supplies a palette separately). For an RGBA
-// source, `pixels` holds one colour per pixel (row-major), in 16-bit-per-channel Rgba16 — an 8-bit
-// truecolour PNG widens losslessly (×257), a 16-bit one decodes direct. Only the field matching
+// (grayscale carries no embedded color; the consumer supplies a palette separately). For an RGBA
+// source, `pixels` holds one color per pixel (row-major), in 16-bit-per-channel Rgba16 — an 8-bit
+// truecolor PNG widens losslessly (×257), a 16-bit one decodes direct. Only the field matching
 // `kind` is populated. Dimensions are in pixels.
 struct LoadedImage {
     ImageColorKind            kind   = ImageColorKind::Indexed;  // identity, first member
@@ -31,11 +31,11 @@ struct LoadedImage {
     int                       height = 0;
     std::vector<std::uint8_t> indices;   // kind == Indexed: one index per pixel, row-major
     std::vector<Rgba8>        palette;   // kind == Indexed: embedded palette (may be empty); PLTE is 8-bit
-    std::vector<Rgba16>       pixels;    // kind == Rgba: one 16-bit colour per pixel, row-major
+    std::vector<Rgba16>       pixels;    // kind == Rgba: one 16-bit color per pixel, row-major
 };
 
 // Decode a PNG file into a LoadedImage. Indexed/grayscale PNGs populate `indices` (+ `palette`
-// for PLTE PNGs); a truecolour PNG populates `pixels` (kind == Rgba) — 8-bit channels widen ×257,
+// for PLTE PNGs); a truecolor PNG populates `pixels` (kind == Rgba) — 8-bit channels widen ×257,
 // 16-bit channels decode direct. Throws std::runtime_error on a missing file or a decode failure.
 [[nodiscard]] LoadedImage loadPng(const std::filesystem::path& path);
 
@@ -48,12 +48,12 @@ struct LoadedImage {
 // IS a raw index: for a tilemap, an index into a TileCatalog (which entry — i.e. which sheet/cell/
 // palette/flip to draw); for a collision map, a raw collision id the GAME interprets. The platform
 // never interprets the values — it only decodes them faithfully (the sample value is the index,
-// never scaled or reverse-derived from a colour, exactly as the atlas path treats indices).
+// never scaled or reverse-derived from a color, exactly as the atlas path treats indices).
 //
 // 16-bit grayscale is the headline case (a tilemap may reference >256 catalog entries — 65 536 ids),
 // but 8-/4-/2-/1-bit grayscale and palette PNGs decode too (smaller index spaces); every value widens
-// into the uint16 grid. Truecolour is rejected (a map carries indices, not colours). This is the
-// SAME decode the atlas path uses (no colour conversion), only widened to 16 bits and carrying no
+// into the uint16 grid. Truecolor is rejected (a map carries indices, not colors). This is the
+// SAME decode the atlas path uses (no color conversion), only widened to 16 bits and carrying no
 // palette — the consumer supplies meaning, here a TileCatalog.
 struct IndexGrid {
     int                        width  = 0;
@@ -66,8 +66,8 @@ struct IndexGrid {
 };
 
 // Decode a map PNG (grayscale 1/2/4/8/16-bit, or palette) into an IndexGrid of raw index values.
-// Throws std::runtime_error on a missing file, a decode failure, or a truecolour source (a map is
-// indices, not colour). Collision maps use the SAME function — the game reads IndexGrid::values raw.
+// Throws std::runtime_error on a missing file, a decode failure, or a truecolor source (a map is
+// indices, not color). Collision maps use the SAME function — the game reads IndexGrid::values raw.
 //
 // The path is a LITERAL, project-root-relative logical path (a string literal — the build-time scan
 // reads it to bake or copy the asset, so a runtime/computed path is a compile error; load a runtime
@@ -147,7 +147,7 @@ struct TransparentIndices {
     [[nodiscard]] constexpr bool operator==(const TransparentIndices&) const noexcept = default;
 
     static const TransparentIndices None;          // {}  — no structural hole (the default for every sheet)
-    static const TransparentIndices GameBoy;       // {0} — Game Boy OBJ convention: colour 0 is the hole
+    static const TransparentIndices GameBoy;       // {0} — Game Boy OBJ convention: color 0 is the hole
     static const TransparentIndices GameBoyColor;  // {0} — identical convention
 };
 
@@ -246,7 +246,7 @@ struct AssetSlot {
 
 // One cell of a grid, by column + row. The currency of the read-order walk: readOrderCells yields these
 // in traversal order, and each slicer maps a cell to its own output (sliceLayout → an atlas-cell index;
-// slicePaletteImage → that pixel's colour).
+// slicePaletteImage → that pixel's color).
 struct GridCell {
     int col = 0;
     int row = 0;
@@ -293,18 +293,18 @@ struct GridCell {
 [[nodiscard]] std::optional<AssetSlot> sliceSlot(PixelSize imageSize, AssetDimensions assetSize,
                                                  ContentKind kind, ReadOrder order, int index);
 
-// ── Palette images: a colour image sliced one-pixel-per-entry into palette colours ───────────────
+// ── Palette images: a color image sliced one-pixel-per-entry into palette colors ───────────────
 //
-// A PALETTE image is the colour counterpart to a map image: where a map PNG is a grid of index
-// NUMBERS, a palette PNG is a grid of COLOURS, read one pixel per palette entry. slicePaletteImage
+// A PALETTE image is the color counterpart to a map image: where a map PNG is a grid of index
+// NUMBERS, a palette PNG is a grid of COLORS, read one pixel per palette entry. slicePaletteImage
 // walks the decoded pixels in `order` (the SAME read-order traversal sliceLayout uses, via
-// readOrderCells) and returns the entry colours in that order — so entry k is the k-th pixel in the
-// walk. The colour analog of sliceLayout: pure geometry+colour, no GPU, fully headless-testable;
+// readOrderCells) and returns the entry colors in that order — so entry k is the k-th pixel in the
+// walk. The color analog of sliceLayout: pure geometry+color, no GPU, fully headless-testable;
 // Renderer::loadPaletteImage (renderer.h) is the thin convenience that chains loadPng → this →
 // uploadPalette into a PaletteId.
 //
-// `img` must be an RGBA (truecolour) source (kind == ImageColorKind::Rgba) — an indexed image carries
-// indices, not colours, so it is a misuse: throws std::runtime_error. Entries are Rgba16 (the decoded
+// `img` must be an RGBA (truecolor) source (kind == ImageColorKind::Rgba) — an indexed image carries
+// indices, not colors, so it is a misuse: throws std::runtime_error. Entries are Rgba16 (the decoded
 // pixel type — an 8-bit source already widened ×257 at decode). `count` caps how many entries are
 // taken (0 = every pixel; a positive count takes the first `count` in read order; past capacity clamps
 // + logs, per readOrderCells). A non-positive / empty image yields {}.

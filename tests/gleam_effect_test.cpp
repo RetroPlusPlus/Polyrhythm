@@ -5,7 +5,7 @@
 #include "retropp/draw_state.h"
 
 // The built-in gleam effect. Device-free coverage of the CPU side: the uniform resolution (gleamParams — a
-// straight copy of the four Gleam fields) and the colour transform the gleam.frag GPU stage mirrors
+// straight copy of the four Gleam fields) and the color transform the gleam.frag GPU stage mirrors
 // (applyGleam: a luminance-keyed diagonal sheen band, the WHOLE contribution scaled by gain so gain == 0 is
 // an exact identity). The transform is pure arithmetic — genuinely constexpr — so it is static_assert-
 // testable. The live GPU path is build-compiled + dev-verified across the backends (the documented
@@ -46,7 +46,7 @@ static_assert(!(GleamParams{.gain = 0.5f} == GleamParams{}), "a differing field 
 
 // ── applyGleam — the sheen transform mirror ────────────────────────────────────────────
 
-// gain == 0 is an EXACT identity: the pixel is returned unchanged, for any uv / colour, even on the band
+// gain == 0 is an EXACT identity: the pixel is returned unchanged, for any uv / color, even on the band
 // crest. This is the crux — the default Gleam (gain 0) is a no-op, so an inactive gleam never perturbs the
 // scene, and the "identity params -> unchanged" golden holds.
 TEST(ApplyGleam, GainZeroIsIdentity) {
@@ -61,7 +61,7 @@ TEST(ApplyGleam, GainZeroIsIdentity) {
                   "gain 0 returns the pixel unchanged");
 }
 
-// At the band centre (d == sweep -> crest == 1) with gain > 0, a non-black pixel brightens on every channel.
+// At the band center (d == sweep -> crest == 1) with gain > 0, a non-black pixel brightens on every channel.
 TEST(ApplyGleam, CrestBrightensANonBlackPixel) {
     const GleamParams  p{.sweep = 0.5f, .width = 0.25f, .gain = 1.0f, .slant = 0.0f};  // slant 0 -> axis d = u
     const ColorFillRgb c{0.5f, 0.5f, 0.5f};

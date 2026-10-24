@@ -27,7 +27,7 @@ namespace polter {
 // A floating "+N" spawned where a ghost went down. `progress` runs 0→1 over the popup's life; the
 // renderer derives the rise and the shrink from it.
 struct ScorePopup {
-    float                       x = 0.0f;  // spawn origin (the ghost's centre), viewport px
+    float                       x = 0.0f;  // spawn origin (the ghost's center), viewport px
     float                       y = 0.0f;
     int                         points = 0;
     int                         id = 0;    // per-spawn identity — the stable key its glyph sprites use

@@ -23,7 +23,7 @@ void VantRenderer::render(Renderer& renderer, VantGame& game, const VantAssets& 
     ++pulseTick_;
 
     // ── The deck's per-tick palette passes: the pod glow and the star twinkle each read their
-    //    palette-cycling clip's CURRENT frame — animation.h driving tile colour, no art churn.
+    //    palette-cycling clip's CURRENT frame — animation.h driving tile color, no art churn.
     game.deck.setPodPalette(feel.podFrame().palette);
     game.deck.setStarPalette(feel.starFrame().palette);
 
@@ -48,7 +48,7 @@ void VantRenderer::render(Renderer& renderer, VantGame& game, const VantAssets& 
     };
 
     // Clear to the space-glyph (its entry-0 background paints the HUD bar); only the HUD strip
-    // and title rows carry cells with content, the rest of the layer is that flat bar colour —
+    // and title rows carry cells with content, the rest of the layer is that flat bar color —
     // but we want the PLAY AREA transparent, so everything below the HUD strip clears to an
     // atlas hole instead (the deck sheet's fully-transparent empty cell).
     const std::uint16_t barTile  = assets.glyphBase(' ');

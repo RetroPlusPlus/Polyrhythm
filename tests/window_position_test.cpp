@@ -170,7 +170,7 @@ TEST(DragHandles, TitleBarDragsInsideOnly) {
 
     // The platform-side query — exactly what the production OS hit-test asks.
     EXPECT_TRUE(platform.dragHit(Vec2i{80, 6}));    // squarely inside the bar
-    EXPECT_TRUE(platform.dragHit(Vec2i{0, 0}));     // the top-left pixel's centre is inside
+    EXPECT_TRUE(platform.dragHit(Vec2i{0, 0}));     // the top-left pixel's center is inside
     EXPECT_FALSE(platform.dragHit(Vec2i{80, 12}));  // the first row below the bar
     EXPECT_FALSE(platform.dragHit(Vec2i{80, 100})); // the window body
 

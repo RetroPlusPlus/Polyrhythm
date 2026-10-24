@@ -1,4 +1,4 @@
-// Per-pixel colour operators shared by the sprite shaders.
+// Per-pixel color operators shared by the sprite shaders.
 //
 // Engine-internal header — see blend_ops.hlsli for why shaders/common is separate from shaders/include.
 // Self-contained: reads no shader-declared state.

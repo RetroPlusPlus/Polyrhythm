@@ -2,7 +2,7 @@
 // (applyBrightpass), the Gaussian kernel (gaussianKernelWeight + the invNorm normalization), the additive
 // composite (applyBloomAdd), the sprite reach + flags (spriteRadialReach / makeGpuSprite), and the sprite
 // record path (packSpriteFxRecord lanes; evalSpriteFxRecords passes a Bloom record through — the
-// art-neighbourhood sum itself runs in the sprite fragment, whose pure pieces these are). A composed
+// art-neighborhood sum itself runs in the sprite fragment, whose pure pieces these are). A composed
 // mini-oracle sums a synthetic art the way the fragment's kernel loop does and pins the glow's shape.
 
 #include <array>
@@ -109,7 +109,7 @@ TEST(BloomAdd, AddsLightAndLiftsCoverage) {
 
 // ── The composed glow oracle — the fragment's kernel loop over a synthetic art ────────────
 
-// One bright texel in a transparent 5×5 field: the glow at a neighbour decays with distance and is zero
+// One bright texel in a transparent 5×5 field: the glow at a neighbor decays with distance and is zero
 // beyond the tap extent — the halo's shape, composed from the same pure pieces the fragment loops over.
 TEST(BloomGlowOracle, LoneBrightTexelRadiatesAndFadesOut) {
     constexpr int   kSide   = 5;
@@ -120,7 +120,7 @@ TEST(BloomGlowOracle, LoneBrightTexelRadiatesAndFadesOut) {
         return bloomParams(e);
     }();
     std::array<Vec4, kSide * kSide> art{};       // transparent everywhere…
-    art[2 * kSide + 2] = Vec4{1.0f, 1.0f, 1.0f, 1.0f};  // …except the centre (premultiplied white)
+    art[2 * kSide + 2] = Vec4{1.0f, 1.0f, 1.0f, 1.0f};  // …except the center (premultiplied white)
 
     auto glowAt = [&](int px, int py) {
         Vec4 g{};
@@ -229,8 +229,8 @@ TEST(BloomSpriteRecords, PacksTheResolvedKernelLanes) {
 }
 
 TEST(BloomSpriteRecords, EvalPassesBloomThroughUnchanged) {
-    // The colour-chain oracle leaves a Bloom step to the fragment's art sum — chain AND region records
-    // pass the running colour through (a region Bloom must never be painted as a fill colour).
+    // The color-chain oracle leaves a Bloom step to the fragment's art sum — chain AND region records
+    // pass the running color through (a region Bloom must never be painted as a fill color).
     Sprite s{.key = "b"};
     s.effects = {ScreenSpaceEffect{.kind = ScreenSpaceEffectKind::Bloom, .radius = 4.0f, .intensity = 255}};
     s.regions = {Region{.key = "rg", .shape = ShapePoints{.points = {Point{8.0f, 8.0f}}, .radius = 6.0f},

@@ -149,7 +149,7 @@ TEST(AudioDiagnostic, OnsetDiscontinuity) {
 
 // The self-contained note driver (channel init + settle + trigger in one routine, run on a fresh voice
 // VM): the NOTE must start cleanly. The driver sets up the APU/wave RAM/DAC/volumes while the channel is
-// untriggered (silent), holds one frame of settle so the output centres, then triggers — so the trigger
+// untriggered (silent), holds one frame of settle so the output centers, then triggers — so the trigger
 // region carries no pop. (The DAC-enable step itself lands at the very start of the voice, on silence,
 // a frame before the note.) The trigger lands one settle-frame in: ~816 output frames at 48 kHz.
 TEST(AudioDiagnostic, InitTriggerDriverHasCleanOnset) {

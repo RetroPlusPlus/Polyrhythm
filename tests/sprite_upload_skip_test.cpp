@@ -45,7 +45,7 @@ struct BaseArt {
     PaletteId palette{};
 };
 
-// A 16×16 indexed atlas (a 2×2 tile grid, indices 0..3) + a 4-colour palette. The first atlas / first
+// A 16×16 indexed atlas (a 2×2 tile grid, indices 0..3) + a 4-color palette. The first atlas / first
 // palette on any renderer take the same handle values and identical pixels, so two renderers built this
 // way produce byte-identical output for the same frame.
 BaseArt uploadBaseArt(Renderer& r) {
@@ -175,7 +175,7 @@ TEST_F(SpriteUploadSkipTest, EffectParamMutationReuploads) {
     SpriteBacking b;
     FrameDrawState frame;
     frame.layers = {makeSpriteLayer("sprites", art, b)};
-    // A whole-silhouette colour grade on the first sprite — one effect record, records unchanged.
+    // A whole-silhouette color grade on the first sprite — one effect record, records unchanged.
     b.sprites[0].effects = {ScreenSpaceEffect{.kind = ScreenSpaceEffectKind::ColorSaturation,
                                               .saturation = 200}};
 

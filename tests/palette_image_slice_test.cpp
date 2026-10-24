@@ -8,10 +8,10 @@
 
 #include <gtest/gtest.h>
 
-// Palette-image slicing: readOrderCells (the shared read-order walk) + slicePaletteImage (a colour PNG
-// read one-pixel-per-entry into Rgba16 palette colours). Pure CPU, fully headless. The palette_strip.png
-// fixture encodes each pixel's grid position in its colour (r = col·10, g = row·10), so the entry order
-// a ReadOrder produces is verifiable from the colours alone. Authored by tests/fixtures/gen_fixtures.py.
+// Palette-image slicing: readOrderCells (the shared read-order walk) + slicePaletteImage (a color PNG
+// read one-pixel-per-entry into Rgba16 palette colors). Pure CPU, fully headless. The palette_strip.png
+// fixture encodes each pixel's grid position in its color (r = col·10, g = row·10), so the entry order
+// a ReadOrder produces is verifiable from the colors alone. Authored by tests/fixtures/gen_fixtures.py.
 
 namespace retropp {
 namespace {
@@ -25,7 +25,7 @@ std::vector<std::uint8_t> readFile(const std::string& path) {
 
 std::string fixture(const char* name) { return std::string{RETROPP_FIXTURES_DIR} + "/" + name; }
 
-// The strip encodes position in colour: r = col·10, g = row·10, each widened ×257 at 8-bit decode. So a
+// The strip encodes position in color: r = col·10, g = row·10, each widened ×257 at 8-bit decode. So a
 // decoded entry's grid cell is recoverable — col = r / 2570, row = g / 2570 (2570 == 10·257).
 GridCell cellOf(const Rgba16& e) {
     return GridCell{static_cast<int>(e.r) / 2570, static_cast<int>(e.g) / 2570};
@@ -79,7 +79,7 @@ TEST(PaletteImageSlice, DefaultOrderIsRowMajorWithWidenedChannels) {
 
 TEST(PaletteImageSlice, ReadOrderMapsPositionToEntry) {
     // Columns fill (down a column before stepping across): the cell sequence reorders, and every entry's
-    // colour-encoded position must match that sequence — proving slicePaletteImage rides readOrderCells.
+    // color-encoded position must match that sequence — proving slicePaletteImage rides readOrderCells.
     const std::vector<Rgba16> entries = slicePaletteImage(strip(), ReadOrder::TopBottomThenRight);
     ASSERT_EQ(entries.size(), 8u);
     const std::vector<GridCell> expectedCells{{0, 0}, {0, 1}, {1, 0}, {1, 1},
@@ -117,7 +117,7 @@ TEST(PaletteImageSlice, SixteenBitAndAlphaCarryThrough) {
 }
 
 TEST(PaletteImageSlice, IndexedSourceThrows) {
-    // An indexed image carries indices, not colours — handing it to the palette slicer is a misuse.
+    // An indexed image carries indices, not colors — handing it to the palette slicer is a misuse.
     const LoadedImage indexed = loadPngFromMemory(readFile(fixture("indexed4.png")));
     ASSERT_EQ(indexed.kind, ImageColorKind::Indexed);
     EXPECT_THROW((void)slicePaletteImage(indexed), std::runtime_error);
