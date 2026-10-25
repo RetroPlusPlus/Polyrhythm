@@ -29,24 +29,24 @@
 
 namespace retropp {
 
-// The GPU renderer: owns the offscreen internal viewport (an SDL_GPU colour target the game
+// The GPU renderer: owns the offscreen internal viewport (an SDL_GPU color target the game
 // draws into), the tile-compositing pipeline + indexed-atlas/tilemap/palette textures that
 // fill it from submitted draw state, the blit pipeline + sampler that scale it onto the
 // swapchain, and the per-frame submission. It is constructed from a live device + window
 // (handed out by SdlPlatform) — drawing is the renderer's job, the platform owns
 // window/device/input.
 //
-// Colour model: the atlas is INDEXED (one palette index per pixel); palettes are a separate
+// Color model: the atlas is INDEXED (one palette index per pixel); palettes are a separate
 // amortized resource (uploadPalette → a row of a renderer-owned palette store); each tile cell
-// selects a palette within its layer's set; the tile shader applies the colour per-pixel. This
-// is the faithful GB/C model — colour = index + selected palette at render time — not a
+// selects a palette within its layer's set; the tile shader applies the color per-pixel. This
+// is the faithful GB/C model — color = index + selected palette at render time — not a
 // baked-RGBA atlas and not a hardware palette-RAM poke.
 //
 // renderFrame() composites the submitted FrameDrawState into the offscreen viewport (z-sorted,
 // alpha-blended; indexed TILES layers and SPRITES layers — instanced per-sprite quads with
-// colour-index-0 transparency — interleave by z; frame-level colour modifiers fold into the
+// color-index-0 transparency — interleave by z; frame-level color modifiers fold into the
 // final blit) and then blits it integer-scaled + letterboxed onto the swapchain. Atlas index
-// data and palette colour data are each uploaded once (amortized); the draw state references
+// data and palette color data are each uploaded once (amortized); the draw state references
 // them by handle and is rebuilt fresh each frame.
 //
 // Like SdlPlatform, the renderer needs a live GPU device/swapchain — and so a display the
@@ -99,7 +99,7 @@ public:
     // Upload an INDEXED tile/sprite atlas once (amortized — at load time / tileset swap), returning
     // its AtlasManifest — the sheet: the uploaded-atlas handle plus the carved slots (where only the
     // handle is wanted, write the projection explicitly: `sheet.atlasId`). ONE palette index per
-    // pixel, stored as R32_UINT so a pixel can address an arbitrary palette — NOT RGBA; colour comes
+    // pixel, stored as R32_UINT so a pixel can address an arbitrary palette — NOT RGBA; color comes
     // from a palette at render time. 8-bit and 16-bit source indices are widened into the 32-bit
     // texel; a 32-bit source uploads directly. The renderer owns the GPU texture; the handle stays
     // valid until the renderer is destroyed (no eviction here). Throws std::runtime_error on a GPU
@@ -111,7 +111,7 @@ public:
     // sentence loadAtlas speaks minus the decode — one carve per sheet, stated at upload.
     //
     // `transparent` is this sheet's structural transparent-index set: the palette indices that render
-    // as HOLES (discarded, revealing whatever is behind them). BOTH the tile and sprite paths honour
+    // as HOLES (discarded, revealing whatever is behind them). BOTH the tile and sprite paths honor
     // it. The default TransparentIndices::None ({}) declares no structural hole → every index draws
     // (subject only to its palette entry's own alpha — material transparency). Game-Boy-style art opts
     // its OBJ hole in with TransparentIndices::GameBoy ({0}); an arbitrary set is
@@ -179,14 +179,14 @@ public:
                                       int count = 0, TransparentIndices transparent = TransparentIndices::None,
                                       int framesPerAnimation = 0);
 
-    // Upload one palette's colours once (amortized — on change), returning the handle the draw
-    // state's palette set references. ARBITRARY entry count — no cap: the colours are
+    // Upload one palette's colors once (amortized — on change), returning the handle the draw
+    // state's palette set references. ARBITRARY entry count — no cap: the colors are
     // appended to a flat, contiguous renderer-owned palette store (the returned PaletteId IS this
     // palette's flat offset into it), and the store texture grows to fit. Valid until the renderer
     // is destroyed (no eviction). Throws std::runtime_error on a GPU failure.
     //
-    // The store keeps 16-bit-per-channel colour. The Rgba8 overload widens each entry losslessly
-    // (×257, so 255 → 65535); the Rgba16 overload (for a 16-bit colour source) appends direct. Both
+    // The store keeps 16-bit-per-channel color. The Rgba8 overload widens each entry losslessly
+    // (×257, so 255 → 65535); the Rgba16 overload (for a 16-bit color source) appends direct. Both
     // produce identical output for an 8-bit palette — the shader samples the UNORM store as float4
     // either way.
     PaletteId uploadPalette(std::span<const Rgba8> colors);
@@ -206,24 +206,24 @@ public:
     void updatePalette(PaletteId id, std::span<const Rgba8> colors);
     void updatePalette(PaletteId id, std::span<const Rgba16> colors);
 
-    // Load a colour PNG as a palette: decode it, slice it one-pixel-per-entry in `order`, and upload the
-    // entries to the palette store — the colour-store sibling of loadAtlas (which uploads to the atlas
+    // Load a color PNG as a palette: decode it, slice it one-pixel-per-entry in `order`, and upload the
+    // entries to the palette store — the color-store sibling of loadAtlas (which uploads to the atlas
     // store). Returns the PaletteId of the first entry; the entries are contiguous, so a cell/sprite that
     // names this palette selects entry k by index k (no manifest — palette entries don't scatter the way
     // sliced atlas sub-assets do). `order` defaults to the western LeftRightThenDown; `count` caps how
     // many entries are taken (0 = every pixel; past capacity clamps + logs, per readOrderCells). A
-    // truecolour (RGBA) PNG is required — an indexed source throws std::runtime_error (slicePaletteImage's
+    // truecolor (RGBA) PNG is required — an indexed source throws std::runtime_error (slicePaletteImage's
     // contract); a load / decode / GPU failure throws std::runtime_error.
     //
     // The path is a LITERAL, project-root-relative logical path (a string literal — the build-time scan
     // reads it to bake or copy the asset, so a runtime/computed path is a compile error). `policy` selects
     // whether the image is read from disk (LoadFromPath) or decoded from bytes baked into the binary at
     // build time (Embed). nullopt (the default) falls through to loadPaletteImage's per-type default
-    // (Embed — a palette image is bespoke build-time colour data, like a map PNG). A LoadFromPath asset
+    // (Embed — a palette image is bespoke build-time color data, like a map PNG). A LoadFromPath asset
     // resolves against the runtime asset root (assetRoot()); an Embed asset the build did not bake falls
     // through to that disk read.
     //
-    // There is no FromMemory sibling: a palette is already buildable directly from colour data via
+    // There is no FromMemory sibling: a palette is already buildable directly from color data via
     // uploadPalette (which takes Rgba8 / Rgba16 spans). For a runtime-supplied palette PNG, compose the
     // public primitives — uploadPalette(slicePaletteImage(loadPngFromMemory(bytes), order, count)).
     PaletteId loadPaletteImage(LiteralPath path,
@@ -313,7 +313,7 @@ public:
     // viewport (z-sorted, alpha-blended; per-tile palette-select + flip applied in-shader from
     // the layer's palette set), run the frame-level post-process chain (frame.postEffects; an
     // empty chain is a no-op), then blit the result integer-scaled + letterboxed to the swapchain
-    // with the frame-level colour transform. Throws std::invalid_argument on a layer-key collision
+    // with the frame-level color transform. Throws std::invalid_argument on a layer-key collision
     // when the collision policy is Throw (the default in debug builds; see setLayerCollisionPolicy).
     //
     // When interpolation is on (the default), the renderer reads the
@@ -344,7 +344,7 @@ public:
     // row-major, top-to-bottom). Runs the same compose path renderFrame blits — copy pass, layer
     // composite, post-process chain — then downloads the composed offscreen image instead of presenting
     // it (the swapchain blit is skipped; the composed viewport is the captured subject). Blocks on a fence
-    // until the download lands. The offscreen intermediates are R16G16B16A16_FLOAT (a colour channel may
+    // until the download lands. The offscreen intermediates are R16G16B16A16_FLOAT (a color channel may
     // exceed 1); the download quantizes each channel with round(clamp(v,0,1)·255) — the same 8-bit clamp
     // the swapchain blit applies — so the result matches what a present would show. This is the
     // offscreen-capture seam for the golden-readback harness, not part of the runtime render loop. Works
@@ -655,7 +655,7 @@ private:
 
     // Build the instanced-additive region pipeline for a custom stage whose shader carries the
     // `// @retropp:additive` declaration: the platform's region_batch vertex stage + the shader's BATCHED
-    // fragment variant, with ADDITIVE colour blend (ONE / ONE) and destination-alpha-preserving alpha
+    // fragment variant, with ADDITIVE color blend (ONE / ONE) and destination-alpha-preserving alpha
     // blend (ZERO / ONE) — so many same-shader additive regions accumulate in ONE pass. Called by the
     // path-registering overload when findBatchedShaderVariants(path) is non-null; returns nullptr on
     // failure (the stage then stays on the per-region path).
@@ -722,7 +722,7 @@ private:
     // The compose grid's ceiling. Sub-pixel placement is already visually continuous well below this;
     // the cap bounds the four float16 offscreen targets' memory (viewport×N)² · 8 B · 4 — at 16× and a
     // 160×144 viewport that is 2560×2304 ≈ 189 MB, reached only by a >4K drawable. Below the cap the
-    // compose scale equals the window's integer-scale-to-fit factor, so the blit is a 1:1 centring copy
+    // compose scale equals the window's integer-scale-to-fit factor, so the blit is a 1:1 centering copy
     // (fill parity with the faithful path); above it the blit integer-upscales the remainder as usual.
     static constexpr int     kMaxComposeScale = 16;
     // macOS/Metal ONLY: SDL's Metal GPU backend implements the BLOCKING swapchain wait as a CPU
@@ -732,7 +732,7 @@ private:
     // deadline pace cadence instead. Vulkan/D3D12 OS-block correctly, so they keep the blocking
     // acquire. Set once at ctor.
     bool                     acquireNonBlocking_ = false;
-    SDL_GPUTexture*          target_       = nullptr;  // offscreen viewport colour target
+    SDL_GPUTexture*          target_       = nullptr;  // offscreen viewport color target
     SDL_GPUTexture*          post0_        = nullptr;  // post-process scratch A (viewport-sized)
     SDL_GPUTexture*          post1_        = nullptr;  // post-process scratch B (ping-ponged with A)
     SDL_GPUTexture*          layerScratch_ = nullptr;  // per-layer effect scratch; swapped with target_ for Below
@@ -780,13 +780,13 @@ private:
     SDL_GPUGraphicsPipeline* rippleBlend_  = nullptr;  // ripple + premultiplied-over composite (Layer scope)
     SDL_GPUGraphicsPipeline* swirl_        = nullptr;  // built-in angular-twist post-process stage
     SDL_GPUGraphicsPipeline* swirlBlend_   = nullptr;  // swirl + premultiplied-over composite (Layer scope)
-    SDL_GPUGraphicsPipeline* colorFill_      = nullptr; // built-in colour fill / tint post-process stage
+    SDL_GPUGraphicsPipeline* colorFill_      = nullptr; // built-in color fill / tint post-process stage
     SDL_GPUGraphicsPipeline* colorFillBlend_ = nullptr; // colorFill + premultiplied-over composite (Layer scope)
     SDL_GPUGraphicsPipeline* colorFillGather_      = nullptr; // N ColorFill regions in ONE pass, replace
     SDL_GPUGraphicsPipeline* colorFillGatherBlend_ = nullptr; // ColorFill gather + premultiplied-over composite
     SDL_GPUGraphicsPipeline* gleam_          = nullptr; // built-in gleam (diagonal sheen sweep) post-process stage
     SDL_GPUGraphicsPipeline* gleamBlend_     = nullptr; // gleam + premultiplied-over composite (Layer scope)
-    SDL_GPUGraphicsPipeline* saturation_      = nullptr; // built-in colour-saturation (desaturate toward luma) post-process stage
+    SDL_GPUGraphicsPipeline* saturation_      = nullptr; // built-in color-saturation (desaturate toward luma) post-process stage
     SDL_GPUGraphicsPipeline* saturationBlend_ = nullptr; // saturation + premultiplied-over composite (Layer scope)
     // The Bloom / Glow emission chain: extract → [reduce ×½ ×2] → blur H → blur V → composite. One
     // pipeline per stage, plus the premultiplied-over composite variant for the Layer scope. emissionCopy_
@@ -815,7 +815,7 @@ private:
     SDL_GPUGraphicsPipeline* blit_         = nullptr;  // viewport → swapchain blit pipeline
     SDL_GPUSampler*          sampler_      = nullptr;  // nearest, clamped (tile atlas + faithful blit)
     SDL_GPUSampler*          bilinear_     = nullptr;  // linear, clamped (blit only; SamplingMode::Bilinear)
-    SDL_GPUTexture*          paletteStore_ = nullptr;  // R16G16B16A16_UNORM store; PaletteId = flat colour offset
+    SDL_GPUTexture*          paletteStore_ = nullptr;  // R16G16B16A16_UNORM store; PaletteId = flat color offset
     int                      paletteStoreRows_ = 0;    // rows the store texture holds; the entries fill as many
                                                        // as they need and an upload appends into the rest
     SDL_GPUTexture*          atlasStore_   = nullptr;  // R32_UINT flat atlas store: all atlases
@@ -890,7 +890,7 @@ private:
     bool                       spriteFxHashed_ = false;
     std::uint64_t              spriteFxHash_ = 0;
     int                        spriteFxHashRows_ = 0;
-    std::vector<Rgba16>      paletteData_;             // CPU mirror of the store; flat, contiguous 16-bit palette colours (PaletteId = flat offset)
+    std::vector<Rgba16>      paletteData_;             // CPU mirror of the store; flat, contiguous 16-bit palette colors (PaletteId = flat offset)
     // The entries each uploaded palette occupies, in upload order. A later upload begins where the one
     // before it ends, so `first` ascends and a PaletteId finds its palette by binary search. An upload of
     // no colors occupies nothing and is not recorded.

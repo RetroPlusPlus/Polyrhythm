@@ -1,5 +1,5 @@
 // Controller scrolling — steer a camera across an endless tile field with arrows / WASD / d-pad. It opens a
-// window and draws a scrolling, indexed-colour tile background using only hand-built art (no asset
+// window and draws a scrolling, indexed-color tile background using only hand-built art (no asset
 // files). It is the companion to docs/guide/getting-started.md (which walks through it block by block)
 // AND the engine's canonical "retained" example: it builds the FrameDrawState ONCE, before the loop,
 // and the render callback only mutates the layer's scroll each frame (vs. the immediate-mode hosts
@@ -53,9 +53,9 @@ int main() {
     map.add(presets::directional(Action::Up, Action::Down, Action::Left, Action::Right));
     platform.actions(map);
 
-    // 3. Upload art. An indexed atlas is one palette INDEX per pixel — colour comes from a palette at
+    // 3. Upload art. An indexed atlas is one palette INDEX per pixel — color comes from a palette at
     //    render time, never baked into the art. We hand-build a 2-tile atlas (16×8): tile 0 is a
-    //    solid block; tile 1 is a bordered block. One 4-colour palette colours both.
+    //    solid block; tile 1 is a bordered block. One 4-color palette colors both.
     constexpr int kTile = 8, kCols = 2;                 // 16×8 atlas = two 8×8 tiles side by side
     std::array<std::uint8_t, kTile * kTile * kCols> atlas{};
     for (int y = 0; y < kTile; ++y) {
@@ -71,7 +71,7 @@ int main() {
     const PaletteId pal = renderer.uploadPalette(std::span<const Rgba8>(colours));
 
     // 4. A tilemap: a 32×32 grid checkerboarding the two tiles. Each cell names its own sheet + palette
-    //    directly (here every cell draws from `atlasId` coloured through `pal`). Kept alive for the
+    //    directly (here every cell draws from `atlasId` colored through `pal`). Kept alive for the
     //    program's life (the layer holds a span into it).
     constexpr int kMapW = 32, kMapH = 32;
     std::vector<TileCell> cells(static_cast<std::size_t>(kMapW) * kMapH);

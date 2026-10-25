@@ -81,7 +81,7 @@ TEST(Tilemap, ConstexprEvaluable) {
 
 // ── Per-layer tilemap wrap mode (Repeat / Clamp / Blank) ─────────────────────
 // A 4×4-tile map is 32×32 px; the last in-range pixel is 31 on each axis. Repeat is the default
-// and must reproduce the toroidal behaviour above; Clamp pins out-of-range to the edge; Blank
+// and must reproduce the toroidal behavior above; Clamp pins out-of-range to the edge; Blank
 // flags out-of-range as a finite-map hole the shader discards.
 
 TEST(TilemapWrap, RepeatExplicitMatchesDefault) {
@@ -140,7 +140,7 @@ TEST(TilemapWrap, BlankLastInRangePixelIsInside) {
 
 TEST(TilemapWrap, BlankOutOfRangePositiveIsHole) {
     // world x = 32 == mapPx → outside [0, 32) → finite-map hole. Under Repeat this would wrap to
-    // the origin (see ScrollOneFullMapWrapsToOrigin); the distinct Blank behaviour is the point.
+    // the origin (see ScrollOneFullMapWrapsToOrigin); the distinct Blank behavior is the point.
     const auto s = sampleTilemap(0, 0, LayerScroll{32, 0}, 4, 4, TileWrap::Blank);
     EXPECT_TRUE(s.outside);
 }

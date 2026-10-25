@@ -1,8 +1,8 @@
 // The Swirl effect's device-free CPU authorities: the resolved parameters (swirlParams — the public degrees
 // summed and converted to the shader's radians, the clockwise-positive sign, a negative radius clamped), the
-// read mirror (swirlReadPx / swirlSourceUv — the centre as a fixed point, the (1 − t²)² falloff, zero twist
+// read mirror (swirlReadPx / swirlSourceUv — the center as a fixed point, the (1 − t²)² falloff, zero twist
 // at the rim, an outside-the-disc fragment reading its own coordinate exactly), the sprite footprint bound
-// (spriteDisplaceBound's chord), the sprite record path (packSpriteFxRecord's resolved twist + the centre on
+// (spriteDisplaceBound's chord), the sprite record path (packSpriteFxRecord's resolved twist + the center on
 // the gate lanes; region Swirl steps are unsupported and skipped), and the compose-skip fingerprint (every
 // consulted field reprints).
 
@@ -56,12 +56,12 @@ TEST(SwirlParamsResolve, PositiveAmplitudeTurnsTheContentClockwise) {
     EXPECT_LT(swirlParams(swirlAt(Point{}, 10.0f, 90.0f)).twist, 0.0f);
     EXPECT_GT(swirlParams(swirlAt(Point{}, 10.0f, -90.0f)).twist, 0.0f);
 
-    // A point on the +x axis, turned a quarter clockwise, must be READ from the -y side (above the centre
+    // A point on the +x axis, turned a quarter clockwise, must be READ from the -y side (above the center
     // in a y-down space) — that is what makes the content appear rotated clockwise.
     const SwirlParams p   = swirlParams(swirlAt(Point{100.0f, 100.0f}, 50.0f, 90.0f));
-    const Vec2        src = swirlReadPx(Vec2{100.0f + 1.0f, 100.0f}, p);  // just off the centre, +x
+    const Vec2        src = swirlReadPx(Vec2{100.0f + 1.0f, 100.0f}, p);  // just off the center, +x
     EXPECT_LT(src.y, 100.0f);
-    // Near the centre the falloff is ~1, so the quarter turn lands the read almost exactly on the -y axis:
+    // Near the center the falloff is ~1, so the quarter turn lands the read almost exactly on the -y axis:
     // the x offset collapses to cos(theta) ≈ 0 of the 1 px it started with.
     EXPECT_NEAR(src.x - 100.0f, 0.0f, 0.01f);
     EXPECT_NEAR(src.y - 100.0f, -1.0f, 0.01f);
@@ -72,7 +72,7 @@ TEST(SwirlParamsResolve, ZeroTurnAndNegativeRadiusAreTheIdentityDefaults) {
     EXPECT_FLOAT_EQ(unset.twist, 0.0f);   // an unset Swirl is a no-op
     EXPECT_FLOAT_EQ(unset.radius, 0.0f);
 
-    // amplitude and phase cancelling is a zero turn, not a near-zero one.
+    // amplitude and phase canceling is a zero turn, not a near-zero one.
     EXPECT_FLOAT_EQ(swirlParams(swirlAt(Point{}, 10.0f, 90.0f, -90.0f)).twist, 0.0f);
 
     // A negative radius is no disc, never a reflected one.
@@ -104,7 +104,7 @@ TEST(SwirlRead, OutsideTheDiscReadsItsOwnCoordinateExactly) {
 
 TEST(SwirlRead, TwistFadesToNothingAtTheRimAndIsFullAtTheCentre) {
     // theta(t) = twist·(1 − t²)² — the falloff has zero slope at BOTH ends, so there is no crease at the
-    // centre and no seam at the rim. Check the angle swept at a few radii against the closed form.
+    // center and no seam at the rim. Check the angle swept at a few radii against the closed form.
     const float       radius = 100.0f;
     const SwirlParams p      = swirlParams(swirlAt(Point{0.0f, 0.0f}, radius, 180.0f));
     for (const float t : {0.25f, 0.5f, 0.75f, 0.9f}) {
@@ -209,13 +209,13 @@ TEST(SwirlSpriteRecords, PacksTheResolvedTwistAndTheCentreOnTheGateLanes) {
     EXPECT_EQ(r.kind, static_cast<std::uint32_t>(ScreenSpaceEffectKind::Swirl));
     EXPECT_FLOAT_EQ(r.params[0], p.twist);   // RADIANS — the record carries what the fragment consumes
     EXPECT_FLOAT_EQ(r.params[1], p.radius);
-    EXPECT_FLOAT_EQ(r.radius, p.centerX);    // the centre rides the idle chain-step gate lanes
+    EXPECT_FLOAT_EQ(r.radius, p.centerX);    // the center rides the idle chain-step gate lanes
     EXPECT_FLOAT_EQ(r.strokeWidth, p.centerY);
     EXPECT_NEAR(std::abs(r.params[0]), kPi * 150.0f / 180.0f, 1e-5f);
 }
 
 TEST(SwirlSpriteRecords, RegionSwirlIsSkippedTheChainStepIsKept) {
-    // A displacing kind re-reads the whole silhouette and its packed centre occupies the lanes a region's
+    // A displacing kind re-reads the whole silhouette and its packed center occupies the lanes a region's
     // shape needs — so a region-confined Swirl has no packing (the renderer warns) while the chain step packs.
     Sprite s{.key = "w"};
     s.effects = {swirlAt(Point{8.0f, 8.0f}, 6.0f, 180.0f)};
@@ -241,8 +241,8 @@ TEST(SwirlSpriteRecords, RegionSwirlIsSkippedTheChainStepIsKept) {
 }
 
 TEST(SwirlSpriteRecords, EvalPassesSwirlThroughUnchanged) {
-    // The colour-chain oracle leaves a Swirl to the fragment's displacement pre-pass — a displacing step
-    // moves WHERE the art is read, it never grades the colour.
+    // The color-chain oracle leaves a Swirl to the fragment's displacement pre-pass — a displacing step
+    // moves WHERE the art is read, it never grades the color.
     Sprite s{.key = "w"};
     s.effects = {swirlAt(Point{8.0f, 8.0f}, 6.0f, 180.0f)};
     const std::vector<SpriteFxRecord> recs = buildSpriteFxRecords(s);

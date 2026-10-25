@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Author Bongusoid's indexed-PNG art (BONGUSOID-S1): a sprite sheet + a HUD font sheet.
 
-Both are colortype-3 (indexed) PNGs — the pixels are palette INDICES, the colour comes from palettes the
-demo uploads and SELECTS per sprite (so one brick shape recolours to each row's colour, and one silver /
-gold shape recolours to metallic palettes). Index 0 is transparent: the sprite path discards colour-index
+Both are colortype-3 (indexed) PNGs — the pixels are palette INDICES, the color comes from palettes the
+demo uploads and SELECTS per sprite (so one brick shape recolors to each row's color, and one silver /
+gold shape recolors to metallic palettes). Index 0 is transparent: the sprite path discards color-index
 0, and the tile path leaves the font's index-0 pixels as the layer background. The PNGs carry a neutral
 viewable PLTE; the demo overrides it with its own palettes.
 
@@ -86,7 +86,7 @@ def _vaus(w: int = 80, h: int = 16) -> list[list[int]]:
 
 
 def _ball(d: int = 12) -> list[list[int]]:
-    """A filled disc with an off-centre light highlight (upper-left) AND a dark pip (lower-right), so the
+    """A filled disc with an off-center light highlight (upper-left) AND a dark pip (lower-right), so the
     ball has a clear orientation and its rotation (the S2 spin) reads instead of looking static."""
     art = _blank_plane(d, d)
     c = (d - 1) / 2.0
@@ -105,7 +105,7 @@ def _ball(d: int = 12) -> list[list[int]]:
 def _brick(w: int = 40, h: int = 18, style: str = "plain") -> list[list[int]]:
     """A beveled brick: light top/left edge, dark bottom/right edge, with clipped corners. `style` adds a
     metallic sheen (silver) or a sparkle pair (gold) in index 2 so the three brick cells read distinct
-    even before the demo recolours them by palette selection."""
+    even before the demo recolors them by palette selection."""
     art = _blank_plane(w, h)
     for y in range(h):
         for x in range(w):

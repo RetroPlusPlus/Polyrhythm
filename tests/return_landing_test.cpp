@@ -1,5 +1,5 @@
 // The run-to-return landing borrows two bytes of high RAM for the length of one run and puts the
-// bytes it found back afterwards. These cases pin that borrow: a call and an idle advance both leave
+// bytes it found back afterward. These cases pin that borrow: a call and an idle advance both leave
 // the landing holding whatever the machine held before them, and neither leaves the marker behind.
 //
 // High RAM is the landing's home because it is never banked and always mapped, so the address means
@@ -43,7 +43,7 @@ TEST(ReturnLanding, CallDoesNotLeaveTheMarkerBehind) {
     const std::uint32_t entry = placeReturnOnly(backend);
 
     // Seeded, because power-on high RAM is PRNG-seeded: a landing that restores exactly what it found
-    // still holds the marker afterwards whenever the machine powered on holding one, and the case
+    // still holds the marker afterward whenever the machine powered on holding one, and the case
     // below asks about the landing's own doing rather than the byte it inherited.
     backend.writeMemory(kLanding, 0x00, 1);
 

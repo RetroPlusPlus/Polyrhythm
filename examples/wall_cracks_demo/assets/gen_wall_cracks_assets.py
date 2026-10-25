@@ -2,9 +2,9 @@
 """Author the cracked-wall demo's assets: one indexed tile atlas + three 16-bit RGBA palette images.
 
 The demo (examples/wall_cracks_demo/main.cpp) draws a brick wall over a drifting background. The tile
-art carries only INDICES; the colours — and crucially their ALPHA — live in palette IMAGES, 16-bit RGBA
+art carries only INDICES; the colors — and crucially their ALPHA — live in palette IMAGES, 16-bit RGBA
 PNGs the demo loads with Renderer::loadPaletteImage. Transparency is the palette entry's own alpha (a
-real PNG alpha channel), never a colour key: an entry at alpha 0 is a hole, 1-254 alpha-blends.
+real PNG alpha channel), never a color key: an entry at alpha 0 is a hole, 1-254 alpha-blends.
 
   wall_atlas.png — indexed 8-bit, a horizontal strip of 8x8 tiles (the indices only):
     0 BRICK_A    a brick: mortar along the top + left edges, BRICK_LIGHT body
@@ -69,7 +69,7 @@ def write_indexed8(path: Path, width: int, height: int, rows: list[list[int]],
 
 
 def write_palette_rgba16(path: Path, entries: list[tuple[int, int, int, int]]) -> None:
-    """A palette image: 9x1 16-bit truecolour-alpha PNG (colortype 6, bitdepth 16), one pixel per entry.
+    """A palette image: 9x1 16-bit truecolor-alpha PNG (colortype 6, bitdepth 16), one pixel per entry.
     Authored as 8-bit RGBA and widened x257 (255 -> 65535) so the alpha channel is exact and real."""
     raw = bytearray([0])  # one scanline, filter type 0
     for (r, g, b, a) in entries:
@@ -93,9 +93,9 @@ CRACK_2 = ["00780000", "00780000", "00780000", "07800000", "07800000", "07800000
 
 TILES = [BRICK_A, BRICK_B, HOLE, WEATHER, BG, CRACK_1, CRACK_2]
 
-# Atlas PLTE — for VIEWING the indices only (the engine recolours via the palette images; an index's
-# real colour + alpha come from those). Roughly the wall/bg/crack tones; no colour key — index 0 is a
-# plain dark tone, and the holes come from the palette images' alpha, not from any atlas colour.
+# Atlas PLTE — for VIEWING the indices only (the engine recolors via the palette images; an index's
+# real color + alpha come from those). Roughly the wall/bg/crack tones; no color key — index 0 is a
+# plain dark tone, and the holes come from the palette images' alpha, not from any atlas color.
 ATLAS_PLTE = [
     (20, 18, 22),    # 0
     (64, 60, 58),    # 1 MORTAR

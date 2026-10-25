@@ -64,7 +64,7 @@ int main() {
     for (std::size_t i = 0; i < sheet.tileCount(); ++i) std::printf("%u ", sheet[i].tile);
     std::printf("\n");
 
-    // A palette matching the sheet's authored colours (index 0 marker, 1 white, 2..7 per-cell hues).
+    // A palette matching the sheet's authored colors (index 0 marker, 1 white, 2..7 per-cell hues).
     const std::array<Rgba8, 8> colors{{
         {30, 30, 36},   {240, 240, 245},
         {200, 70, 60},  {220, 140, 60}, {210, 200, 70},
@@ -72,7 +72,7 @@ int main() {
     }};
     const PaletteId pal = renderer.uploadPalette(std::span<const Rgba8>(colors));
 
-    // Lay a manifest's slots out in a centred row of sprites at height `y`. This is the canonical use
+    // Lay a manifest's slots out in a centered row of sprites at height `y`. This is the canonical use
     // of a manifest: walk the slots, and for each make a Sprite taking its `tile` and `size` straight
     // from the slot, naming the sheet's atlas + palette directly. (In a real game you'd instead, say,
     // animate by setting one sprite's `tile` to sheet[frame].tile on a timer.)
@@ -81,7 +81,7 @@ int main() {
         std::vector<Sprite> row;
         const int n      = static_cast<int>(slots.size());
         const int pitch  = 14;                            // 8px tile + 6px gap
-        const int startX = (160 - (n * pitch - 6)) / 2;   // centre the row
+        const int startX = (160 - (n * pitch - 6)) / 2;   // center the row
         for (int i = 0; i < n; ++i) {
             Sprite s{.key = keyPool.emplace_back(std::string(prefix) + std::to_string(i))};
             s.x       = startX + i * pitch;
@@ -89,7 +89,7 @@ int main() {
             s.size    = slots[static_cast<std::size_t>(i)].dimensions;  // the slot's dimensions
             s.tile    = slots[static_cast<std::size_t>(i)].tile;        // the slot's atlas cell
             s.atlas   = sheet.atlasId;                                    // the sheet it draws from
-            s.palette = pal;                                            // the palette colouring it
+            s.palette = pal;                                            // the palette coloring it
             row.push_back(s);
         }
         return row;

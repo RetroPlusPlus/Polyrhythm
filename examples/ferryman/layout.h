@@ -41,7 +41,7 @@ constexpr int kBlockRows   = (kViewH - kFieldTop) / kBlock;   // 20 (720 isn't a
 constexpr int   kSanctuaryBlocks = 2;
 constexpr float kSanctuaryBottom = static_cast<float>(kFieldTop + kSanctuaryBlocks * kBlock);
 
-// ── The ferry (free movement; centre-based px) ───────────────────────────────────────────────────
+// ── The ferry (free movement; center-based px) ───────────────────────────────────────────────────
 constexpr float kFerryW = 32.0f, kFerryH = 22.0f;        // the side view (sailing E/W)
 constexpr float kFerryNSW = 18.0f, kFerryNSH = 28.0f;    // the NARROW bow/stern view (sailing N/S) —
                                                          // the wide side view can't thread a
@@ -51,7 +51,7 @@ constexpr float kFerrySpeedBase   = 2.6f;   // px/tick, empty — a nimble skiff
 constexpr float kFerrySpeedPerPax = 0.35f;  // each soul aboard slows it (4 = a wallowing barge)
 constexpr int   kDeckCap          = 4;
 constexpr int   kLives            = 3;
-constexpr float kPickupDist       = 20.0f;  // ferry-centre to colonist-centre boarding range
+constexpr float kPickupDist       = 20.0f;  // ferry-center to colonist-center boarding range
 
 // ── Colonists / islets ────────────────────────────────────────────────────────────────────────────
 constexpr int kMaxWaiting    = 6;   // the field trickle stops here
@@ -60,7 +60,7 @@ constexpr int kColonistLooks = 3;   // hood / pack / cap — chosen by id at spa
 // Terrain-sheet tile order (matches the generator). THE SEA IS ONE BIG SEAMLESS FIELD: the
 // generator authors a rich 128×128 water design (a 4×4 block of tiles) that wraps at its own
 // edges, and slices it into 16 tiles the renderer places BY GRID POSITION — every adjacent tile
-// is a literal continuation of its neighbour, so full detail carries no seams. The field has
+// is a literal continuation of its neighbor, so full detail carries no seams. The field has
 // THREE animation frames (crests twinkle, dashes breathe, sparkles drift over a static base),
 // and each foam overlay has two. Water slot = T_WATER_0 + cell·kWaterPhases + phase, where
 // cell = (blockY % 4)·4 + (blockX % 4).
@@ -103,7 +103,7 @@ constexpr int kIsletSpacing = 2;  // min block gap (Chebyshev) between islets �
 constexpr int kIsletCountMax =
     ((kIsletColMax - kIsletColMin + 1) * (kIsletRowMax - kIsletRowMin + 1)) / 18;
 constexpr int kIsletCountMin = kIsletCountMax * 3 / 4;
-// An islet's centre in viewport px.
+// An islet's center in viewport px.
 constexpr float isletCenterX(const IsletSpec& s) {
     return (static_cast<float>(s.blockX) + static_cast<float>(s.tilesW) / 2.0f) * kBlock;
 }

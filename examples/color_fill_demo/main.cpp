@@ -1,17 +1,17 @@
-// ColorFill demo — a runnable host that VISUALLY proves the built-in region-confinable colour fill: a
-// colour painted onto a Region's shape. It opens a window over an opaque dim-grid backdrop and draws four
+// ColorFill demo — a runnable host that VISUALLY proves the built-in region-confinable color fill: a
+// color painted onto a Region's shape. It opens a window over an opaque dim-grid backdrop and draws four
 // things with the SAME built-in effect (ScreenSpaceEffectKind::ColorFill), each confined to a Region:
 //
-//   • a SOLID filled rectangle — a solid coloured shape;
-//   • a STROKED ring (a circle + strokeWidth) — a coloured outline / hoop;
+//   • a SOLID filled rectangle — a solid colored shape;
+//   • a STROKED ring (a circle + strokeWidth) — a colored outline / hoop;
 //   • a CURVED drawn LINE (ShapePoints::fromCurve on an OPEN curve + strokeWidth) — the missing primitive:
-//     a stroked region filled with a colour IS a drawn colored path;
-//   • a TRANSLUCENT warm tint — a solid colour in a Region whose alpha (0.5) blends it over the backdrop.
+//     a stroked region filled with a color IS a drawn colored path;
+//   • a TRANSLUCENT warm tint — a solid color in a Region whose alpha (0.5) blends it over the backdrop.
 //
-// All four are frame-level regions (FrameDrawState::regions). A fill emits its colour into the region's
+// All four are frame-level regions (FrameDrawState::regions). A fill emits its color into the region's
 // shape, so it paints the same way wherever it is attached; the Region's alpha and blend mode are what
 // compose it over the backdrop, which is how the tint gets its translucency. The
-// pixel-exact colour math is the device-free ctest suite's job (applyColorFill vs the shader); this is
+// pixel-exact color math is the device-free ctest suite's job (applyColorFill vs the shader); this is
 // the live GPU sanity check.
 //
 // The window never auto-launches (a dev drives it). Backspace = fullscreen; close to quit.
@@ -46,7 +46,7 @@ constexpr int kMapW = 20, kMapH = 18;  // 20×18 tiles cover the 160×144 viewpo
 // The demo's input vocabulary: one dev key.
 enum class Action : std::uint8_t { Fullscreen };
 
-// A solid colour fill (paint the region's shape this colour, ignoring what was under it). The colour is
+// A solid color fill (paint the region's shape this color, ignoring what was under it). The color is
 // opaque (an Rgba8's alpha defaults to 255), so it covers whatever was under the shape.
 [[nodiscard]] ScreenSpaceEffect solidFill(Rgba8 colour) {
     return ScreenSpaceEffect{.kind = ScreenSpaceEffectKind::ColorFill, .fill = colour};
@@ -90,14 +90,14 @@ int main() {
     ShapePoints       ring = ShapePoints::circle(Point{122, 38}, 22);
     ring.strokeWidth       = 6.0f;
     // 3 — a CURVED drawn LINE (bottom): an OPEN two-segment quadratic curve, stroked into an open band — a
-    // stroked region filled with colour is a drawn colored path (the headline: real vector lines).
+    // stroked region filled with color is a drawn colored path (the headline: real vector lines).
     Curve wavy;
     wavy.closed   = false;
     wavy.segments = {CurveSegment{Vec2{18, 116}, Vec2{46, 98}, Vec2{74, 116}, Vec2{}, CurveDegree::Quadratic},
                      CurveSegment{Vec2{74, 116}, Vec2{102, 134}, Vec2{142, 112}, Vec2{}, CurveDegree::Quadratic}};
     ShapePoints drawnLine = ShapePoints::fromCurve(wavy);
     drawnLine.strokeWidth = 5.0f;
-    // 4 — a TRANSLUCENT tint (right side): a solid colour in a Region whose alpha makes it see-through.
+    // 4 — a TRANSLUCENT tint (right side): a solid color in a Region whose alpha makes it see-through.
     const ShapePoints tintRect = ShapePoints::rectangle(Point{96, 64}, 52, 30);
 
     loop.simTick([&](const InputState& in) {

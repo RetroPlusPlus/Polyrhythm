@@ -43,7 +43,7 @@ namespace retropp {
 
 class Vm;
 
-// The marshalled form of a native function answering for a guest routine — what `.replaces` holds.
+// The marshaled form of a native function answering for a guest routine — what `.replaces` holds.
 // Consumers never fill this directly: routine(binding, fn) in vm.h builds one, deducing the widths
 // from the function's signature. The fields mirror what the platform needs at fire time: where to FIND
 // each argument in the parked machine (the guest's callers put them there), where to PUT the answer
@@ -56,7 +56,7 @@ struct NativeRoutine {
     std::uint32_t           declaredEntryOffset = 0;  // carried only so registration can refuse it
     bool                    declaredHardwarePacing = false;  // likewise — pacing has no meaning here
 
-    // The native body: takes the marshalled argument values in declaration order, returns the value
+    // The native body: takes the marshaled argument values in declaration order, returns the value
     // to write back (ignored when there is no output).
     std::function<std::uint64_t(const std::uint64_t*)> fn;
 
@@ -70,7 +70,7 @@ using EscapeHandler = std::function<void(Vm& machine, std::uint32_t at)>;
 // One declared escape. Exactly one of `handler` and `replaces` is declared — an escape that would do
 // nothing, or that cannot decide which of two things to do, is refused at registration by its key.
 //
-//   key      — how the game names this escape afterwards, and what a registration failure reports.
+//   key      — how the game names this escape afterward, and what a registration failure reports.
 //              Required: omitting it is a compile error.
 //   at       — where in the machine's address space control escapes. Bank-qualified where the console
 //              needs it (gb::banked); opaque to the platform, decoded by the backend. An escape declared
@@ -122,7 +122,7 @@ public:
     void armed(bool on);
 
     // Drop the declaration entirely. Switching an escape off is the ordinary way to stop it; this is
-    // for a game that wants the entry gone. Naming it again afterwards throws until it is re-declared.
+    // for a game that wants the entry gone. Naming it again afterward throws until it is re-declared.
     //
     // A handler that removes its OWN escape destroys the code it is running in. Remove another one,
     // or switch this one off and drop it once the call has returned.

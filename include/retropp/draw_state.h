@@ -31,7 +31,7 @@ namespace retropp {
 // scroll, size, alpha, and effect/modifier parameters are all fresh each frame (the one
 // amortized exception is the atlas texels, uploaded when they change). Effects that a GB
 // expressed through hardware tricks are expressed here as layers, per-tile/per-region
-// colour attributes, frame-level modifiers, and screen-space-effect declarations — never
+// color attributes, frame-level modifiers, and screen-space-effect declarations — never
 // as a hardware-register idiom.
 //
 // Identity is a typed, first-class field throughout (the reconciliation Key, AtlasId, the *Kind enums) —
@@ -97,12 +97,12 @@ struct CellTexel {
 // One cell of a tilemap: which atlas tile, which sheet, which palette, flip. Named fields per the
 // no-positional-opacity discipline — identity is a field, never a packed byte behind a comment. Each
 // cell names its OWN sheet (`atlas`) and palette directly: `tile` is the cell index within that
-// sheet's 8px grid, `palette` is the palette it colours through. One map layer therefore mixes tiles
+// sheet's 8px grid, `palette` is the palette it colors through. One map layer therefore mixes tiles
 // from any number of sheets and palettes — there is no per-layer set or select.
 struct TileCell {
     AtlasId       atlas{};      // which uploaded sheet this cell draws from
     std::uint16_t tile    = 0;  // cell index within its own sheet (`atlas`), on the 8px grid
-    PaletteId     palette{};    // which uploaded palette colours it
+    PaletteId     palette{};    // which uploaded palette colors it
     bool          flipX   = false;
     bool          flipY   = false;
     Rotation      rotation = Rotation::None;  // 90° texture rotation; composes with the flips
@@ -219,7 +219,7 @@ findDuplicateAnchorLabel(std::span<const Anchor> anchors) noexcept {
 
 // Where an ART-space point lands on the destination QUAD under the sprite's texture orientation ops —
 // the continuous forward map of `rotation` then the flips (the inverse of sourceCellTexel's dest→source
-// read; at pixel centres the two agree exactly, which the unit tests pin). Anchors ride this map (they
+// read; at pixel centers the two agree exactly, which the unit tests pin). Anchors ride this map (they
 // are points on the drawn thing — a flipped leg's socket mirrors with the leg); the PIVOT deliberately
 // does not (it is the quad's placement handle, and texture ops never move geometry). For a non-square
 // sprite Rot90/Rot270 transpose the art extents — the same transpose the texture read makes.
@@ -380,7 +380,7 @@ inline ShapePoints ShapePoints::roundedRectangle(Point tl, float w, float h, flo
     return ShapePoints{.points = {{x0, y0}, {x1, y0}, {x1, y1}, {x0, y1}}, .radius = r};
 }
 
-// A regular n-gon (n floored at 3, no upper cap) centred at c with circumradius r, first vertex at the
+// A regular n-gon (n floored at 3, no upper cap) centered at c with circumradius r, first vertex at the
 // top. The unbounded points make a high `sides` a smooth-looking circle approximation if you want one.
 inline ShapePoints ShapePoints::regularPolygon(Point c, float r, int sides) {
     const int n = sides < 3 ? 3 : sides;
@@ -411,12 +411,12 @@ enum class ScreenSpaceEffectKind : std::uint8_t {
     Ripple,          // radial concentric ripple — a water droplet; built-in
     Custom,          // a game-registered shader — see PostProcessStageId + .customShader
     Transparency,    // make the effect's region SEE-THROUGH (reveal what's behind); built-in
-    ColorFill,       // paint a colour onto the effect's region — out.rgb = fill (a solid fill); built-in
+    ColorFill,       // paint a color onto the effect's region — out.rgb = fill (a solid fill); built-in
     Gleam,           // luminance-keyed diagonal sheen sweep — the marquee "shine"; built-in
     ColorSaturation, // cross-channel desaturation — pull each pixel toward its own luminance; built-in
     Bloom,           // threshold-blur-add glow — bright content radiates a soft halo; built-in
-    Glow,            // authored-colour aura — a threshold-blurred emission mask times a chosen tint; built-in
-    Swirl,           // angular twist about a centre — the whirlpool / vortex; built-in
+    Glow,            // authored-color aura — a threshold-blurred emission mask times a chosen tint; built-in
+    Swirl,           // angular twist about a center — the whirlpool / vortex; built-in
 };
 
 // Which side of a Transparency effect's region goes see-through (kind == Transparency). The region is the
@@ -430,27 +430,27 @@ enum class StencilMode : std::uint8_t { TransparentInside, TransparentOutside };
 
 // The platform's BUILT-IN effect library is the set of ScreenSpaceEffectKinds the platform
 // owns a shader for — RowDisplacement (the axis-aligned wave), Ripple (the radial droplet), and ColorFill
-// (a colour painted onto a region). A game sets `.kind` on a ScreenSpaceEffect and fills the fields that
+// (a color painted onto a region). A game sets `.kind` on a ScreenSpaceEffect and fills the fields that
 // kind consults (plain designated-init — every field is settable inline); the platform supplies the shader.
 // No registration, no shader authoring — that is the Custom path. New built-ins land behind this enum.
 // Which fields each built-in consults (the rest stay at their defaults, ignored):
 //   RowDisplacement → amplitude, frequency, phase, axis, edge
 //   Ripple          → amplitude, frequency, phase, center, decay
-//   Custom          → none of the above — the game's own shader + uniform define the behaviour
-//   Transparency    → stencil, feather — makes its REGION see-through (no colour effect); the region is the
+//   Custom          → none of the above — the game's own shader + uniform define the behavior
+//   Transparency    → stencil, feather — makes its REGION see-through (no color effect); the region is the
 //                     shape of the Region that owns it (like every other effect; confinement comes from a Region)
-//   ColorFill       → fill, fillIntensity — paints a colour (out.rgb = fill · fillIntensity) onto its region;
+//   ColorFill       → fill, fillIntensity — paints a color (out.rgb = fill · fillIntensity) onto its region;
 //                     via the owning region's blend mode it is the day/night (Multiply), tint (Add), and
 //                     fade/flash (Normal) workhorse; fillIntensity > 1 lets Multiply brighten (float16 path)
 //   Gleam           → sweep, width, gain, slant — a diagonal luminance-keyed sheen band over its region
-//   ColorSaturation → saturation — pulls each pixel toward its own luminance (0 grey … 255 identity)
+//   ColorSaturation → saturation — pulls each pixel toward its own luminance (0 gray … 255 identity)
 //   Bloom           → radius, threshold, intensity — brighter-than-threshold content blurs outward and adds
 //                     back as a glow halo (0-intensity or 0-radius = identity)
 //   Glow            → radius, threshold, intensity, fill, fillIntensity — a threshold-blurred emission mask
-//                     times an AUTHORED tint (fill · fillIntensity); Bloom radiates the source's own colour,
-//                     Glow radiates the colour you pick (threshold 0 = the whole silhouette emits)
+//                     times an AUTHORED tint (fill · fillIntensity); Bloom radiates the source's own color,
+//                     Glow radiates the color you pick (threshold 0 = the whole silhouette emits)
 //   Swirl           → center, radius, amplitude, phase — an angular twist about `center` within `radius`,
-//                     amplitude + phase DEGREES of turn at the centre easing to none at the rim
+//                     amplitude + phase DEGREES of turn at the center easing to none at the rim
 //   (any kind)      → paramTable — a generic per-row data table (one Vec4 per scanline / per region id);
 //                     in v1 only a Custom shader reads it (via the preamble's paramRow / paramRowAtUv)
 // (scope applies to EVERY kind: it is a compositing decision the platform makes, not the shader's. NO effect
@@ -466,9 +466,9 @@ enum class PostProcessStageId : std::uint32_t {};
 
 // What a displacement does at the frame edge, where a row/column pulled inward exposes a strip with
 // no source pixel behind it. Developer-selectable per effect:
-//   Blank   — the exposed strip is the backdrop colour (nothing there). The faithful default: a
+//   Blank   — the exposed strip is the backdrop color (nothing there). The faithful default: a
 //             whole-frame displacement has no off-screen content to reveal, so it shows blank.
-//   Stretch — the edge pixel is duplicated outward (CLAMP_TO_EDGE), smearing the border colour.
+//   Stretch — the edge pixel is duplicated outward (CLAMP_TO_EDGE), smearing the border color.
 enum class DisplacementEdge : std::uint8_t { Blank, Stretch };
 
 // Which pixels an effect transforms — the composable Photoshop-layer model. (Meaningful for
@@ -535,14 +535,14 @@ struct ScreenSpaceEffect {
     float       feather = 0.0f;
 
     // ── ColorFill parameters (kind == ColorFill) ──
-    // Paint a colour onto the pixels the effect covers (its region): a stroked Region draws a colored
+    // Paint a color onto the pixels the effect covers (its region): a stroked Region draws a colored
     // line/path, a filled Region a solid shape. out.rgb = fill; the layer alpha sets the opacity. The
     // owning Region's `blend` grades how the fill combines over the scene — Multiply for a shadow / tint /
     // day-night, Add for a glow, Screen for bloom — with Normal replacing the covered pixels (a fade / flash).
-    // The CPU mirror of the fill colour is retropp::applyColorFill; the grade is retropp::applyBlendMode.
+    // The CPU mirror of the fill color is retropp::applyColorFill; the grade is retropp::applyBlendMode.
     Rgba8 fill{};
 
-    // A scalar applied to `fill` so the painted colour can exceed 1 (the fill is fill_rgb/255 · fillIntensity).
+    // A scalar applied to `fill` so the painted color can exceed 1 (the fill is fill_rgb/255 · fillIntensity).
     // Default 1 = the plain fill. Above 1 only shows through a container blend that carries the headroom —
     // Multiply (scene · fill, a multiplicative exposure that BRIGHTENS while preserving contrast), Screen, Add
     // — and only because the offscreen intermediates are float16 (an 8-bit intermediate would clamp it to 1).
@@ -551,20 +551,20 @@ struct ScreenSpaceEffect {
 
     // ── Gleam parameters (kind == Gleam) ──
     // A luminance-keyed diagonal sheen band (the marquee "shine") over the pixels the effect covers. The
-    // band leans along the axis d = uv.x + uv.y·slant; `sweep` is its centre on that axis and `width` its
+    // band leans along the axis d = uv.x + uv.y·slant; `sweep` is its center on that axis and `width` its
     // half-width (both UV units); `gain` is the multiplicative boost at the crest (0 = no effect). The boost
     // multiplies each pixel by its own brightness (plus a white lift scaled by that brightness), so bright
     // content catches the light and dark stays dark. The CPU mirror is retropp::applyGleam.
-    float sweep = 0.0f;   // band centre along the slant axis, UV
+    float sweep = 0.0f;   // band center along the slant axis, UV
     float width = 0.1f;   // band half-width, UV (> 0 — the falloff radius)
     float gain  = 0.0f;   // sheen boost at the crest — 0 = identity (the default: no effect)
     float slant = 0.35f;  // diagonal lean: axis = uv.x + uv.y·slant (0 = a vertical band)
 
     // ── ColorSaturation parameters (kind == ColorSaturation) ──
     // Pull each pixel toward its own luminance — a cross-channel grade ColorFill cannot express (ColorFill is
-    // per-channel affine + a mix toward a solid colour; saturation needs each channel drawn toward the pixel's
+    // per-channel affine + a mix toward a solid color; saturation needs each channel drawn toward the pixel's
     // OWN brightness). 255 = full saturation = the exact identity (the default — an unset effect is a no-op);
-    // 0 = greyscale; between = partial desaturation. Handed to the developer as a uint8, the same 0..255-maps-
+    // 0 = grayscale; between = partial desaturation. Handed to the developer as a uint8, the same 0..255-maps-
     // to-0..1 surface as an Rgba8 channel — the platform normalizes ÷255 for the shader (saturationParams). The
     // CPU mirror is retropp::applySaturation; the luma weights match Gleam's (one luminance authority).
     std::uint8_t saturation = 255;
@@ -580,14 +580,14 @@ struct ScreenSpaceEffect {
     // (0 = every pixel blooms, the same 0..255-maps-to-0..1 surface as an Rgba8 channel); `intensity` is
     // the glow strength (0 = the exact identity — the default renders no glow; 255 = full). The glow adds
     // light without a clamp, so on the float16 chain a hot halo can exceed 1 until the final blit — the
-    // fillIntensity headroom behaviour. The CPU mirror is retropp::applyBrightpass + gaussianKernelWeight.
+    // fillIntensity headroom behavior. The CPU mirror is retropp::applyBrightpass + gaussianKernelWeight.
     float        radius    = 0.0f;
     std::uint8_t threshold = 0;
     std::uint8_t intensity = 0;
 
     // ── Glow parameters (kind == Glow) ──
-    // Glow is Bloom's authored-colour sibling: where Bloom radiates the source's OWN light, Glow radiates a
-    // colour you PICK. It consults NO fields of its own — it reuses `radius` (the aura reach), `threshold`
+    // Glow is Bloom's authored-color sibling: where Bloom radiates the source's OWN light, Glow radiates a
+    // color you PICK. It consults NO fields of its own — it reuses `radius` (the aura reach), `threshold`
     // (the emission floor; 0 = the whole silhouette emits, dark art included), `intensity` (the strength; 0 =
     // the exact identity default), and `fill` × `fillIntensity` (the authored tint — fill_rgb/255 · fillIntensity
     // per channel; > 1 is an HDR-hot aura on the float16 chain, the ColorFill headroom). The blurred emission
@@ -596,11 +596,11 @@ struct ScreenSpaceEffect {
     // gaussianKernelWeight + retropp::applyGlowAdd.
 
     // ── Swirl parameters (kind == Swirl) ──
-    // An angular twist about a centre — a whirlpool. Ripple's angular sibling: where Ripple pushes the
-    // sample ALONG the radius (concentric rings), Swirl carries it AROUND the centre. It consults NO fields
-    // of its own — it reuses `center` (the swirl centre), `radius` (the disc extent), `amplitude` (the
+    // An angular twist about a center — a whirlpool. Ripple's angular sibling: where Ripple pushes the
+    // sample ALONG the radius (concentric rings), Swirl carries it AROUND the center. It consults NO fields
+    // of its own — it reuses `center` (the swirl center), `radius` (the disc extent), `amplitude` (the
     // turn) and `phase` (added to `amplitude`, so advancing it spins the vortex). Content within `radius`
-    // of `center` rotates by amplitude + phase at the exact centre, easing smoothly to nothing at the rim;
+    // of `center` rotates by amplitude + phase at the exact center, easing smoothly to nothing at the rim;
     // content outside the disc is untouched.
     //
     // `amplitude` and `phase` are DEGREES — the platform's angle unit (Transform::rotation takes degrees too),
@@ -711,11 +711,11 @@ struct FrozenSpriteMask;
 // the quad's top-left — so a sprite that sets neither places by its top-left corner. `tile` is the top-left atlas cell
 // (8px grid); the sprite reads a size.width × size.height pixel rectangle from the atlas at that
 // cell's pixel origin (so a 16×16 sprite spans a 2×2 cell block laid out contiguously). `atlas` names
-// the sprite's own sheet and `palette` the palette it colours through — both directly, per-sprite.
+// the sprite's own sheet and `palette` the palette it colors through — both directly, per-sprite.
 // Identity is the named fields — no packed attribute byte.
 //
 // `origin` and `pivot` are two QUAD-space points doing two jobs: `x/y` place the `origin` (the
-// placement handle), and `transform` spins about the `pivot` (the transform centre). A local quad point
+// placement handle), and `transform` spins about the `pivot` (the transform center). A local quad point
 // p lands at (x, y) + (pivot − origin) + transform·(p − pivot). At identity this cancels to
 // (x, y) + (p − origin) — the pivot drops out, so a pivot change never moves an untransformed sprite;
 // under any origin-fixing transform (the plain rotation(θ) / scale / skew forms) the pivot's own image
@@ -731,7 +731,7 @@ struct FrozenSpriteMask;
 // `transform` is the sprite's own geometric transform, applied in SPRITE-LOCAL pixel space — the
 // [0, size.width] × [0, size.height] rectangle of the sprite's own art — about `pivot` (a pivot baked
 // into the matrix by a named constructor still composes within the transform itself; the `pivot` field
-// is the spin centre `x/y` do NOT move — placement is `origin`). It composes with the layer's own DrawLayer::transform: a sprite
+// is the spin center `x/y` do NOT move — placement is `origin`). It composes with the layer's own DrawLayer::transform: a sprite
 // quad goes sprite.transform first, then the layer transform, exactly as a tile layer's content does.
 // The identity default is a no-op (a plain axis-aligned quad). `flipX`/`flipY` and `rotation` are
 // TEXTURE ops (which source pixel is read), independent of the geometry: `rotation` rotates the art in
@@ -763,7 +763,7 @@ struct Sprite {
     AssetDimensions size    = AssetDimensions::GameBoy8x8;
     AtlasId         atlas{};           // which uploaded sheet this sprite draws from
     std::uint16_t   tile    = 0;       // top-left atlas cell within `atlas`
-    PaletteId       palette{};         // which uploaded palette colours it
+    PaletteId       palette{};         // which uploaded palette colors it
     float           alpha   = 1.0f;    // per-sprite opacity [0,1], default opaque. Composes MULTIPLICATIVELY under
                                        // the layer: effective = palette α × this α × layer α (the layer is the outer
                                        // envelope — a sprite can make itself more transparent than its layer, never
@@ -789,7 +789,7 @@ struct Sprite {
     bool          flipY     = false;
     Rotation      rotation  = Rotation::None;  // 90° texture rotation; composes with the flips
     Transform     transform{};         // per-sprite geometric transform, sprite-local space, about `pivot`
-    Point         pivot{};             // transform centre — the point `transform` spins about, QUAD-space px; {0,0} = top-left
+    Point         pivot{};             // transform center — the point `transform` spins about, QUAD-space px; {0,0} = top-left
     Point         origin{};            // placement handle — the QUAD-space point `x/y` place, QUAD-space px; {0,0} = top-left
     std::span<const Anchor> anchors;   // published art-space points; game-owned (empty = none)
 
@@ -807,7 +807,7 @@ struct Sprite {
     // sheen, ColorSaturation desaturates, Transparency punches a shape-hole, RowDisplacement / Ripple re-read the art at a displaced
     // within-sprite position (out-of-art reads are transparent under the default Blank edge, or clamp to the
     // art border under Stretch). Displacing kinds accumulate their within-art displacement and resolve it
-    // before the art is read; the colour kinds then apply to the read colour in order — so a colour effect and
+    // before the art is read; the color kinds then apply to the read color in order — so a color effect and
     // a displacing effect compose cleanly in one pass. A displacing effect's `amplitude` and `center` are in
     // the sprite's OWN art pixels (the re-read space), not the viewport pixels they mean on a layer; a sprite
     // that displaces its art renders on the crisp viewport grid (like a transformed sprite).
@@ -817,7 +817,7 @@ struct Sprite {
     // the silhouette (the art's alpha coverage). A Below sprite draws no art of its own — the art is purely
     // the coverage mask, so its alpha sets the lens strength (an opaque mask fully replaces the scene on the
     // silhouette; a partial-alpha mask blends the distortion with the original scene). A Below displacement's
-    // amplitude / centre are VIEWPORT px (it distorts the scene), where a Layer displacement reads them as the
+    // amplitude / center are VIEWPORT px (it distorts the scene), where a Layer displacement reads them as the
     // sprite's own art px. Every effect kind is first-class at Below scope: ColorFill / Gleam / ColorSaturation
     // / RowDisplacement / Ripple grade or distort the scene whole-silhouette, a Below Transparency scales the lens strength
     // (blending the grade back toward the untouched scene), a Below Custom runs a game shader over the scene
@@ -882,13 +882,13 @@ struct Sprite {
                      static_cast<float>(y) + py + transform.applyY(lx, ly)};
     }
 
-    // The centre of the sprite, in the space you ask for. Space::Quad = {size.width / 2, size.height / 2},
+    // The center of the sprite, in the space you ask for. Space::Quad = {size.width / 2, size.height / 2},
     // the raw art midpoint — the transform-input space, so this is the one you place and spin by:
     //   s.origin = s.center(Space::Quad);   // place the sprite by its middle
     //   s.pivot  = s.center(Space::Quad);   // spin it about its middle
-    // Space::Layer = that midpoint mapped through transform + placement (toLayer) — the centre of the
-    // sprite AS DRAWN, what a consumer reads to sit something at the sprite's visible centre. Feeding a
-    // Space::Layer centre back into origin/pivot is circular: the Layer centre is computed through them.
+    // Space::Layer = that midpoint mapped through transform + placement (toLayer) — the center of the
+    // sprite AS DRAWN, what a consumer reads to sit something at the sprite's visible center. Feeding a
+    // Space::Layer center back into origin/pivot is circular: the Layer center is computed through them.
     [[nodiscard]] constexpr Point center(Space space) const noexcept {
         const Point q{static_cast<float>(size.width) * 0.5f, static_cast<float>(size.height) * 0.5f};
         return space == Space::Quad ? q : toLayer(q);
@@ -948,7 +948,7 @@ struct SpriteContent {
 //          is set — see below); otherwise H is the exact forward map.
 //   inv0/inv1/inv2 = the screen→unit INVERSE homography (the true, un-inflated screen-pixel → unit-quad
 //          map). The fragment reads it on the analytic branch to decide, per viewport cell, whether the
-//          cell centre lies inside the true quad and which sprite texel it reads. Stored for EVERY sprite
+//          cell center lies inside the true quad and which sprite texel it reads. Stored for EVERY sprite
 //          (the record is uniform and roundtrip-testable) even though only an analytic sprite consults it.
 //   attr = (tile, atlasPalette, flags, size): `atlasPalette` packs the sprite's atlas handle (low 16,
 //          an AtlasId, indexing the global atlas-region table) and its palette flat offset (high 16, a
@@ -994,7 +994,7 @@ inline constexpr std::size_t kSpriteRegionMaxPoints = 8;
 // One packed sprite-effect step the sprite fragment reads from the per-frame sprite-effect record store.
 // A sprite's `effects` chain and its `regions` flatten into a contiguous run of these (addressed by
 // GpuSprite.fxOffset / fxCount). Each step is EITHER a whole-silhouette chain effect (isRegion bit clear:
-// the kind's colour transform applies to every visible sprite pixel, in list order) OR one region effect
+// the kind's color transform applies to every visible sprite pixel, in list order) OR one region effect
 // (isRegion bit set: gated by a quad-space shape ∩ the sprite's silhouette, graded over the sprite's pixel
 // by the region's own alpha + blend). 160 bytes, ten 16-byte (float4/uint4) chunks so the std430
 // StructuredBuffer layout is unambiguous across every backend; the CPU packer (buildSpriteFxRecords) and
@@ -1006,9 +1006,9 @@ struct SpriteFxRecord {
     std::uint32_t pointCount;  // region shape vertex count (0 = whole silhouette: a chain step, or an empty-shape region)
     float alpha;               // owning region's container alpha (1.0 for a chain step)
     float radius;              // region shape SDF radius, quad px (0 for a chain step); a Ripple chain step reuses
-                               //   this idle lane for its centre X (art px), a Glow chain step for its tint R
+                               //   this idle lane for its center X (art px), a Glow chain step for its tint R
     float strokeWidth;         // region shape stroke-band width, quad px (0 = filled); a Ripple chain step reuses
-                               //   this idle lane for its centre Y (art px), a Glow chain step for its tint G
+                               //   this idle lane for its center Y (art px), a Glow chain step for its tint G
     float pad0;                // a Ripple chain step reuses this idle lane for its decay, a Glow chain step for
                                //   its tint B
     float params[4];           // resolved kind params: ColorFill (r,g,b, 0) already ×fillIntensity, normalized;
@@ -1016,7 +1016,7 @@ struct SpriteFxRecord {
                                //   normalized 0..1; Transparency (stencilMode, feather, 0, 0);
                                //   RowDisplacement (amplitude, frequency, phase, axis); Ripple (amplitude,
                                //   frequency, phase, 0); Bloom / Glow (radius art px, threshold, intensity,
-                               //   invNorm). Displacing amplitudes/centres are the sprite's own art px.
+                               //   invNorm). Displacing amplitudes/centers are the sprite's own art px.
     float invRow0[4];          // region shape transform INVERSE, row 0 (m00,m01,m02, _); identity for a chain step
     float invRow1[4];          // row 1
     float invRow2[4];          // row 2 (perspective terms in .0/.1/.2)
@@ -1037,14 +1037,14 @@ inline constexpr std::uint32_t kSpriteAnalyticFlag = 16u;
 
 // The has-displacement flag — bit 5 of GpuSprite::flags. Set when the sprite carries a displacing chain
 // effect (RowDisplacement / Ripple). Only such a sprite runs the fragment's displacement pre-pass; a plain or
-// colour-only sprite skips the record scan entirely, keeping its read at the plain coordinate.
+// color-only sprite skips the record scan entirely, keeping its read at the plain coordinate.
 inline constexpr std::uint32_t kSpriteHasDisplacementFlag = 32u;
 
 // Bit 6 of GpuSprite::flags is unused.
 
 // Which chain record carries the emission, in bits 8..15 of an EMISSION record's flags word. The renderer
 // copies a glowing sprite's art record, ORs the index in, and draws the copy through the sprite-emission
-// pipeline: records before that index run as ordinary colour steps feeding the emission, and the record AT
+// pipeline: records before that index run as ordinary color steps feeding the emission, and the record AT
 // it resolves the emission itself. The art pipeline masks every field it reads, so these bits are invisible
 // to it. Eight bits is a chain of 256 steps — far past what an effect list is ever authored with.
 inline constexpr std::uint32_t kSpriteEmissionIndexShift = 8u;
@@ -1076,7 +1076,7 @@ namespace detail {
 [[nodiscard]] constexpr float absf(float v) noexcept { return v < 0.0f ? -v : v; }
 
 // The unit-space inflation a transformed sprite's forward quad needs so that, when rasterized at output
-// resolution, it covers every output pixel whose VIEWPORT-cell centre lies inside the true quad — the
+// resolution, it covers every output pixel whose VIEWPORT-cell center lies inside the true quad — the
 // fragment then trims back to exact coverage. `ok == false` is the degenerate fallback: a corner behind
 // the projection (weight ≤ 0), a singular corner Jacobian, or an inflated corner that crosses the horizon
 // — the sprite falls back to the smooth quad path.
@@ -1180,7 +1180,7 @@ struct SpriteDisplaceBound {
 // `layerTransform` the per-layer DrawLayer::transform. `grid` selects the evaluation grid: on the
 // Viewport grid (the crisp default) a geometrically-transformed sprite renders through the fragment's
 // analytic coverage branch — the forward quad is inflated a thin margin so it covers every output pixel
-// whose viewport-cell centre lies in the true quad, and the screen→unit inverse (the inv rows) lets the
+// whose viewport-cell center lies in the true quad, and the screen→unit inverse (the inv rows) lets the
 // fragment trim to exact per-viewport-cell coverage; on the Output grid (and for any untransformed
 // sprite) the plain quad path renders it with smooth sub-pixel placement.
 // A sprite whose chain re-reads beyond the sampled texel (a RowDisplacement / Ripple / Swirl displacement)
@@ -1314,9 +1314,9 @@ struct SpriteDisplaceBound {
 // The coverage decision for one fragment of a sprite on the analytic (Viewport-grid) branch — the CPU
 // mirror of the sprite fragment shader, the makeGpuSprite / packTileCell mirror discipline. Given the
 // sprite's screen→unit inverse (the GpuSprite inv rows), a fragment's VIEWPORT-space position, and the
-// sprite pixel size, it snaps to the viewport-cell centre, maps that through the inverse (perspective
+// sprite pixel size, it snaps to the viewport-cell center, maps that through the inverse (perspective
 // divide; a weight ≤ 0 is behind the projection ⇒ not covered), applies the half-open coverage test
-// 0 ≤ u,v < 1, and reads the cell-centre texel. `covered == false` ⇒ the fragment discards (px/py are
+// 0 ≤ u,v < 1, and reads the cell-center texel. `covered == false` ⇒ the fragment discards (px/py are
 // meaningless). Not constexpr: std::floor is not core-constant until C++23 (the snapFragToCellCenter
 // concession).
 struct SpriteCellSample {
@@ -1329,7 +1329,7 @@ struct SpriteCellSample {
 [[nodiscard]] inline SpriteCellSample
 sampleSpriteCell(const Transform& inverse, float fragViewportX, float fragViewportY,
                  int width, int height) noexcept {
-    const float cx = std::floor(fragViewportX) + 0.5f;   // viewport-cell centre
+    const float cx = std::floor(fragViewportX) + 0.5f;   // viewport-cell center
     const float cy = std::floor(fragViewportY) + 0.5f;
     const float cw = inverse.m20 * cx + inverse.m21 * cy + inverse.m22;
     if (cw <= 0.0f) return SpriteCellSample{};           // behind the projection
@@ -1420,7 +1420,7 @@ struct FrameDrawState {
 }
 
 // A texel coordinate in the flat palette store. The store is an arbitrary-size flat array
-// of colours wrapped `storeWidth` wide into a 2-D texture.
+// of colors wrapped `storeWidth` wide into a 2-D texture.
 struct PaletteTexel {
     std::uint32_t x = 0;
     std::uint32_t y = 0;
@@ -1428,7 +1428,7 @@ struct PaletteTexel {
 };
 
 // CPU mirror of the tile + sprite fragment shaders' palette lookup: a palette's flat offset plus a
-// colour index give a flat position into the store, which wraps to the texel (flat % W, flat / W).
+// color index give a flat position into the store, which wraps to the texel (flat % W, flat / W).
 // The store being flat (not a row-per-palette) is what makes palettes arbitrary size — a palette may
 // straddle rows, and the flat space is bounded only by the store texture's capacity. Pure + constexpr
 // so the flat→2-D addressing stays identical to the shaders (the packTileCell / sampleTilemap mirror

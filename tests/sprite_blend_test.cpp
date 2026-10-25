@@ -9,9 +9,9 @@
 //      layer splits at every blend change, in draw (z) order, so within-layer z survives the split.
 //
 //   2. The composite (device-backed, via captureViewport). A solid non-Normal sprite over an opaque
-//      scene is compared, per covered pixel, against applyBlendMode(scene, {spriteColour, 1}, mode) — the
-//      spriteColour read from a Normal capture of the same sprite (the mirror-from-capture method
-//      colour_parity_layer_test uses), so palette→float→8-bit rounding cancels. Two invariants ride
+//      scene is compared, per covered pixel, against applyBlendMode(scene, {spriteColor, 1}, mode) — the
+//      spriteColor read from a Normal capture of the same sprite (the mirror-from-capture method
+//      color_parity_layer_test uses), so palette→float→8-bit rounding cancels. Two invariants ride
 //      along: OFF the sprite the frame is byte-identical to the no-sprite scene (run-splitting never
 //      leaks), and a Normal sprite is byte-identical to a sprite that sets no blend at all (the default
 //      path is untouched — the byte-identity guarantee the goldens also carry). The exact-value cells use
@@ -178,7 +178,7 @@ int chDelta(Rgba8 a, Rgba8 b) {
                      std::abs(int(a.b) - int(b.b)), std::abs(int(a.a) - int(b.a))});
 }
 
-// A 4-colour opaque tile background filling the viewport (the golden harness's deterministic art) — the
+// A 4-color opaque tile background filling the viewport (the golden harness's deterministic art) — the
 // scene a sprite blends over. `keep` outlives the returned layer's span.
 struct Art { AtlasId atlas{}; PaletteId palette{}; };
 Art uploadBgArt(Renderer& r) {
@@ -204,22 +204,22 @@ DrawLayer bgLayer(std::int32_t z, const Art& art, std::vector<TileCell>& keep) {
     return l;
 }
 
-// A solid opaque 8×8 sprite sheet (one index) + a palette carrying `colour` at that index, so a
-// GameBoy8x8 sprite (tile 0) renders a flat, known colour.
-Art uploadSolid(Renderer& r, Rgba8 colour) {
+// A solid opaque 8×8 sprite sheet (one index) + a palette carrying `color` at that index, so a
+// GameBoy8x8 sprite (tile 0) renders a flat, known color.
+Art uploadSolid(Renderer& r, Rgba8 color) {
     std::array<std::uint8_t, 8 * 8> idx{};  // all index 0
     const AtlasId atlas = r.uploadAtlas(idx.data(), 8, 8).atlasId;  // opaque
-    const std::array<Rgba8, 4> pal{{colour, colour, colour, colour}};
+    const std::array<Rgba8, 4> pal{{color, color, color, color}};
     return {atlas, r.uploadPalette(std::span<const Rgba8>(pal))};
 }
 
 // The whole plain-layer matrix: a solid sprite of `blend` over the opaque background, checked per covered
-// pixel against applyBlendMode(scene, {spriteColour, 1}, blend) with the sprite colour read from a Normal
+// pixel against applyBlendMode(scene, {spriteColor, 1}, blend) with the sprite color read from a Normal
 // capture. OFF the sprite the frame is byte-identical to the background alone (run-splitting never leaks).
 void runPlainCell(SDL_GPUDevice* dev, const char* name, BlendMode mode) {
     Renderer r{dev, nullptr, ViewportResolution{kW, kH}};
     const Art  bg    = uploadBgArt(r);
-    const Art  solid = uploadSolid(r, Rgba8{110, 140, 190, 255});  // distinct from every bg colour
+    const Art  solid = uploadSolid(r, Rgba8{110, 140, 190, 255});  // distinct from every bg color
     std::vector<TileCell> c0, c1, c2;
 
     // Baseline: the background alone.
@@ -242,14 +242,14 @@ void runPlainCell(SDL_GPUDevice* dev, const char* name, BlendMode mode) {
     std::vector<Sprite> sN, sG;
     FrameDrawState fN = spriteScene(BlendMode::Normal, c1, sN);
     FrameDrawState fG = spriteScene(mode, c2, sG);
-    const std::vector<Rgba8> N = r.captureViewport(fN);  // Normal ⇒ the sprite's flat colour on coverage
+    const std::vector<Rgba8> N = r.captureViewport(fN);  // Normal ⇒ the sprite's flat color on coverage
     const std::vector<Rgba8> G = r.captureViewport(fG);  // the graded sprite
     ASSERT_EQ(N.size(), B.size());
     ASSERT_EQ(G.size(), B.size());
 
     int covered = 0, leaked = 0, graded = 0;
     for (std::size_t i = 0; i < B.size(); ++i) {
-        if (!exactEq(N[i], B[i])) {  // the sprite covers here (Normal replaced the bg with its flat colour)
+        if (!exactEq(N[i], B[i])) {  // the sprite covers here (Normal replaced the bg with its flat color)
             ++covered;
             const Vec4  want4 = applyBlendMode(norm(B[i]), Vec4{norm(N[i]).x, norm(N[i]).y, norm(N[i]).z, 1.0f}, mode);
             const Rgba8 want{quant(want4.x), quant(want4.y), quant(want4.z), quant(want4.w)};
@@ -341,22 +341,22 @@ TEST_F(SpriteBlend, IsolatedLayerGradesWithinLayerContent) {
     };
     std::vector<TileCell> cN, cG;
     std::vector<Sprite>   sN, sG;
-    FrameDrawState fN = scene(BlendMode::Normal,   cN, sN);  // B Normal ⇒ overlap shows B's flat colour
+    FrameDrawState fN = scene(BlendMode::Normal,   cN, sN);  // B Normal ⇒ overlap shows B's flat color
     FrameDrawState fG = scene(BlendMode::Multiply,  cG, sG);
     const std::vector<Rgba8> N = r.captureViewport(fN);
     const std::vector<Rgba8> G = r.captureViewport(fG);
 
     auto at = [&](int x, int y) -> std::size_t { return static_cast<std::size_t>(y) * kW + x; };
-    const Rgba8 aColour = N[at(17, 17)];  // an A-only pixel (inside A, outside B)
-    const Rgba8 bColour = N[at(22, 22)];  // an overlap pixel with B Normal ⇒ B's flat colour
-    ASSERT_GT(aColour.r + aColour.g + aColour.b, 0) << "A rendered black — scene setup wrong";
-    ASSERT_GT(bColour.r + bColour.g + bColour.b, 0) << "B rendered black — scene setup wrong";
+    const Rgba8 aColor = N[at(17, 17)];  // an A-only pixel (inside A, outside B)
+    const Rgba8 bColor = N[at(22, 22)];  // an overlap pixel with B Normal ⇒ B's flat color
+    ASSERT_GT(aColor.r + aColor.g + aColor.b, 0) << "A rendered black — scene setup wrong";
+    ASSERT_GT(bColor.r + bColor.g + bColor.b, 0) << "B rendered black — scene setup wrong";
 
     // Every overlap pixel, B multiplied over A within the layer's scratch.
     for (int y = 21; y < 23; ++y) {
         for (int x = 21; x < 23; ++x) {
-            const Vec4  want4 = applyBlendMode(norm(aColour), Vec4{norm(bColour).x, norm(bColour).y,
-                                                                   norm(bColour).z, 1.0f}, BlendMode::Multiply);
+            const Vec4  want4 = applyBlendMode(norm(aColor), Vec4{norm(bColor).x, norm(bColor).y,
+                                                                   norm(bColor).z, 1.0f}, BlendMode::Multiply);
             const Rgba8 want{quant(want4.x), quant(want4.y), quant(want4.z), quant(want4.w)};
             const Rgba8 got = G[at(x, y)];
             EXPECT_LE(chDelta(got, want), 2)
@@ -364,7 +364,7 @@ TEST_F(SpriteBlend, IsolatedLayerGradesWithinLayerContent) {
                 << int(got.g) << "," << int(got.b) << "  want " << int(want.r) << "," << int(want.g) << ","
                 << int(want.b);
             // And it genuinely graded — the overlap is not just B (which Normal would give).
-            EXPECT_GT(chDelta(got, bColour), 2) << "overlap equals B — the within-layer grade did nothing";
+            EXPECT_GT(chDelta(got, bColor), 2) << "overlap equals B — the within-layer grade did nothing";
         }
     }
 }

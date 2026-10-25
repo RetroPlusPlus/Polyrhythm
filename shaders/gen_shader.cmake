@@ -107,7 +107,7 @@ endif()
 #
 # The shader's main() is renamed (identifier only — its parameter/return semantics are legal and ignored
 # on a non-entry function) and a generated entry point wraps it: on the Viewport evaluation grid (uSnap,
-# the crisp default) the wrapper hands the shader the centre of the viewport cell its fragment falls in
+# the crisp default) the wrapper hands the shader the center of the viewport cell its fragment falls in
 # and records the fragment's true uv for sampleSource()'s displacement quantization — so an unmodified
 # custom shader evaluates exactly like the composeScale = 1 rasterization. On the Output grid the wrapper
 # passes the true uv through — smooth output-resolution evaluation, wholesale.
@@ -599,7 +599,7 @@ float4 main(float2 uv : TEXCOORD0) : SV_Target0 {
             # The batched entry point: the instanced quad hands three varyings (the frame-global uv, the
             # region's SDF spine, and its radius). It replicates the region gate exactly for the n≤2 shapes
             # (point-segment distance ≤ radius; a circle has p1 == p0) — discarding outside — then returns the
-            # shader body evaluated at the snapped cell centre. With a zero source bound, sampleSource() returns
+            # shader body evaluated at the snapped cell center. With a zero source bound, sampleSource() returns
             # 0 everywhere, so the body returns exactly its source-independent additive term D(uv); hardware
             # additive blending accumulates D onto the destination. The snap mirrors region_select.frag.
             set(_trampoline "

@@ -111,13 +111,13 @@ inline constexpr AssetDimensions AssetDimensions::Snes32x32{32, 32};
 inline constexpr AssetDimensions AssetDimensions::Snes64x64{64, 64};
 inline constexpr AssetDimensions AssetDimensions::Genesis32x32{32, 32};
 
-// Largest integer multiple of `viewport` that fits within `drawable`, centred, with the
+// Largest integer multiple of `viewport` that fits within `drawable`, centered, with the
 // leftover split into letterbox/pillarbox margins (the negative-margin case below). This
 // is the faithful default output scaling — integer-scale-to-fit + letterbox; the richer
 // scaling-mode vocabulary (fit / fullscreen / N×) lives in the later enhancement chain.
 //
 // Clamps the scale to a minimum of 1×: if the window is smaller than the viewport the
-// content is shown at 1× and the centred rect's origin goes negative (it overflows the
+// content is shown at 1× and the centered rect's origin goes negative (it overflows the
 // window) rather than collapsing to nothing. Degenerate (non-positive) sizes yield an
 // empty rect.
 [[nodiscard]] constexpr IntRect integerScaleToFitRect(PixelSize drawable,
@@ -135,7 +135,7 @@ inline constexpr AssetDimensions AssetDimensions::Genesis32x32{32, 32};
 }
 
 // The compose scale for a window drawable: the integer-scale-to-fit factor (composing at exactly the
-// drawn-region size, so the blit is a 1:1 centring copy — fill parity with the faithful path), clamped
+// drawn-region size, so the blit is a 1:1 centering copy — fill parity with the faithful path), clamped
 // to [1, maxScale]. The offscreen targets are sized at viewport × this. Above maxScale the blit
 // integer-upscales the remainder as usual. Pure / constexpr so the clamp is unit-testable without a
 // window; degenerate sizes yield 1. Mirrors integerScaleToFitRect's scale exactly (fit.width / viewport.width).

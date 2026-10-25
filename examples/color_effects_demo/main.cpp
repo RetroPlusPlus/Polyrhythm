@@ -1,8 +1,8 @@
-// Colour-effects demo — a runnable host that VISUALLY proves the whole-frame colour looks a retro game
+// Color-effects demo — a runnable host that VISUALLY proves the whole-frame color looks a retro game
 // reaches for (day/night, a cutscene flash, a fade, a glow, a cast shadow, a sunlit highlight) are ordinary
 // screen-space effects: a ColorFill paired with a blend mode and an alpha / fillIntensity, composited at
-// whatever scope the look wants. There is no bespoke "colour modifier" or "flash" member on the frame —
-// colour is the effect system, same as a ripple or a row-displacement.
+// whatever scope the look wants. There is no bespoke "color modifier" or "flash" member on the frame —
+// color is the effect system, same as a ripple or a row-displacement.
 //
 // It draws a small blocky landscape — a vertical sky→ground gradient with a sun and two trees, all tiles —
 // and grades it with effects that each read as a real lighting phenomenon:
@@ -61,13 +61,13 @@ constexpr float kPi = 3.14159265358979323846f;
 // The demo's input vocabulary: the two transient one-shots plus a dev key.
 enum class Action : std::uint8_t { Flash, Fade, Fullscreen };
 
-// The atlas is one solid tile per palette colour: tile t is 8×8 of palette index t, so a cell picks its
-// colour by selecting a TILE (the proven scene pattern). Tiles / palette indices:
+// The atlas is one solid tile per palette color: tile t is 8×8 of palette index t, so a cell picks its
+// color by selecting a TILE (the proven scene pattern). Tiles / palette indices:
 //   1..8 sky (deep top → light horizon) · 9 ground near · 10 ground far · 11 sun · 12 sun core ·
 //   13 tree canopy · 14 trunk   (0 is unused/black)
 constexpr std::uint16_t kSky0 = 1, kGroundNear = 9, kGroundFar = 10, kSun = 11, kSunCore = 12,
                         kCanopy = 13, kTrunk = 14;
-constexpr int kColours = 15;
+constexpr int kColors = 15;
 
 [[nodiscard]] std::uint8_t u8(float v) {
     const float c = v < 0.0f ? 0.0f : (v > 1.0f ? 1.0f : v);
@@ -75,13 +75,13 @@ constexpr int kColours = 15;
 }
 
 // A whole-viewport region (no shape) carrying one ColorFill, composited over the scene with `mode` at
-// `alpha`. The building block for every whole-frame colour look: day/night (Multiply), flash/fade (Normal).
+// `alpha`. The building block for every whole-frame color look: day/night (Multiply), flash/fade (Normal).
 // `fillIntensity` scales the fill past 1 (default 1) — a Multiply fill above 1 brightens the scene.
-[[nodiscard]] Region wholeFrameFill(Rgba8 colour, BlendMode mode, float alpha = 1.0f,
+[[nodiscard]] Region wholeFrameFill(Rgba8 color, BlendMode mode, float alpha = 1.0f,
                                     float fillIntensity = 1.0f) {
     return Region{.key     = "fill",
                   .effects = {ScreenSpaceEffect{.kind          = ScreenSpaceEffectKind::ColorFill,
-                                                .fill          = colour,
+                                                .fill          = color,
                                                 .fillIntensity = fillIntensity}},
                   .alpha = alpha,
                   .blend = mode};
@@ -90,12 +90,12 @@ constexpr int kColours = 15;
 // A region carrying one ColorFill over `shape`, composited with `mode`. The in-scene lighting: a glow disc
 // (Multiply at fillIntensity > 1 → a multiplicative bloom), a sunbeam wedge (Add → brighten), a shadow oval
 // (Multiply → darken). `fillIntensity` scales the fill past 1 (default 1).
-[[nodiscard]] Region shapedFill(ShapePoints shape, Rgba8 colour, BlendMode mode,
+[[nodiscard]] Region shapedFill(ShapePoints shape, Rgba8 color, BlendMode mode,
                                 float fillIntensity = 1.0f) {
     return Region{.key     = "shapedFill",
                   .shape   = std::move(shape),
                   .effects = {ScreenSpaceEffect{.kind          = ScreenSpaceEffectKind::ColorFill,
-                                                .fill          = colour,
+                                                .fill          = color,
                                                 .fillIntensity = fillIntensity}},
                   .blend = mode};
 }
@@ -105,8 +105,8 @@ constexpr int kColours = 15;
 int main() {
 
     const EngineConfig config{
-        .identity = {.organization = "Retro++", .application = "Colour Effects Demo"},
-        .window = {.title = "Polyrhythm — colour-effects demo (day/night · flash · fade · glow · shadow · highlight, all effects)"}};
+        .identity = {.organization = "Retro++", .application = "Color Effects Demo"},
+        .window = {.title = "Polyrhythm — color-effects demo (day/night · flash · fade · glow · shadow · highlight, all effects)"}};
     EngineConfig::setActive(config);
     SteadyClock clock;
     RunLoop     loop{clock};
@@ -120,19 +120,19 @@ int main() {
     };
     platform.actions(map);
 
-    // Atlas: kColours tiles, tile t = 8×8 of index t. One multi-colour palette holds the scene colours; a
-    // cell selects its colour by tile (every cell names the same `pal`). This is the standard scene pattern.
-    std::array<std::uint8_t, static_cast<std::size_t>(kColours) * 8 * 8> atlasPx{};
-    for (int t = 0; t < kColours; ++t)
+    // Atlas: kColors tiles, tile t = 8×8 of index t. One multi-color palette holds the scene colors; a
+    // cell selects its color by tile (every cell names the same `pal`). This is the standard scene pattern.
+    std::array<std::uint8_t, static_cast<std::size_t>(kColors) * 8 * 8> atlasPx{};
+    for (int t = 0; t < kColors; ++t)
         for (int y = 0; y < 8; ++y)
             for (int x = 0; x < 8; ++x)
-                atlasPx[(static_cast<std::size_t>(y) * kColours + t) * 8 + x] = static_cast<std::uint8_t>(t);
+                atlasPx[(static_cast<std::size_t>(y) * kColors + t) * 8 + x] = static_cast<std::uint8_t>(t);
     // Two uploads of the same art: opaque (the background) and with index 0 declared transparent (the tree
     // layer's non-tree cells, tile 0, become holes so the background shows through).
-    const AtlasId atlas     = renderer.uploadAtlas(atlasPx.data(), kColours * 8, 8).atlasId;
-    const AtlasId holeAtlas = renderer.uploadAtlas(atlasPx.data(), kColours * 8, 8, TransparentIndices::of({0})).atlasId;
+    const AtlasId atlas     = renderer.uploadAtlas(atlasPx.data(), kColors * 8, 8).atlasId;
+    const AtlasId holeAtlas = renderer.uploadAtlas(atlasPx.data(), kColors * 8, 8, TransparentIndices::of({0})).atlasId;
 
-    const std::array<Rgba8, kColours> palette{{
+    const std::array<Rgba8, kColors> palette{{
         {0, 0, 0},                                                        // 0 transparent marker (never shown)
         {28, 40, 92}, {40, 58, 120}, {54, 80, 150}, {70, 104, 176},       // 1..4 sky deep → mid
         {92, 132, 196}, {120, 160, 212}, {150, 186, 226}, {184, 208, 236},// 5..8 sky mid → light horizon
@@ -146,7 +146,7 @@ int main() {
     // sun) on one layer; the TREES on a layer above it (transparent elsewhere). The shadow is a per-layer
     // region on the background, so the tree layer draws over it. Each cell names its own sheet + palette
     // directly: the background cells draw from `atlas`, the tree cells from `holeAtlas` (index-0 holes), both
-    // coloured through `pal`.
+    // colored through `pal`.
     std::vector<TileCell> bgCells(static_cast<std::size_t>(kMapW) * kMapH,
                                   TileCell{.atlas = atlas, .tile = 0, .palette = pal});
     // default tile 0 from holeAtlas = transparent (index-0 hole) everywhere a tree cell is not placed
@@ -165,7 +165,7 @@ int main() {
         for (int x = 0; x < kMapW; ++x)
             bgPut(x, y, y < kGroundRow ? static_cast<std::uint16_t>(kSky0 + (y * 7) / (kGroundRow - 1))
                                        : (y < kGroundRow + 2 ? kGroundFar : kGroundNear));
-    constexpr int sunCx = 16, sunCy = 4;  // centre cell → px (132, 36)
+    constexpr int sunCx = 16, sunCy = 4;  // center cell → px (132, 36)
     for (int y = sunCy - 2; y <= sunCy + 2; ++y)
         for (int x = sunCx - 2; x <= sunCx + 2; ++x)
             if ((x - sunCx) * (x - sunCx) + (y - sunCy) * (y - sunCy) <= 5) bgPut(x, y, kSun);
@@ -260,7 +260,7 @@ int main() {
         renderer.renderFrame(frame);
     });
 
-    std::printf("colour-effects demo — a sky→ground landscape graded by effects: a slow day/night Multiply "
+    std::printf("color-effects demo — a sky→ground landscape graded by effects: a slow day/night Multiply "
                 "that brightens past base at midday (fillIntensity > 1), a sun glow (Multiply exposure bloom), "
                 "a tree shadow (Multiply), a sunbeam (Add), and whole-frame flash + fade — all ColorFill + a "
                 "blend mode + alpha / fillIntensity.\n");

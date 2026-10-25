@@ -392,7 +392,7 @@ TEST(DriverHostingSystem, WritingAReadOnlySlotThrows) {
 
 // ── Restart ─────────────────────────────────────────────────────────────────────────────────────
 //
-// A console reset is "clear the driver's RAM, then initialise" — and a driver's own init entry
+// A console reset is "clear the driver's RAM, then initialize" — and a driver's own init entry
 // usually does not clear that RAM, the game's startup does. restart() performs the driver's declared
 // .init again, which is the gesture that DOES both, so a game reproducing a reset says this rather
 // than reproducing the routine's effects a byte at a time.
@@ -555,7 +555,7 @@ TEST(DriverHostingSystem, SystemStopDoesNotCloseTheDriver) {
     EXPECT_GT(nonSilentCount(afterStop), std::size_t{100}) << "the driver stopped producing after stop()";
 }
 
-// close() releases the registration: the same driver can be hosted again afterwards. The one-machine-per-
+// close() releases the registration: the same driver can be hosted again afterward. The one-machine-per-
 // registration rule is about machines that are live, not about ids that have ever been used. The second
 // machine also takes the gestures while the first one finishes fading — a verb never lands on a voice on
 // its way out.

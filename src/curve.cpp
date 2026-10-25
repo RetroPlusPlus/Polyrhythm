@@ -150,7 +150,7 @@ Curve Curve::throughPoints(std::span<const Vec2> pts, bool closed) {
     const std::size_t n = pts.size();
     if (n < 2) return out;  // need at least two points to form a span
 
-    // Neighbour access with endpoint handling: wrap for closed, reflect a phantom point for open.
+    // Neighbor access with endpoint handling: wrap for closed, reflect a phantom point for open.
     const auto P = [&](std::ptrdiff_t k) -> Vec2 {
         const std::ptrdiff_t cnt = static_cast<std::ptrdiff_t>(n);
         if (closed) {

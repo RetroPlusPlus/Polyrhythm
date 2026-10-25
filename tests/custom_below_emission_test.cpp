@@ -171,7 +171,7 @@ protected:
     }
 };
 
-// An 8×8 solid of `colour` — a single-tile atlas whose one 8×8 tile is index 0, and a palette of all `colour`.
+// An 8×8 solid of `color` — a single-tile atlas whose one 8×8 tile is index 0, and a palette of all `color`.
 struct Art { AtlasId atlas{}; PaletteId palette{}; };
 Art uploadSolid(Renderer& r, Rgba8 colour) {
     std::array<std::uint8_t, 8 * 8> idxs{};   // all index 0
@@ -210,7 +210,7 @@ FrameDrawState lensScene(const Art& emitter, const Art& lensArt, Scene& keep, co
     return f;
 }
 
-// The centre of the lens silhouette, and a point well outside it.
+// The center of the lens silhouette, and a point well outside it.
 int lensCX() { return kLensX + 4; }
 int lensCY() { return kLensY + 4; }
 

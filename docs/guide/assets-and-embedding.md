@@ -51,7 +51,7 @@ Each ingestible family has the same pair of forms. They differ only in what you 
   nothing is baked or copied. It is the escape hatch for a resource whose path you only know at runtime
   (read/assemble/decode it yourself, then hand over the bytes).
 - **Two families lack a symmetric bytes form.** A **palette image** has none — a palette is already
-  buildable from colour data, so a runtime palette PNG composes the primitives
+  buildable from color data, so a runtime palette PNG composes the primitives
   (`uploadPalette(slicePaletteImage(loadPngFromMemory(bytes)))`) instead. And the **audio** bytes form
   (`uploadAudio`) is **chiptune only** — it always registers chiptune bytecode; a PCM track has no bytes
   form (register it by path, or decode + stream it yourself).
@@ -91,7 +91,7 @@ The effective policy is resolved by precedence (`resolveAssetPolicy`):
    | `loadAtlas`       | atlas image                            | `LoadFromPath` | atlases are the most likely copyright surface |
    | `loadImage`       | truecolor image                        | `LoadFromPath` | an image is art, the copyright surface, as an atlas is |
    | `loadMapPng`      | map PNG                                 | `Embed`        | bespoke build-time index data, not a shippable asset |
-   | `loadPaletteImage`| palette image (colour PNG)              | `Embed`        | bespoke build-time colour data, like a map PNG |
+   | `loadPaletteImage`| palette image (color PNG)              | `Embed`        | bespoke build-time color data, like a map PNG |
    | `registerAudio`   | chiptune (`.asm`)                       | `Embed`        | a driver is a few hundred bytes — assembled to bytecode at build, only bytecode ships |
    | `registerAudio`   | PCM (`.wav` / `.ogg` / `.flac` / `.mp3`) | `LoadFromPath` | a multi-MB track streams from disk; bytes are never baked unless you ask |
    | `registerRoutine` | VM routine (`.asm`)                     | `Embed`        | assembled to bytecode at build, only bytecode ships |
@@ -120,7 +120,7 @@ on their own. See [audio.md](audio.md#mixing-byte-images-and-path-images-in-one-
 > **Write the policy as a literal `AssetPolicy::…` token at the call site — not through a variable.** The
 > build scan that decides what to bake versus copy is **textual**: it reads the policy token directly out of
 > the call. Pass the policy through a variable, a `constexpr` constant, a type alias, or any indirection and
-> the scan can't see it, so it falls back to the **per-type default**. The runtime still honours the value
+> the scan can't see it, so it falls back to the **per-type default**. The runtime still honors the value
 > you passed (an `Embed` whose bytes were never baked falls back to a disk read), so it doesn't crash: a
 > `loadAtlas` you meant to `Embed` gets **copied** beside the binary instead of baked in. The fallback logs
 > a warning naming the path, which is the only signal you get — the program runs, and the read fails only
@@ -291,13 +291,13 @@ call with the same policy argument bakes or ships the `.asm` the same way.
 Every form listed here is realized: atlas images, truecolor images, map PNGs, palette images, chiptune and PCM audio, VM
 routines, and data assets all resolve their policy and embed-or-load today. A PCM track decodes and
 streams on an `AudioKind::Pcm` system (see [audio.md](audio.md)); a palette image is embedded/loaded and
-sliced into a palette (see [tiles-and-colour.md](tiles-and-colour.md)); a data asset is handed back as
+sliced into a palette (see [tiles-and-color.md](tiles-and-color.md)); a data asset is handed back as
 bytes and interpreted by the game.
 
 ## Related
 
 - [images-and-transparency.md](images-and-transparency.md) — `loadAtlas` / `loadPng` and atlas slicing.
-- [tiles-and-colour.md](tiles-and-colour.md) — `loadPaletteImage` / `uploadPalette` and the colour model.
+- [tiles-and-color.md](tiles-and-color.md) — `loadPaletteImage` / `uploadPalette` and the color model.
 - [tilemaps.md](tilemaps.md) — the map-PNG → `TileCatalog` → tile-layer pipeline.
 - [vm-and-routines.md](vm/vm-and-routines.md) — the `registerRoutine` / `uploadRoutine` API and the VM.
 - [audio.md](audio.md) — registering and cueing audio (`registerAudio`, `AudioLibrary`, `AudioSystem`).

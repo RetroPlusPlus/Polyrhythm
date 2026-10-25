@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Author Polterball's indexed-PNG art: a maze-tile sheet, a sprite sheet, and a HUD font sheet.
 
-All three are colortype-3 (indexed) PNGs — the pixels are palette INDICES, the colour comes from
-palettes the demo uploads and SELECTS per cell / per sprite (so one ghost shape recolours to each
-ghost's colour AND to the frightened blue, one wall block recolours hard vs soft, and the power
+All three are colortype-3 (indexed) PNGs — the pixels are palette INDICES, the color comes from
+palettes the demo uploads and SELECTS per cell / per sprite (so one ghost shape recolors to each
+ghost's color AND to the frightened blue, one wall block recolors hard vs soft, and the power
 pellet pulses by palette selection alone). Index 0 is transparent on the sprite sheet (the sprite
 path discards it) and "the dark background" on the tile/font sheets (the tile path draws entry 0).
 The PNGs carry a neutral viewable PLTE; the demo overrides it with its own palettes.
@@ -90,7 +90,7 @@ def _hard_block() -> list[list[int]]:
 
 def _soft_block() -> list[list[int]]:
     """The breakable wall: the hard slab minus the seam, with a jagged diagonal crack (index 3) and a
-    few chipped-out pixels (index 0) so it reads 'weaker' even before its rust palette recolours it."""
+    few chipped-out pixels (index 0) so it reads 'weaker' even before its rust palette recolors it."""
     art = [[1 for _ in range(TILE_BLOCK)] for _ in range(TILE_BLOCK)]
     for y in range(TILE_BLOCK):
         for x in range(TILE_BLOCK):
@@ -110,7 +110,7 @@ def _soft_block() -> list[list[int]]:
 
 
 def _pellet_block() -> list[list[int]]:
-    """A corridor cell WITH its pellet: empty background, a small round dot at the cell centre (the
+    """A corridor cell WITH its pellet: empty background, a small round dot at the cell center (the
     thing the ball eats). Eaten cells restamp as the plain floor block instead."""
     art = _blank_plane(TILE_BLOCK, TILE_BLOCK)
     for y in range(TILE_BLOCK):
@@ -168,7 +168,7 @@ def _paddle(w: int = 80, h: int = 16) -> list[list[int]]:
 
 
 def _ball(d: int = 12) -> list[list[int]]:
-    """A filled disc with an off-centre highlight so it reads as a ball, not a square."""
+    """A filled disc with an off-center highlight so it reads as a ball, not a square."""
     art = _blank_plane(d, d)
     c = (d - 1) / 2.0
     r = d / 2.0
@@ -186,7 +186,7 @@ def _ball(d: int = 12) -> list[list[int]]:
 def _ghost(frame: int, d: int = 24) -> list[list[int]]:
     """The classic dome-and-skirt ghost: a round top half, a solid body, and a scalloped hem whose
     points alternate between the two frames (the walk 'wave'). Indices: 1 body, 2 eye white, 3 pupil —
-    so ONE shape serves every ghost colour AND the frightened blue by palette selection."""
+    so ONE shape serves every ghost color AND the frightened blue by palette selection."""
     art = _blank_plane(d, d)
     for y in range(d):
         for x in range(d):

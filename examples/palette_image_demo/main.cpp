@@ -1,9 +1,9 @@
 // Palette-image demo — the visual companion to the headless palette slicer suite
 // (tests/palette_image_slice_test.cpp), and the sibling of the atlas-load demo. It loads 16-bit-RGBA
-// colour PNGs ONE PIXEL PER PALETTE ENTRY via Renderer::loadPaletteImage and shows the things palette
+// color PNGs ONE PIXEL PER PALETTE ENTRY via Renderer::loadPaletteImage and shows the things palette
 // images exist for:
 //
-//   1. 16-bit colour + material transparency. Both sources are 16-bit-per-channel with a real alpha
+//   1. 16-bit color + material transparency. Both sources are 16-bit-per-channel with a real alpha
 //      channel. The 4x4 grid's alpha falls per row (opaque → fully transparent); the ramp is one hue
 //      with alpha ramped 0 → full. Drawn over a checker background, the alpha reads directly: a
 //      translucent entry dims the checker through it, a fully-transparent entry shows it untouched.
@@ -16,13 +16,13 @@
 //      ← / → to walk the orders.
 //   4. Structural vs material transparency on swatch 0. Press A to toggle the swatch sheet's
 //      transparent-index set between None ({}) and GameBoy ({0}). With None, swatch 0 (palette index 0)
-//      draws its palette entry — colour and alpha — like every other swatch. With GameBoy, index 0 is a
+//      draws its palette entry — color and alpha — like every other swatch. With GameBoy, index 0 is a
 //      structural HOLE and swatch 0 shows the checker behind it regardless of the palette. This is the
 //      difference between material transparency (the entry's own alpha) and structural transparency (the
 //      sheet's index set), side by side on the same swatch.
 //
 // Each swatch is a block of a single palette index drawn through the loaded palette, so swatch i shows
-// entry i (colour + alpha) of the current order's palette. There is no on-screen text (the printf-label
+// entry i (color + alpha) of the current order's palette. There is no on-screen text (the printf-label
 // convention every demo uses). One of the runnable example hosts: it keeps the live
 // SdlPlatform/Renderer + loadPaletteImage path compiling and linking on every CI platform even though
 // CI never opens the window; the slicer math (all 8 orders, 16-bit + alpha) is proven headlessly in
@@ -191,7 +191,7 @@ int main() {
         const PaletteId pal = gridPals[static_cast<std::size_t>(orderIdx)];
         gridSwatches.clear();
         constexpr int gridPitch = 20;                  // 16px block + 4px gap
-        constexpr int gridStartX = (160 - (4 * gridPitch - 4)) / 2;  // centred 4-wide
+        constexpr int gridStartX = (160 - (4 * gridPitch - 4)) / 2;  // centered 4-wide
         constexpr int gridStartY = 16;
         static const std::vector<std::string> gKeys =
             [] { std::vector<std::string> v; for (int k = 0; k < 64; ++k) v.push_back("g" + std::to_string(k)); return v; }();

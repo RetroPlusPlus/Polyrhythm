@@ -16,7 +16,7 @@
 //    • frame animation    — the Manta's bank/turn frames; pooled 4-frame explosion clips
 //                           (AnimationPlayer, single()).
 //    • palette animation  — the fuel-pod glow breathes and the starfield twinkles (the art never
-//                           changes); fighter waves recolour by livery palette.
+//                           changes); fighter waves recolor by livery palette.
 //    • per-sprite Transform — the mines spin; popups shrink through a scale transform.
 //    • regions + blends   — an Add thrust glow, a Multiply destruct dim, and a Ripple confined
 //                           to the deck band while a scuttled ship groans.

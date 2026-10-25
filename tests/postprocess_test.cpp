@@ -127,19 +127,19 @@ TEST(DisplaceSourceUv, PhaseEntersTheSineArgument) {
 
 // ── Viewport-grid snap (the crisp-evaluation mirror) ──────────────────────────────────
 
-// A coordinate maps to its viewport cell's centre, whatever its position within the cell; a coordinate
-// already at a cell centre is a fixed point; a degenerate dimension leaves that axis alone.
+// A coordinate maps to its viewport cell's center, whatever its position within the cell; a coordinate
+// already at a cell center is a fixed point; a degenerate dimension leaves that axis alone.
 TEST(SnapUvToCellCenter, MapsToCellCentreRegardlessOfPositionInCell) {
     const PixelSize vp{16, 16};
     const Uv a = snapUvToCellCenter(Uv{0.31f, 0.62f}, vp);  // 0.31·16=4.96 → cell 4; 0.62·16=9.92 → cell 9
     const Uv b = snapUvToCellCenter(Uv{0.29f, 0.60f}, vp);  // 0.29·16=4.64 → cell 4; 0.60·16=9.60 → cell 9
     EXPECT_FLOAT_EQ(a.u, 4.5f / 16.0f);
     EXPECT_FLOAT_EQ(a.v, 9.5f / 16.0f);
-    EXPECT_EQ(a, b);  // same cell → same centre
+    EXPECT_EQ(a, b);  // same cell → same center
 }
 
 TEST(SnapUvToCellCenter, CellCentreIsAFixedPoint) {
-    const PixelSize vp{16, 16};  // powers of two → the centres are exact in float
+    const PixelSize vp{16, 16};  // powers of two → the centers are exact in float
     const Uv c{5.5f / 16.0f, 9.5f / 16.0f};
     EXPECT_EQ(snapUvToCellCenter(c, vp), c);
 }
@@ -150,11 +150,11 @@ TEST(SnapUvToCellCenter, DegenerateDimensionLeavesAxisUnchanged) {
     EXPECT_FLOAT_EQ(snapUvToCellCenter(uv, PixelSize{16, 0}).v, 0.62f);   // height 0 → v untouched
 }
 
-// A viewport-pixel fragment moves to its cell centre (floor + 0.5); a coordinate already on a centre is
+// A viewport-pixel fragment moves to its cell center (floor + 0.5); a coordinate already on a center is
 // unchanged.
 TEST(SnapFragToCellCenter, MovesToCellCentre) {
     EXPECT_EQ(snapFragToCellCenter(Point{4.2f, 9.8f}), (Point{4.5f, 9.5f}));
-    EXPECT_EQ(snapFragToCellCenter(Point{4.5f, 9.5f}), (Point{4.5f, 9.5f}));  // already a centre
+    EXPECT_EQ(snapFragToCellCenter(Point{4.5f, 9.5f}), (Point{4.5f, 9.5f}));  // already a center
     EXPECT_EQ(snapFragToCellCenter(Point{-0.3f, 0.0f}), (Point{-0.5f, 0.5f})); // floor(-0.3) = -1
 }
 
@@ -179,7 +179,7 @@ TEST(DisplaceSourceUv, SnapDefaultsToUnsnapped) {
     EXPECT_EQ(displaceSourceUv(uv, e, kViewport), displaceSourceUv(uv, e, kViewport, /*snap=*/false));
 }
 
-// The snapped path evaluates the wave at the fragment's cell centre and offsets by the round-half-up
+// The snapped path evaluates the wave at the fragment's cell center and offsets by the round-half-up
 // whole-pixel displacement, applied to the UNSNAPPED uv — the exact displace.frag Viewport-grid mirror.
 TEST(DisplaceSourceUv, SnappedEvaluatesAtCellCentreAndQuantizes) {
     const ScreenSpaceEffect e{.kind = ScreenSpaceEffectKind::RowDisplacement,
@@ -202,7 +202,7 @@ TEST(RippleSourceUv, SnapDefaultsToUnsnapped) {
     EXPECT_EQ(rippleSourceUv(uv, e, kViewport), rippleSourceUv(uv, e, kViewport, /*snap=*/false));
 }
 
-// The snapped ripple evaluates at the cell centre and quantizes each axis' displacement round-half-up to
+// The snapped ripple evaluates at the cell center and quantizes each axis' displacement round-half-up to
 // a whole viewport pixel, applied to the UNSNAPPED uv — the exact ripple.frag Viewport-grid mirror.
 TEST(RippleSourceUv, SnappedEvaluatesAtCellCentreAndQuantizes) {
     const ScreenSpaceEffect e{.kind = ScreenSpaceEffectKind::Ripple, .amplitude = 5.0f, .frequency = 3.0f,
@@ -256,7 +256,7 @@ TEST(CustomSampleSourceUv, IdentityRequestSamplesTheTrueUv) {
     EXPECT_EQ(customSampleSourceUv(evalUv, trueUv, evalUv, kViewport, /*snap=*/true), trueUv);
 }
 
-// At compose scale 1 the fragment's uv IS its cell centre, and the quantized coordinate lands on the same
+// At compose scale 1 the fragment's uv IS its cell center, and the quantized coordinate lands on the same
 // viewport texel nearest sampling picks from the continuous request — the snap cannot change the scale-1
 // image. Exact-tie offsets (±.5 px) are excluded: there the CONTINUOUS request sits on a texel boundary
 // whose nearest pick is float-representation-dependent, while the quantized path is the defined
@@ -318,7 +318,7 @@ TEST(BandSignedDistance, IsSymmetricAboutTheBoundary) {
 
 // The boundary decision: Blank (the default) shows the backdrop ONLY where the displaced UV left the
 // source; in-bounds it samples. Stretch NEVER shows the backdrop — it samples (the CLAMP_TO_EDGE
-// sampler duplicates the edge column). This is the developer-selectable behaviour (default Blank).
+// sampler duplicates the edge column). This is the developer-selectable behavior (default Blank).
 TEST(ResolvesToBackdrop, BlankShowsBackdropOnlyOutOfBounds) {
     EXPECT_TRUE(resolvesToBackdrop(Uv{-0.05f, 0.5f}, DisplacementEdge::Blank));   // exposed strip → blank
     EXPECT_FALSE(resolvesToBackdrop(Uv{0.5f, 0.5f}, DisplacementEdge::Blank));    // in-bounds → samples
@@ -405,7 +405,7 @@ TEST(EffectScope, BelowRoutesAsAdjustmentLayer) {
     static_assert(effectIsBelowScope(ScreenSpaceEffect{.scope = ScreenSpaceEffectScope::Below}));
 }
 
-// displaceParams.blankTransparent — the scope-dependent blank colour selector. Frame-level + Below
+// displaceParams.blankTransparent — the scope-dependent blank color selector. Frame-level + Below
 // pass false (opaque backdrop, the C.2.a default); the isolated Layer pass passes true (transparent,
 // so the exposed strip reveals the layers below).
 TEST(DisplaceParams, BlankTransparentDefaultsOpaque) {

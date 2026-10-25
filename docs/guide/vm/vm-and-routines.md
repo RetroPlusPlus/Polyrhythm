@@ -104,7 +104,7 @@ Routine<Sig> Vm::uploadRoutine(std::span<const std::uint8_t> routineBytes,
 
 ```cpp
 struct RoutineBinding {
-    std::vector<Location>   inputs;          // argument i is marshalled to inputs[i]
+    std::vector<Location>   inputs;          // argument i is marshaled to inputs[i]
     std::optional<Location> output{};        // return value is read from output (nullopt = void)
     Throttle                throttle = Throttle::HostSpeed;
     std::uint32_t           entryOffset = 0; // first instruction's offset WITHIN routineBytes

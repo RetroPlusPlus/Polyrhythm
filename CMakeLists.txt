@@ -928,7 +928,7 @@ function(retropp_autoembed_assets _target)
         string(REGEX REPLACE "//[^\n]*" "" _t "${_t}")
         foreach(_loader loadMapPng loadAtlas loadImage loadPaletteImage registerAudio registerData)
             if(_loader STREQUAL "loadMapPng" OR _loader STREQUAL "loadPaletteImage")
-                set(_type_default "Embed")  # bespoke build-time data (index grid / palette colours)
+                set(_type_default "Embed")  # bespoke build-time data (index grid / palette colors)
             else()
                 # loadAtlas, loadImage, registerAudio PCM and registerData all ship beside the binary: each is a
                 # family whose content a game may have no right to redistribute, so omitting the policy
@@ -1792,7 +1792,7 @@ if(RETROPP_BUILD_TESTS)
         tests/store_upload_growth_test.cpp
         tests/palette_update_test.cpp
         tests/sprite_instancing_test.cpp
-        tests/colour_parity_layer_test.cpp
+        tests/color_parity_layer_test.cpp
         tests/sprite_blend_test.cpp
         tests/half_subtract_blend_test.cpp
         tests/sprite_effects_test.cpp
@@ -2086,7 +2086,7 @@ if(RETROPP_BUILD_EXAMPLES)
     target_link_libraries(retropp-transform-demo PRIVATE retropp::engine)
     retropp_set_warnings(retropp-transform-demo)
 
-    # The sprite transform capstone: a 16×16 arrow spinning about its own centre under a
+    # The sprite transform capstone: a 16×16 arrow spinning about its own center under a
     # per-sprite projective transform (scale pulse / perspective / flip toggles), plus three arrows
     # orbiting together on a rotating ride layer — proving DrawLayer::transform reaches the sprite path.
     # Hand-built sprite + background, no asset files.
@@ -2149,8 +2149,8 @@ if(RETROPP_BUILD_EXAMPLES)
     retropp_set_warnings(retropp-atlas-basics-demo)
     add_dependencies(retropp-atlas-basics-demo retropp-demo-assets)
 
-    # The arbitrary-palette demo: live-GPU proof of the uncapped colour pipeline — a
-    # 1024-colour palette + an R32_UINT atlas with indices past 255, rendered as one smooth drifting
+    # The arbitrary-palette demo: live-GPU proof of the uncapped color pipeline — a
+    # 1024-color palette + an R32_UINT atlas with indices past 255, rendered as one smooth drifting
     # rainbow. Built entirely in code (no asset). The flat-offset/index math is proven headlessly in
     # tests; this is the on-device proof CI can't run.
     add_executable(retropp-arbitrary-palette-demo examples/arbitrary_palette_demo.cpp)
@@ -2197,7 +2197,7 @@ if(RETROPP_BUILD_EXAMPLES)
     retropp_set_warnings(retropp-missile-command-demo)
 
     # Breakout: a brick-breaker in the NES viewport (256×240) at a 60 Hz timing profile. Paddle + a
-    # bouncing ball with paddle "english" + a grid of per-row-coloured bricks (a dynamic-count sprite
+    # bouncing ball with paddle "english" + a grid of per-row-colored bricks (a dynamic-count sprite
     # layer of the standing bricks); tile backdrop + HUD. All art hand-built; no asset files.
     add_executable(retropp-breakout-demo examples/breakout_demo.cpp)
     target_compile_features(retropp-breakout-demo PRIVATE cxx_std_20)
@@ -2213,8 +2213,8 @@ if(RETROPP_BUILD_EXAMPLES)
     retropp_set_warnings(retropp-tempest-demo)
 
     # Centipede: a SPRITE + PALETTE showcase in the NES viewport (256×240) at 60 Hz. Hand-pixelled indexed
-    # multi-colour sprites (centipede/mushrooms/blaster/spider/scorpion) coloured entirely via palette
-    # SELECTION + animated CYCLING (rainbow march) + SWAP (per-wave recolour, poison). All art in code.
+    # multi-color sprites (centipede/mushrooms/blaster/spider/scorpion) colored entirely via palette
+    # SELECTION + animated CYCLING (rainbow march) + SWAP (per-wave recolor, poison). All art in code.
     add_executable(retropp-centipede-demo examples/centipede_demo.cpp)
     target_compile_features(retropp-centipede-demo PRIVATE cxx_std_20)
     target_link_libraries(retropp-centipede-demo PRIVATE retropp::engine)
@@ -2222,7 +2222,7 @@ if(RETROPP_BUILD_EXAMPLES)
 
     # Space Invaders: a SPRITE + PALETTE demo via the ASSET-LOAD route (vs Centipede's embedded bytes).
     # Loads the committed indexed PNG examples/assets/space_invaders.png with Renderer::loadAtlas, slices
-    # it into 8x8 sprite slots, and colours via palette selection (per-row alien colours). SNES, 60 Hz.
+    # it into 8x8 sprite slots, and colors via palette selection (per-row alien colors). SNES, 60 Hz.
     # Loads the PNG at runtime, so it depends on the shared asset-copy target.
     add_executable(retropp-space-invaders-demo examples/space_invaders_demo.cpp)
     target_compile_features(retropp-space-invaders-demo PRIVATE cxx_std_20)
@@ -2240,7 +2240,7 @@ if(RETROPP_BUILD_EXAMPLES)
     retropp_set_warnings(retropp-controller-scrolling)
 
     # Hello, world! — the bare-minimum program: open a window and show "Hello, world!" (a committed
-    # indexed PNG) as one centred sprite, loaded via loadAtlas (ContentKind::Single). Loads
+    # indexed PNG) as one centered sprite, loaded via loadAtlas (ContentKind::Single). Loads
     # examples/assets/hello_world.png at runtime, so the assets dir is copied next to the binary
     # (found via SDL_GetBasePath()).
     add_executable(retropp-hello-world examples/hello_world.cpp)
@@ -2250,7 +2250,7 @@ if(RETROPP_BUILD_EXAMPLES)
     add_dependencies(retropp-hello-world retropp-demo-assets)
 
     # ── VM routines demo — hosting your own assembly on the VM, beside one the engine ships. A window
-    # whose centre shows a decimal byte rolled ~every 2 s by a real SM83 routine, with X switching
+    # whose center shows a decimal byte rolled ~every 2 s by a real SM83 routine, with X switching
     # between the engine's divRng preset and the program's OWN xorshift
     # (assets/xorshift_rng.asm, registered through Vm::registerRoutine with a RoutineBinding and
     # seeded by writing its high-RAM cell). The build finds the literal path and bakes the assembled
@@ -2451,7 +2451,7 @@ if(RETROPP_BUILD_EXAMPLES)
     # pass + its two shaders (the SPIR-V + DXIL + MSL gen).
     retropp_add_example(stencil_demo)
 
-    # ── ColorFill demo — the built-in region-confinable colour fill: a solid filled shape, a stroked
+    # ── ColorFill demo — the built-in region-confinable color fill: a solid filled shape, a stroked
     # colored ring, a curved colored path (fromCurve + stroke = a drawn line), and a shaped mul/add tint
     # over some art. A static scene (the effect is static by nature). Dev-run only; the live
     # SdlPlatform/Renderer path is the CI compile signal for the colorfill pass + its shader (SPIR-V + DXIL
@@ -2471,9 +2471,9 @@ if(RETROPP_BUILD_EXAMPLES)
     # property, and the arithmetic under it is pinned device-free in tests/declared_cadence_test.cpp.
     retropp_add_example(declared_cadence)
 
-    # ── Colour-saturation demo — the built-in cross-channel desaturation: three copies of the same sprite
-    # side by side (one at full saturation, one fully greyscale, one that a key toggles between the two via a
-    # slow saturation tween), so the identity, the greyscale floor, and an animated grade all read at once.
+    # ── Color-saturation demo — the built-in cross-channel desaturation: three copies of the same sprite
+    # side by side (one at full saturation, one fully grayscale, one that a key toggles between the two via a
+    # slow saturation tween), so the identity, the grayscale floor, and an animated grade all read at once.
     # Programmatic art, no PNG. Dev-run only; the live SdlPlatform/Renderer path is the CI compile signal for
     # the saturation pass + its shader (SPIR-V + DXIL + MSL).
     retropp_add_example(saturation)
@@ -2488,7 +2488,7 @@ if(RETROPP_BUILD_EXAMPLES)
     # steady aura / breathing aura) + a whole-frame toggle over a starfield. The Bloom sprite chain path is
     # the CI compile signal.
     retropp_add_example(bloom)
-    # ── Glow demo — the built-in authored-colour aura: three copies of the same dark gem, each radiating a
+    # ── Glow demo — the built-in authored-color aura: three copies of the same dark gem, each radiating a
     # DIFFERENT chosen tint (gold / ember / violet) the art nowhere contains, with a threshold toggle between
     # whole-silhouette and brightness-keyed emission. The Glow sprite chain path + its tint fields are the CI
     # compile signal.
@@ -2516,7 +2516,7 @@ if(RETROPP_BUILD_EXAMPLES)
 
     # ── Window-drag demo — a borderless window with a game-drawn title bar: the strip is a WindowLoop
     # draggable region (the OS drags the window natively on a mouse press) AND the grab action drives the
-    # automatic window movement (stick / d-pad / pointer move the window), plus programmatic centre/nudge
+    # automatic window movement (stick / d-pad / pointer move the window), plus programmatic center/nudge
     # via moveTo. Dev-run only; the live SDL_SetWindowHitTest + SDL_Set/GetWindowPosition path is the CI
     # compile signal.
     retropp_add_example(window_drag)
@@ -2526,7 +2526,7 @@ if(RETROPP_BUILD_EXAMPLES)
     # live SdlPlatform/Renderer + tilemap-import path is the CI compile signal.
     retropp_add_example(random_tilemap_demo)
 
-    # ── Tempest — the vector tube shooter drawn with real stroked colour-fill regions. Dev-run only; the
+    # ── Tempest — the vector tube shooter drawn with real stroked color-fill regions. Dev-run only; the
     # live SdlPlatform/Renderer path is the CI compile signal for the example host.
     retropp_add_example(tempest_vector_demo)
 
@@ -2546,18 +2546,18 @@ if(RETROPP_BUILD_EXAMPLES)
              COMMAND retropp-blend_mode_demo-demo --verify)
     set_tests_properties(BlendModeExample.Verify PROPERTIES SKIP_RETURN_CODE 77)
 
-    # ── Colour-effects demo — day/night, flash, fade, tints, and an exposure lift, all as ColorFill +
-    # a blend mode + alpha/fillIntensity at whole-frame and per-region scope (no bespoke colour member).
+    # ── Color-effects demo — day/night, flash, fade, tints, and an exposure lift, all as ColorFill +
+    # a blend mode + alpha/fillIntensity at whole-frame and per-region scope (no bespoke color member).
     # Slow drift + gentle capped key-triggered flash only. Dev-run only; the live SdlPlatform/Renderer +
     # ColorFill + region-gate blend path is the CI compile signal.
-    retropp_add_example(colour_effects_demo)
+    retropp_add_example(color_effects_demo)
 
-    # ── Colour-parity demo — the effect SCOPE distinction: one holed lattice over a scene, the same
+    # ── Color-parity demo — the effect SCOPE distinction: one holed lattice over a scene, the same
     # ColorFill grade confined to the left half at Layer scope (holes stay clear) and the right half at
     # Below scope (the tint reaches through the holes), cycling blend modes. The layer-path precedent for a
     # per-sprite effect. Static; A cycles the mode. Dev-run only; the live SdlPlatform/Renderer + per-layer
-    # ColorFill scope path is the CI compile signal (the per-layer scope matrix is colour_parity_layer_test).
-    retropp_add_example(colour_parity_demo)
+    # ColorFill scope path is the CI compile signal (the per-layer scope matrix is color_parity_layer_test).
+    retropp_add_example(color_parity_demo)
 
     # ── Sprite-blend demo — per-sprite Sprite::blend: a hero disc drifts across a scene carrying a Multiply
     # shadow decal and an Add flare, and a probe disc cycles every blend mode over the same background. CI
@@ -2579,7 +2579,7 @@ if(RETROPP_BUILD_EXAMPLES)
     # headlessly in sprite_mask_test).
     retropp_add_example(sprite_mask)
 
-    # ── Palette-image demo — loads colour PNGs one-pixel-per-entry via loadPaletteImage: a 4x4 hue grid
+    # ── Palette-image demo — loads color PNGs one-pixel-per-entry via loadPaletteImage: a 4x4 hue grid
     # Embed (baked) walked through all 8 read orders, and an 8-step ramp LoadFromPath (copied beside the
     # binary, read from disk) — the sibling of the atlas-load demo, adding the asset-policy axis. Static,
     # manual stepping. Dev-run only; the live SdlPlatform/Renderer + loadPaletteImage + both asset
@@ -2611,7 +2611,7 @@ if(RETROPP_BUILD_EXAMPLES)
              COMMAND retropp-image_layer-demo --verify)
     set_tests_properties(ImageLayerExample.Verify PROPERTIES SKIP_RETURN_CODE 77)
 
-    # ── Cracked-wall demo — a brick wall over a drifting background, coloured through three 16-bit RGBA
+    # ── Cracked-wall demo — a brick wall over a drifting background, colored through three 16-bit RGBA
     # palette images (loadPaletteImage). The holes are the palette entries' own alpha: an alpha-0 entry
     # discards (the moving background shows through), a partial-alpha entry blends. A Tween eases a
     # fracture sprite layer in. Dev-run only; the live loadPaletteImage / loadAtlas / Tween path is the CI
@@ -2672,7 +2672,7 @@ if(RETROPP_BUILD_EXAMPLES)
     # the crew fights, the ferryman sails). Three enemy craft classes fire straight, readable
     # bullets; an abductor steals waiting souls and losses come back as mutant hunters. Multi-file
     # (sim / rival AI / assets / feel / audio / render), four embedded indexed PNGs + 30 embedded
-    # PALETTE IMAGES (every colour via loadPaletteImage) + 7 embedded chiptune SFX — the binary is
+    # PALETTE IMAGES (every color via loadPaletteImage) + 7 embedded chiptune SFX — the binary is
     # fully self-contained. Dev-run only; the live SdlPlatform/Renderer/loadAtlas/loadPaletteImage/
     # audio path plus the two-plane parallax scroll, the 32×32-macro-tile stamping, the Add-blend
     # beam/glow regions, the Curve/ArcLengthTable abductor swoop, and the palette-cycle clips
@@ -2686,7 +2686,7 @@ if(RETROPP_BUILD_EXAMPLES)
     # migration step — printing every stage. Run it twice: the second run finds the first
     # run's document on disk, the point of the whole subsystem. Headless (no window, no GPU,
     # no audio device); dev-run only; the live SDL_GetPrefPath + atomic-write path is the CI
-    # compile signal (the store's behaviour is proven headlessly in save_store_test).
+    # compile signal (the store's behavior is proven headlessly in save_store_test).
     retropp_add_example(save_store_demo)
 
     # ── User-files demo — the other half of the per-user directory: a console program that resolves
@@ -2695,7 +2695,7 @@ if(RETROPP_BUILD_EXAMPLES)
     # resolved directories side by side, which is the one-resolution property made visible, and
     # shows a path that tries to leave the store being refused. Run it twice: the second run finds
     # the first run's files. Headless (no window, no GPU, no audio device); dev-run only; the live
-    # SDL_GetPrefPath + atomic-write path is the CI compile signal (the behaviour is proven
+    # SDL_GetPrefPath + atomic-write path is the CI compile signal (the behavior is proven
     # headlessly in user_files_test).
     retropp_add_example(user_files_demo)
 
@@ -2705,7 +2705,7 @@ if(RETROPP_BUILD_EXAMPLES)
     # LoadFromPath default, so nothing is baked), and a derived index handed over as ready bytes — then
     # decoding the corpus through the table and printing the strings. It prints where each one's bytes
     # came from, which is the whole distinction the policy expresses. Headless (no window, no GPU, no
-    # audio device); dev-run only; the behaviour is proven headlessly in data_library_test.
+    # audio device); dev-run only; the behavior is proven headlessly in data_library_test.
     retropp_add_example(data_assets)
 
     # ── Cartridge-assets demo — pulling content out of a cartridge the game hosts. Registers the
@@ -2715,7 +2715,7 @@ if(RETROPP_BUILD_EXAMPLES)
     # tile is patched in the hosted image to show writing works, and gb::WorkRam is read through the
     # same verb to show a shipped constant is just another place. The cartridge is authored by
     # assets/gen_cartridge_assets.py, so nothing here comes from anyone's ROM. Headless (no window,
-    # no GPU, no audio device); dev-run only; the behaviour is proven headlessly in
+    # no GPU, no audio device); dev-run only; the behavior is proven headlessly in
     # region_access_test / gb_regions_test / host_rom_test.
     retropp_add_example(cartridge_assets)
 

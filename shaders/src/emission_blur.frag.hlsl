@@ -15,7 +15,7 @@
 // from radius/4, keeping the halo the same size in the image).
 //
 // uSnapW / uSnapH carry the viewport cell grid on the crisp evaluation path: taps walk from the fragment's
-// viewport-cell centre, so every output pixel of one cell sees the same blur and the halo stays crisp under
+// viewport-cell center, so every output pixel of one cell sees the same blur and the halo stays crisp under
 // upscale. Both 0 evaluates at the exact fragment position (the smooth path, and always the path taken at
 // quarter resolution, where a viewport cell can be smaller than a texel). Off-frame taps clamp to the
 // border texel (the pass sampler's CLAMP_TO_EDGE).
@@ -32,7 +32,7 @@ SamplerState      SourceSampler : register(s0, space2);
 cbuffer EmissionBlurUniforms : register(b0, space3) {
     float uStepU;       // per-tap UV offset, u component (0 on the vertical pass)
     float uStepV;       // per-tap UV offset, v component (0 on the horizontal pass)
-    float uTaps;        // K, per side (resolved on the CPU); 0 = a single centre tap
+    float uTaps;        // K, per side (resolved on the CPU); 0 = a single center tap
     float uInvNorm;     // 1 / Σ w(k) over k ∈ [−K, K] — this axis's normalization  — register 0
     float uInv2Sigma2;  // 1 / (2σ²) for this pass's resolved σ
     float uSnapW;       // viewport cells across, or 0 for no snap

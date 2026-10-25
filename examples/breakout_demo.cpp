@@ -11,9 +11,9 @@
 //          there is no named TimingProfile::Hz60 — only GameBoy/GameBoyColor are named statics).
 //    • SteadyClock + RunLoop                   — fixed-step sim (simTick) decoupled from render (renderLoop).
 //    • SdlPlatform + Renderer                  — the live window + GPU device + draw API.
-//    • uploadAtlas / uploadPalette             — indexed art + colour onto the GPU.
+//    • uploadAtlas / uploadPalette             — indexed art + color onto the GPU.
 //    • A TILE layer for the static backdrop     — dark wall + the score / lives readout (8px grid).
-//    • SPRITE layers for everything dynamic      — bricks (per-row colour), paddle, ball; the bricks use
+//    • SPRITE layers for everything dynamic      — bricks (per-row color), paddle, ball; the bricks use
 //                                                a DYNAMIC sprite count (a std::vector<Sprite> rebuilt
 //                                                each frame, only for the bricks still standing).
 //
@@ -101,7 +101,7 @@ constexpr int kTileSolid  = 0;   // backdrop tile-atlas: 0 = solid block, 1..10 
 constexpr int kTileDigit0 = 1;
 constexpr int kBgTiles    = 11;
 
-// Build the backdrop tile atlas: solid block (recoloured per cell) + the digits for score / lives.
+// Build the backdrop tile atlas: solid block (recolored per cell) + the digits for score / lives.
 std::vector<std::uint8_t> buildBgAtlas() {
     const int w = kTile * kBgTiles;
     std::vector<std::uint8_t> a(static_cast<std::size_t>(w) * kTile, 0);
@@ -158,8 +158,8 @@ int main() {
     const float kPlayTop = 16.0f;                   // ball can't go above this (room for the HUD)
 
     // ── 4. Upload art + palettes ─────────────────────────────────────────────────────────────────────
-    // 4a. Backdrop tile atlas (solid + digits). Cell palette picks the colour; pixel index picks the
-    //     entry. The whole backdrop is one solid colour (palette 0); the HUD digits use palette 1.
+    // 4a. Backdrop tile atlas (solid + digits). Cell palette picks the color; pixel index picks the
+    //     entry. The whole backdrop is one solid color (palette 0); the HUD digits use palette 1.
     const std::vector<std::uint8_t> bgPx = buildBgAtlas();
     const AtlasId bgAtlas = renderer.uploadAtlas(bgPx.data(), kTile * kBgTiles, kTile).atlasId;
     const std::array<Rgba8, 2> palWall{{ {18, 18, 26}, {18, 18, 26} }};     // solid → dark wall
@@ -168,14 +168,14 @@ int main() {
     const PaletteId hudPal  = renderer.uploadPalette(std::span<const Rgba8>(palHud));
 
     // 4b. A solid 16×16 atlas (all index 1) → bricks, paddle, ball. Each sprite reads a `size`-sized
-    //     region from tile 0's top-left, so any rect up to 16×16 is solid fill; colour = the palette.
+    //     region from tile 0's top-left, so any rect up to 16×16 is solid fill; color = the palette.
     //     Bricks taller/wider than 16 would exceed the atlas, so kBrickW/H stay ≤ 16 (18 > 16!) —
     //     see the note below; we use an atlas wide enough for the brick width.
     constexpr int kSolidW = 40, kSolidH = 16;  // wide enough for a 36px paddle / 18px brick row cell
     std::array<std::uint8_t, kSolidW * kSolidH> solidPx{};
     solidPx.fill(1);
     const AtlasId solidAtlas = renderer.uploadAtlas(solidPx.data(), kSolidW, kSolidH).atlasId;
-    // Palette set: 7 brick-row colours, then paddle, then ball. sprite.palette selects (entry 1 = colour).
+    // Palette set: 7 brick-row colors, then paddle, then ball. sprite.palette selects (entry 1 = color).
     const std::array<std::array<Rgba8, 2>, 9> solidColours{{
         {{ {0,0,0}, {220, 60, 60} }},    // 0 row 0 — red
         {{ {0,0,0}, {230, 130, 50} }},   // 1 row 1 — orange
@@ -210,7 +210,7 @@ int main() {
     auto brickX = [&](int col) { return kBrickMarginX + col * kBrickCellW; };
     auto brickY = [&](int row) { return kBrickAreaTop + row * kBrickCellH; };
 
-    // Re-centre the ball on the paddle for a serve.
+    // Re-center the ball on the paddle for a serve.
     auto parkBall = [&] {
         ballX = paddleX + kPaddleW / 2 - kBallSz / 2;
         ballY = kPaddleY - kBallSz - 1;
@@ -218,9 +218,9 @@ int main() {
     };
     parkBall();
 
-    // Aim the ball UPWARD with a desired horizontal velocity plus a tiny random jitter, renormalised so
+    // Aim the ball UPWARD with a desired horizontal velocity plus a tiny random jitter, renormalized so
     // |v| ≈ kBallSpeed. The jitter is the key robustness trick: it keeps the ball off any perfectly-
-    // periodic orbit, so even a player holding the paddle dead-centre can't trap the ball bouncing
+    // periodic orbit, so even a player holding the paddle dead-center can't trap the ball bouncing
     // forever in an already-cleared column — it always drifts and eventually reaches every brick.
     auto aimBallUp = [&](float desiredVx) {
         desiredVx += (static_cast<float>(nextRand(rng) % 1000) / 1000.0f - 0.5f) * 0.8f;  // ±0.4 jitter
@@ -270,13 +270,13 @@ int main() {
         if (ballY < kPlayTop)           { ballY = kPlayTop;            ballVy = std::abs(ballVy); }
         if (ballY > kViewH)             { loseLife(); return; }
 
-        // 6e. Paddle: bounce up, and set horizontal english from where on the paddle it hit (centre =
-        //     straight up, edges = steep angle). Speed is renormalised so |v| stays ≈ kBallSpeed.
+        // 6e. Paddle: bounce up, and set horizontal english from where on the paddle it hit (center =
+        //     straight up, edges = steep angle). Speed is renormalized so |v| stays ≈ kBallSpeed.
         if (ballVy > 0 &&
             ballX < paddleX + kPaddleW && ballX + kBallSz > paddleX &&
             ballY + kBallSz >= kPaddleY && ballY + kBallSz <= kPaddleY + kPaddleH + 4) {
             const float hit = ((ballX + kBallSz / 2) - (paddleX + kPaddleW / 2)) / (kPaddleW / 2);  // [-1,1]
-            aimBallUp(hit * kMaxEnglish);  // english from the hit offset, + jitter, renormalised
+            aimBallUp(hit * kMaxEnglish);  // english from the hit offset, + jitter, renormalized
             ballY = kPaddleY - kBallSz - 1;
         }
 
@@ -350,7 +350,7 @@ int main() {
             for (int c = 0; c < kBrickCols; ++c) {
                 if (bricks[static_cast<std::size_t>(r)][static_cast<std::size_t>(c)]) {
                     rect("brick_" + std::to_string(r) + "_" + std::to_string(c),
-                         brickX(c), brickY(r), kBrickW, kBrickH, r);  // palette r = the row's colour
+                         brickX(c), brickY(r), kBrickW, kBrickH, r);  // palette r = the row's color
                 }
             }
         }

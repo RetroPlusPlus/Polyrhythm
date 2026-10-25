@@ -14,7 +14,7 @@ namespace retropp {
 //
 // A TileCatalog is a plain declared registry of distinct tiles a map can place. Each entry names a
 // SHEET (an AtlasId — any loaded atlas), a SLOT within it (the 8px atlas cell index, i.e. an
-// AssetSlot::tile), the PALETTE that colours it, a flip, and a rotation. Catalog ENTRY INDEX i is the raw value
+// AssetSlot::tile), the PALETTE that colors it, a flip, and a rotation. Catalog ENTRY INDEX i is the raw value
 // a map pixel holds: a 16-bit grayscale map PNG decodes (loadMapPng → IndexGrid) to a grid of these
 // indices, and assembleTilemap() turns that grid into the layer's TileCell array.
 //
@@ -30,7 +30,7 @@ struct TileCatalogEntry {
                                     // map — values above 255 an 8-bit decode would misread).
     AtlasId       sheet{};          // which loaded atlas this tile comes from
     std::uint16_t slot   = 0;       // the 8px cell index within that sheet (an AssetSlot::tile)
-    PaletteId     palette{};        // which uploaded palette colours this tile
+    PaletteId     palette{};        // which uploaded palette colors this tile
     bool          flipX  = false;
     bool          flipY  = false;
     Rotation      rotation = Rotation::None;  // 90° texture rotation; composes with the flips

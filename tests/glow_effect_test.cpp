@@ -76,7 +76,7 @@ TEST(GlowMaskEmission, ThresholdZeroIsWholeCoverageEmission) {
 }
 
 TEST(GlowMaskEmission, ThresholdKeysOnTheStraightLuminance) {
-    // A premultiplied dim pixel whose STRAIGHT colour is white: the key must read the straight luminance
+    // A premultiplied dim pixel whose STRAIGHT color is white: the key must read the straight luminance
     // (1.0), not the coverage-dimmed one (0.25) — un-premultiply before keying.
     const float m = glowMask(Vec4{0.25f, 0.25f, 0.25f, 0.25f}, 0.5f);
     EXPECT_NEAR(m, 0.25f, 1e-6f);  // survives fully (straight lum 1 ≥ 0.5), mask = coverage
@@ -121,9 +121,9 @@ TEST(GlowAdd, LiftsCoverageAndSaturatesAlpha) {
 
 // ── The composed aura oracle — the fragment's kernel loop over a synthetic art ────────────
 
-// One dark-but-opaque texel in a transparent 5×5 field, threshold 0: the aura at a neighbour decays with
+// One dark-but-opaque texel in a transparent 5×5 field, threshold 0: the aura at a neighbor decays with
 // distance, is zero beyond the tap extent, and its chroma is the tint — composed from the same pure pieces
-// the fragment loops over. Dark art radiating an authored colour is the effect's signature.
+// the fragment loops over. Dark art radiating an authored color is the effect's signature.
 TEST(GlowOracle, DarkTexelRadiatesTheTintAndFadesOut) {
     constexpr int   kSide   = 5;
     constexpr float kRadius = 2.0f;
@@ -134,7 +134,7 @@ TEST(GlowOracle, DarkTexelRadiatesTheTintAndFadesOut) {
         return glowParams(e);
     }();
     std::array<Vec4, kSide * kSide> art{};                   // transparent everywhere…
-    art[2 * kSide + 2] = Vec4{0.0f, 0.0f, 0.05f, 1.0f};      // …except a near-black centre (premultiplied)
+    art[2 * kSide + 2] = Vec4{0.0f, 0.0f, 0.05f, 1.0f};      // …except a near-black center (premultiplied)
 
     auto maskAt = [&](int px, int py) {
         float m = 0.0f;
@@ -154,7 +154,7 @@ TEST(GlowOracle, DarkTexelRadiatesTheTintAndFadesOut) {
     EXPECT_GT(atCentre, oneOff);        // the aura decays outward
     EXPECT_GT(oneOff, twoOff);
     EXPECT_GT(twoOff, 0.0f);            // still lit at the tap extent — the DARK texel emits (threshold 0)
-    // The aura's colour at a neighbour is the tint: the composite's delta is lift·tint, r-dominant, though
+    // The aura's color at a neighbor is the tint: the composite's delta is lift·tint, r-dominant, though
     // the emitting art is blue.
     constexpr Vec4 bg{0.0f, 0.0f, 0.0f, 0.0f};
     const Vec4 lit = applyGlowAdd(bg, oneOff, p.intensity, p.tintR, p.tintG, p.tintB);
@@ -198,7 +198,7 @@ TEST(GlowSpriteEmission, IdentityStepsCostNothingAndIndicesSkipNonGlowSteps) {
                     ScreenSpaceEffect{.kind = ScreenSpaceEffectKind::Glow, .radius = 0.0f, .intensity = 255}};
     EXPECT_TRUE(spriteEmissionSteps(dark, 1.0f).empty());
 
-    // recordIndex addresses the packed record slice, so the colour steps before the glow count.
+    // recordIndex addresses the packed record slice, so the color steps before the glow count.
     Sprite s{.key = "s"};
     s.effects = {ScreenSpaceEffect{.kind = ScreenSpaceEffectKind::ColorFill},
                  ScreenSpaceEffect{.kind = ScreenSpaceEffectKind::None},
@@ -206,7 +206,7 @@ TEST(GlowSpriteEmission, IdentityStepsCostNothingAndIndicesSkipNonGlowSteps) {
                  ScreenSpaceEffect{.kind = ScreenSpaceEffectKind::Glow, .radius = 4.0f, .intensity = 255}};
     const auto steps = spriteEmissionSteps(s, 1.0f);
     ASSERT_EQ(steps.size(), 1u);
-    EXPECT_EQ(steps[0].recordIndex, 2u);                    // None is not packed; the two colour steps are
+    EXPECT_EQ(steps[0].recordIndex, 2u);                    // None is not packed; the two color steps are
     ASSERT_EQ(buildSpriteFxRecords(s).size(), 3u);
     EXPECT_EQ(buildSpriteFxRecords(s)[steps[0].recordIndex].kind,
               static_cast<std::uint32_t>(ScreenSpaceEffectKind::Glow));
@@ -312,8 +312,8 @@ TEST(GlowSpriteRecords, RegionGlowIsSkippedTheChainStepIsKept) {
 }
 
 TEST(GlowSpriteRecords, EvalPassesGlowThroughUnchanged) {
-    // The colour-chain oracle leaves a Glow step to the fragment's art sum — the record passes the running
-    // colour through (its params are kernel knobs + tint, never a fill).
+    // The color-chain oracle leaves a Glow step to the fragment's art sum — the record passes the running
+    // color through (its params are kernel knobs + tint, never a fill).
     Sprite s{.key = "g"};
     s.effects = {ScreenSpaceEffect{.kind = ScreenSpaceEffectKind::Glow, .radius = 4.0f, .intensity = 255}};
     const std::vector<SpriteFxRecord> recs = buildSpriteFxRecords(s);

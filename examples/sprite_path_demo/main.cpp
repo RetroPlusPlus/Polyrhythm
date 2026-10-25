@@ -10,7 +10,7 @@
 //   3. SHUTTLE — an arrow on a Hermite arc whose distance runs to the end, BACKS UP, then continues:
 //                Move::hermite + PathPacing::distanceTween with a non-monotone (reversing) profile.
 //   4. TUMBLER — a block spinning while it "breathes": a rotation track and a scale track running at once
-//                about the sprite's default centre pivot, FacingPolicy::None.
+//                about the sprite's default center pivot, FacingPolicy::None.
 //   5. SWINGER — a block rotating about its top-left CORNER: a rotation track with a pivot override.
 //   6. GLIDER  — an arrow riding a pre-authored cubic Curve: Move::onCurve, nosing along via RotateToFacing.
 //   7. GHOST   — a translucent twin of the walker drawn from its RAW sample() (position + frame read, custom
@@ -129,7 +129,7 @@ int main() {
         for (int x = 0; x < 8; ++x) gridArt[static_cast<std::size_t>(y) * 8 + x] = (x == 0 || y == 0) ? 2 : 1;
     const AtlasId gridAtlas = renderer.uploadAtlas(gridArt.data(), 8, 8).atlasId;
 
-    // ── Palettes (entry [1] is the visible colour; [0] unused / the hole) ───────────────────────────────
+    // ── Palettes (entry [1] is the visible color; [0] unused / the hole) ───────────────────────────────
     const std::array<Rgba8, 2> walkerPal{{{0, 0, 0}, {120, 220, 140}}};   // green
     const std::array<Rgba8, 2> fishPal{{{0, 0, 0}, {120, 200, 255}}};     // cyan
     const std::array<Rgba8, 2> shuttlePal{{{0, 0, 0}, {255, 180, 90}}};   // orange
@@ -183,7 +183,7 @@ int main() {
                                   .pacing = PathPacing::distanceTween(shuttleProfile)}},
                        .start = {20, 90}};
 
-    // 4. Spin + breathe in place, default centre pivot.
+    // 4. Spin + breathe in place, default center pivot.
     SpritePath tumbler{.nodes = {{.move            = SpritePathMove::to({80, 66}),  // Speed 0 → parked at start
                                   .rotationDegrees = Tween<float>::of(0.0f, 360.0f, 6s, Easing::Linear),
                                   .rotationMode    = PlaybackMode::loopIndefinitely(),

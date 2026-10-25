@@ -458,7 +458,7 @@ platform.analogResponse({ .leftStick = { .gate = GateShape::Square } });  // tak
 ```
 
 **The pipeline** is `dead-zone → gate → clamp` for a stick, `dead-zone → clamp` for a trigger. The
-dead-zone zeroes a centre region and rescales so motion begins right at the edge (no jump); `size` is
+dead-zone zeroes a center region and rescales so motion begins right at the edge (no jump); `size` is
 the fraction of throw zeroed, and `size = 0` passes the input straight through.
 
 **Dead-zone shape.** `Radial` (the default) applies one magnitude threshold to the whole stick and
@@ -501,7 +501,7 @@ platform.gamepad().vibration({});                            // a silent tick
 
 `gamepad(player)` names the device (a keyboard has nothing to vibrate, so a non-gamepad slot no-ops)
 — the deliberate asymmetry with `input.player(n)`, which reads device-agnostically. The index clamps
-into `[0, kMaxPlayers)`. It is the home for future gamepad output channels (LED colour, adaptive
+into `[0, kMaxPlayers)`. It is the home for future gamepad output channels (LED color, adaptive
 triggers).
 
 **The value type — `MotorLevels`.** The same value is passed to the call, held by a pattern frame, and

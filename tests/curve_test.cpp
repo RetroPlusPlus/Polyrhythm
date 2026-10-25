@@ -235,7 +235,7 @@ TEST(Curve, OpenCubicDistanceWithinSubdivisionTolerance) {
 TEST(Curve, ClosedCatmullRomLoopContainment) {
     const std::array<Vec2, 4> pts{{{0, 0}, {100, 0}, {100, 100}, {0, 100}}};  // a square's corners
     const Curve loop = Curve::throughPoints(std::span<const Vec2>(pts), true);
-    EXPECT_TRUE(loop.contains(Vec2{50, 50}));    // centre inside the smooth loop
+    EXPECT_TRUE(loop.contains(Vec2{50, 50}));    // center inside the smooth loop
     EXPECT_FALSE(loop.contains(Vec2{250, 50}));  // well outside
     EXPECT_LT(loop.signedDistance(Vec2{50, 50}), 0.0f);
     EXPECT_GT(loop.signedDistance(Vec2{250, 50}), 0.0f);

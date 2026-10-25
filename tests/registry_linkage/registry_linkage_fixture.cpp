@@ -56,7 +56,7 @@ HostedDriverBinding driverProbeBinding() {
 constexpr std::array<std::uint8_t, 4> kMixedDriverBytes{0xC1, 0xC2, 0xC3, 0xC4};
 
 // One binding, both sources. A byte image sits BETWEEN two path images so the scan's per-image keying is
-// exercised where it would break: an image carrying no path at all must not disturb how its neighbours
+// exercised where it would break: an image carrying no path at all must not disturb how its neighbors
 // resolve, and the Embed / LoadFromPath pair on either side of it must still land on opposite lists.
 HostedDriverBinding mixedDriverProbeBinding() {
     return HostedDriverBinding{

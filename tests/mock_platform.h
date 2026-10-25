@@ -88,7 +88,7 @@ public:
     void clearQuitRequest() noexcept override { quit_ = false; }
 
     // Latch a quit explicitly, decoupled from the pump threshold — lets a test re-trigger an OS close
-    // after an earlier one was vetoed (drive it from onPump), modelling a second window-close event.
+    // after an earlier one was vetoed (drive it from onPump), modeling a second window-close event.
     void requestQuit() noexcept { quit_ = true; }
     [[nodiscard]] const InputSample& input() const override { return sample_; }
     void pointerCaptured(bool captured) override { pointerCaptured_ = captured; }

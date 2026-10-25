@@ -112,7 +112,7 @@ using WatchHandler =
 // One declared watch. At least one of `onRead` and `onWrite` is declared — a watch with neither has
 // no work to do, and is refused at registration by its key.
 //
-//   key     — how the game names this watch afterwards, and what a registration failure reports.
+//   key     — how the game names this watch afterward, and what a registration failure reports.
 //             Required: omitting it is a compile error.
 //   at      — the place being watched. A one-byte place is MemoryRegion{.at = addr, .size = 1}; a
 //             span is declared the same way any other place is, and every byte of it is watched.
@@ -165,7 +165,7 @@ public:
     void               armed(bool on);
 
     // Drop the declaration entirely. Switching a watch off is the ordinary way to stop it; this is
-    // for a game that wants the entry gone. Naming it again afterwards throws until it is
+    // for a game that wants the entry gone. Naming it again afterward throws until it is
     // re-declared.
     //
     // A handler that removes its OWN watch destroys the code it is running in. Remove another one,

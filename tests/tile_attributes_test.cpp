@@ -164,7 +164,7 @@ TEST(PaletteStoreTexel, WrapsAcrossRows) {
 }
 
 TEST(PaletteStoreTexel, AddressesArbitraryLargePalettes) {
-    // A colour index of 65535 into a palette at offset 200000, store width 16384.
+    // A color index of 65535 into a palette at offset 200000, store width 16384.
     const std::uint32_t flat = 200000u + 65535u;  // 265535
     EXPECT_EQ(paletteStoreTexel(200000u, 65535u, 16384u),
               (PaletteTexel{flat % 16384u, flat / 16384u}));

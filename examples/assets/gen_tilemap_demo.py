@@ -12,7 +12,7 @@ All three are PNG IMAGES, never byte arrays:
                  spread evenly across 0..65535 (stride 4369), which does two things at once:
                    * actually TESTS 16-bit — ids like 4369/8738/… exceed 255, so an 8-bit decode would
                      misread them (4369 & 0xFF = 17). Values 0..15 would pass 8-bit unchanged — no test.
-                   * stays EYEBALL-VERIFIABLE — 16 evenly-spaced samples render as 16 distinct grey
+                   * stays EYEBALL-VERIFIABLE — 16 evenly-spaced samples render as 16 distinct gray
                      levels (0%, 6.7%, …, 100%), so the border + HELLO/WORLD layout is visible.
                  loadMapPng reads the uint16 sample as the id; buildTilemap looks up the catalog entry
                  whose `id` matches and emits the layer's cells.
@@ -53,7 +53,7 @@ def _png(width: int, height: int, bitdepth: int, colortype: int,
 
 # Index 0 is the box/background, index 1 the glyph ink. A VISIBLE index 0 (dark blue, not black) makes
 # the sheets eyeball-verifiable — the fill tile + each glyph's background read as a tile, not black void.
-# The demo recolours via uploadPalette anyway, so this only affects how the file looks.
+# The demo recolors via uploadPalette anyway, so this only affects how the file looks.
 GLYPH_PLTE = [(24, 30, 60), (255, 255, 255)]
 
 

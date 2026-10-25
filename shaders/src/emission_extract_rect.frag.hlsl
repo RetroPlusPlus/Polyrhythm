@@ -7,7 +7,7 @@
 // The rect is a VIEWPORT-grid image: an atlas texel is a viewport cell, and `offset` carries that texel
 // back to the viewport position it holds (retropp::emissionRectEntry writes the same offset the read
 // applies, so the texel a fragment reads is the texel this pass wrote). The accumulator is a
-// COMPOSE-resolution image, so the cell's centre scales up by uComposeScale and point-samples there — the
+// COMPOSE-resolution image, so the cell's center scales up by uComposeScale and point-samples there — the
 // analytic evaluation point, and the blur that follows band-limits whatever a point sample aliases.
 //
 // The whole rect is filled, margin ring included — NOT just the content box. A below halo is scene-sourced,
@@ -15,10 +15,10 @@
 // from the quad's edge lands. (The region path's raster leaves its ring at zero for the opposite reason:
 // there the light is the sprite's own art, which does not extend past the quad.) The packer's margin is
 // what keeps a tap inside the rect it started in, so a ring carrying this field's own light reaches no
-// neighbour.
+// neighbor.
 //
 // The extract is NEUTRAL — intensity 1, white tint — because one field serves lenses of differing strength
-// and colour; each record applies its own as it samples. That is why neither appears here.
+// and color; each record applies its own as it samples. That is why neither appears here.
 //
 // SDL_GPU HLSL conventions: the fragment's sampled texture + sampler in space2, the uniform buffer in
 // space3.
@@ -55,7 +55,7 @@ float4 retroppEmissionRect(float2 sceneUv, float2 viewportDim, int ri) { return 
 #endif
 
 float4 main(nointerpolation float4 read : TEXCOORD0, float4 pos : SV_Position) : SV_Target0 {
-    // The viewport cell this atlas texel holds, at its centre (SV_Position is already texel-centred and the
+    // The viewport cell this atlas texel holds, at its center (SV_Position is already texel-centered and the
     // offset is a whole number of texels), then up to the accumulator's grid.
     float2 composeDim;
     SourceTexture.GetDimensions(composeDim.x, composeDim.y);
@@ -71,7 +71,7 @@ float4 main(nointerpolation float4 read : TEXCOORD0, float4 pos : SV_Position) :
     float4 src     = SourceTexture.Sample(SourceSampler, clamp(sceneUv, float2(0.0f, 0.0f), float2(1.0f, 1.0f)));
 
     float threshold = read.z;
-    if (read.w != 0.0f) {                      // Glow — a scalar coverage mask; the lens supplies the colour
+    if (read.w != 0.0f) {                      // Glow — a scalar coverage mask; the lens supplies the color
         float m = glowMask(src, threshold);
         return float4(m, m, m, m);
     }

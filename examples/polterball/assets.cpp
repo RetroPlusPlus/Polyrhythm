@@ -39,7 +39,7 @@ PolterAssets loadPolterAssets(Renderer& renderer) {
                                  /*framesPerAnimation=*/0, AssetPolicy::Embed);
 
     // ── Sprite palettes, in the Pal-enum order. One ghost SHAPE serves the whole cast: art index
-    //    1 = body, 2 = eye white, 3 = pupil, so a ghost's colour — and the frightened blue — is
+    //    1 = body, 2 = eye white, 3 = pupil, so a ghost's color — and the frightened blue — is
     //    nothing but palette selection.
     const Rgba8 eyeWhite{240, 240, 250};
     const Rgba8 pupil{40, 40, 90};
@@ -69,7 +69,7 @@ PolterAssets loadPolterAssets(Renderer& renderer) {
     a.tilePals[TP_GATE]   = tp({240, 200, 220}, {255, 240, 250}, {150, 110, 140});  // the pen bar
 
     // ── Text palettes: every font cell shares the dark background (entry 0); entry 1 is the lit
-    //    glyph colour. Blank cells render as the background, so the text layer is the backdrop too.
+    //    glyph color. Blank cells render as the background, so the text layer is the backdrop too.
     const std::array<Rgba8, 2> textWhite{{kBg, {235, 238, 248}}};
     const std::array<Rgba8, 2> textGold{{kBg, {236, 196, 96}}};
     const std::array<Rgba8, 2> textCyan{{kBg, {130, 220, 230}}};

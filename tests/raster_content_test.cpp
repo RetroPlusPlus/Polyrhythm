@@ -105,7 +105,7 @@ inline constexpr bool kDeviceOptional = false;
 #endif
 
 // A picture the width of the viewport whose left half is red and right half is blue — a payload that
-// reads differently backwards, so a picture placed mirrored or offset is not mistaken for a match.
+// reads differently backward, so a picture placed mirrored or offset is not mistaken for a match.
 std::vector<std::uint8_t> splitPicture() {
     std::vector<std::uint8_t> pixels(static_cast<std::size_t>(kW) * kH * 4);
     for (int y = 0; y < kH; ++y) {

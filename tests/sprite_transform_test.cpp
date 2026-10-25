@@ -91,12 +91,12 @@ TEST(SpriteTransform, PerSpriteScaleAboutCentre) {
     s.x = 0;
     s.y = 0;
     s.size = AssetDimensions{8, 8};
-    s.transform = Transform::scale(2.0f, 2.0f, 4.0f, 4.0f);  // 2× about the sprite centre (4,4)
+    s.transform = Transform::scale(2.0f, 2.0f, 4.0f, 4.0f);  // 2× about the sprite center (4,4)
 
-    // Scaling about the centre keeps the centre fixed and doubles the half-extent. viewport 16×16.
+    // Scaling about the center keeps the center fixed and doubles the half-extent. viewport 16×16.
     // Output grid → the exact forward map (crisp inflation is asserted separately, below).
     const Transform H = homographyOf(makeGpuSprite(s, 16, 16, 0, 0, Transform{}, EvaluationGrid::Output));
-    // Centre unit (0.5,0.5) → sprite-local (4,4) → fixed point of the scale → screen (4,4) → clip.
+    // Center unit (0.5,0.5) → sprite-local (4,4) → fixed point of the scale → screen (4,4) → clip.
     const float centreClipX = 4.0f / 16.0f * 2.0f - 1.0f;  // -0.5
     const float centreClipY = 1.0f - 4.0f / 16.0f * 2.0f;  //  0.5
     EXPECT_NEAR(H.applyX(0.5f, 0.5f), centreClipX, kTol);
@@ -111,7 +111,7 @@ TEST(SpriteTransform, PerSpriteRotation90AboutCentre) {
     s.x = 0;
     s.y = 0;
     s.size = AssetDimensions{8, 8};
-    s.transform = Transform::rotation(90.0f, 4.0f, 4.0f);  // 90° CW about the sprite centre
+    s.transform = Transform::rotation(90.0f, 4.0f, 4.0f);  // 90° CW about the sprite center
 
     // Worked by hand: rotation(90) about (4,4) maps sprite-local (x,y) → (8 - y, x); screen→clip
     // with vw=vh=16 is x'=x/8-1, y'=1-y/8. Unit(0,0)→local(0,0)→(8,0)→clip(0,1). Output grid → exact map.
@@ -122,7 +122,7 @@ TEST(SpriteTransform, PerSpriteRotation90AboutCentre) {
     EXPECT_NEAR(H.applyY(1.0f, 0.0f),  0.0f, kTol);
     EXPECT_NEAR(H.applyX(0.0f, 1.0f), -1.0f, kTol);  // local (0,0)
     EXPECT_NEAR(H.applyY(0.0f, 1.0f),  1.0f, kTol);
-    // The centre is invariant under a rotation about itself.
+    // The center is invariant under a rotation about itself.
     EXPECT_NEAR(H.applyX(0.5f, 0.5f), -0.5f, kTol);
     EXPECT_NEAR(H.applyY(0.5f, 0.5f),  0.5f, kTol);
 }
@@ -333,7 +333,7 @@ TEST(SpriteAnalytic, DegenerateTransformFallsBackToSmoothPath) {
 
 TEST(SampleSpriteCell, HalfOpenCoverageAndTrailingClamp) {
     // A 2× scale about the origin: unit (u,v) → viewport (32u, 32v) for a 16×16 sprite. The inverse maps
-    // a viewport point back to unit; sampleSpriteCell snaps to the cell centre internally.
+    // a viewport point back to unit; sampleSpriteCell snaps to the cell center internally.
     const Transform S   = Transform::scale(16.0f, 16.0f).then(Transform::scale(2.0f, 2.0f));
     const Transform inv = S.inverse();
 
@@ -347,20 +347,20 @@ TEST(SampleSpriteCell, HalfOpenCoverageAndTrailingClamp) {
     EXPECT_EQ(b.px, 15);
     EXPECT_EQ(b.py, 15);
 
-    // Half-open: a cell centre at unit ≥ 1 (viewport 32.5 → u ~1.016) is NOT covered.
+    // Half-open: a cell center at unit ≥ 1 (viewport 32.5 → u ~1.016) is NOT covered.
     EXPECT_FALSE(sampleSpriteCell(inv, 32.5f, 16.0f, 16, 16).covered);
-    // A cell centre left of the quad (negative unit) is not covered.
+    // A cell center left of the quad (negative unit) is not covered.
     EXPECT_FALSE(sampleSpriteCell(inv, -0.5f, 16.0f, 16, 16).covered);
 }
 
 TEST(SampleSpriteCell, PerspectiveWeightBehindProjectionDiscards) {
-    // An inverse whose bottom row drives the perspective weight non-positive at a cell centre → discard,
+    // An inverse whose bottom row drives the perspective weight non-positive at a cell center → discard,
     // never a divide-by-zero or a wild texel.
     const Transform inv{1.0f, 0.0f, 0.0f,
                         0.0f, 1.0f, 0.0f,
                         0.0f, -0.1f, 1.0f};  // cw = 1 − 0.1·cy; cy = 15.5 → cw = −0.55
     EXPECT_FALSE(sampleSpriteCell(inv, 4.0f, 15.0f, 16, 16).covered);
-    // A near-origin cell centre keeps a positive weight AND maps inside the unit quad → covered:
+    // A near-origin cell center keeps a positive weight AND maps inside the unit quad → covered:
     // cx = cy = 0.5, cw = 0.95, u = v = 0.5/0.95 ≈ 0.526 ∈ [0,1).
     EXPECT_TRUE(sampleSpriteCell(inv, 0.0f, 0.0f, 16, 16).covered);
 }

@@ -94,7 +94,7 @@ int main(int argc, char** argv) {
     fonts.dim    = renderer.loadPaletteImage("examples/driver_hosting/assets/palettes/mono.png",
                                              ReadOrder::LeftRightThenDown, 0, AssetPolicy::Embed);
 
-    // A flat dark faceplate tile: the low-z layer the panel's coloured rects (regions) sit on.
+    // A flat dark faceplate tile: the low-z layer the panel's colored rects (regions) sit on.
     constexpr int mapW = (kViewW + 7) / 8, mapH = (kViewH + 7) / 8;
     std::array<std::uint8_t, 64> faceArt{};
     const AtlasId faceAtlas = renderer.uploadAtlas(faceArt.data(), 8, 8).atlasId;
@@ -161,7 +161,7 @@ int main(int argc, char** argv) {
         } else if (l == 10) {
             // Put the machine back the way it started — the driver's declared .init performed again,
             // which is what a console reset IS. Both synthetic drivers zero their state RAM in .init,
-            // so the DRIVER VOL the fader wrote is gone afterwards and the readout drops to 0.
+            // so the DRIVER VOL the fader wrote is gone afterward and the readout drops to 0.
             if (cs.resident) h.restart();
         } else if (l == 8) {
             h.close();                                                 // the resident voice closes

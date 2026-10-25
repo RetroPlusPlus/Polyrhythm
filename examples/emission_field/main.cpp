@@ -1,8 +1,8 @@
 // Emission-field demo — a runnable host for region BLOOM at a scale a per-layer store could never hold.
 //
 // WHAT A REGION BLOOM IS. A Bloom inside a sprite REGION is not an additive halo laid over the layer: it is
-// the region's SOURCE colour, graded under the region's own blend and alpha and confined to shape ∩
-// silhouette. So it cannot share a field with anything — it needs THIS sprite's own light, as a colour:
+// the region's SOURCE color, graded under the region's own blend and alpha and confined to shape ∩
+// silhouette. So it cannot share a field with anything — it needs THIS sprite's own light, as a color:
 //
 //     Sprite s{ .key = "emitter", .x = 40, .y = 24, .atlas = orb, .palette = pal };
 //     s.regions = { Region{ .key = "core", .shape = ShapePoints::rectangle({0, 0}, 16, 16),
@@ -79,7 +79,7 @@ constexpr int kLenses   = 12;   // Below-scope lenses the L key glides over the 
 enum class Action : std::uint8_t { More, Fewer, Wider, Narrower, Lenses, Fullscreen };
 
 // A 16x16 ember: a white-hot core stepping out through four warm shades to a hole. One hue family, so the
-// bloom reads as the core's own light spreading into its dimmer edge rather than as a ring of another colour.
+// bloom reads as the core's own light spreading into its dimmer edge rather than as a ring of another color.
 [[nodiscard]] std::array<std::uint8_t, kOrb * kOrb> orbArt() {
     std::array<std::uint8_t, kOrb * kOrb> a{};
     const float c = (kOrb - 1) * 0.5f;
@@ -250,7 +250,7 @@ int main() {
                          .atlas   = orbAtlas,
                          .tile    = 0,
                          .palette = orbPalId};
-                // A Glow rather than a Bloom: the scene's light keys WHERE the halo appears, but its colour
+                // A Glow rather than a Bloom: the scene's light keys WHERE the halo appears, but its color
                 // is the one authored here. A cool tint over a field of warm embers is what makes the lens
                 // legible — a Bloom would re-radiate the embers' own orange on top of orange.
                 ScreenSpaceEffect glow{.kind      = ScreenSpaceEffectKind::Glow,

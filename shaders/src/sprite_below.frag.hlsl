@@ -60,9 +60,9 @@ Texture2D<float4>      uEmissionRects  : register(t6, space2);
 cbuffer SpriteFragUniforms : register(b0, space3) {
     float uTilePx;          // register 0: tile edge length, pixels (8)
     float uAlpha;           // layer alpha, [0,1]
-    float uPaletteStoreW;   // palette-store row width (colours)
+    float uPaletteStoreW;   // palette-store row width (colors)
     float uComposeScale;    // compose grid ÷ viewport (1 = faithful); output pixel → viewport
-    float uEvalSnap;        // register 1: 1 = Viewport grid (snap the field read to the cell centre), 0 = Output
+    float uEvalSnap;        // register 1: 1 = Viewport grid (snap the field read to the cell center), 0 = Output
 };
 
 // Steps per texel the emission read quantizes its sample point to — mirrors retropp::kEmissionSampleSteps.
@@ -70,7 +70,7 @@ static const float kEmissionSampleSteps = 256.0f;
 
 // ── Effect math (mirrors the retropp:: CPU authorities in postprocess.h) ──────────────────
 
-#include "sprite_color.hlsli"  // applyGleam, applySaturation — the per-pixel colour operators
+#include "sprite_color.hlsli"  // applyGleam, applySaturation — the per-pixel color operators
 
 #include "sprite_blend.hlsli"  // blendChannel, applyBlendMode — the scalar BlendMode operators
 
@@ -79,7 +79,7 @@ static const float kEmissionSampleSteps = 256.0f;
 // Round-half-up (HLSL round() is round-to-even and breaks scale-1 parity at .5 ties).
 #include "rounding.hlsli"  // roundHalfUp — the CPU mirror's tie rule
 
-// The centre of the VIEWPORT cell a screen uv falls in — the crisp evaluation point (the scene is a
+// The center of the VIEWPORT cell a screen uv falls in — the crisp evaluation point (the scene is a
 // viewport-resolution image scaled to compose res; per-cell math matches the viewport rasterization).
 float2 snapViewport(float2 uv, float2 dims) {
     float2 c = uv;
@@ -107,17 +107,17 @@ float2 sceneDisplace(float2 uv, float4 params, float2 dims) {
 
 // Ripple over the SCENE: a radial re-read pushed along the radius from `center` (VIEWPORT px, in gate.yz)
 // by amplitude·sin(2π(freq·dist − phase))·exp(−decay·dist), quantized to whole viewport px. params =
-// (amplitude, frequency, phase, _); gate.w = decay. amplitude 0 or the centre pixel ⇒ identity.
+// (amplitude, frequency, phase, _); gate.w = decay. amplitude 0 or the center pixel ⇒ identity.
 float2 sceneRipple(float2 uv, float4 params, float4 gate, float2 dims) {
     if (params.x == 0.0f) return uv;
     const float kTwoPi = 6.283185307179586f;
     float invW = 1.0f / dims.x, invH = 1.0f / dims.y;
-    float cu = gate.y * invW, cv = gate.z * invH;   // centre viewport px → screen uv
+    float cu = gate.y * invW, cv = gate.z * invH;   // center viewport px → screen uv
     float2 e   = snapViewport(uv, dims);
     float  dx  = e.x - cu, dy = e.y - cv;
     float  cx  = dx * (invH / invW);                // aspect-correct so the rings stay circular
     float  dist = sqrt(cx * cx + dy * dy);
-    if (dist <= 1e-5f) return uv;                   // the centre has no radial direction
+    if (dist <= 1e-5f) return uv;                   // the center has no radial direction
     float  wave   = sin(kTwoPi * (params.y * dist - params.z));
     float  env    = exp(-gate.w * dist);
     float  offset = params.x * wave * env;          // viewport px
@@ -126,13 +126,13 @@ float2 sceneRipple(float2 uv, float4 params, float4 gate, float2 dims) {
 }
 
 // Swirl over the SCENE: an angular re-read rotating the sample about `center` (VIEWPORT px, in gate.yz) by
-// twist·(1 − t²)², t = dist/radius — the full turn at the centre easing to none at the rim. params =
+// twist·(1 − t²)², t = dist/radius — the full turn at the center easing to none at the rim. params =
 // (twist, radius, _, _); `twist` arrives already resolved to RADIANS and signed (swirlParams does the
 // degrees conversion), `radius` is in viewport px. Working space is viewport px (square units, so the disc
 // stays circular on any aspect). twist 0, radius ≤ 0, or a fragment at or beyond the rim ⇒ identity.
 float2 sceneSwirl(float2 uv, float4 params, float4 gate, float2 dims) {
     if (params.x == 0.0f || params.y <= 0.0f) return uv;
-    float2 e = snapViewport(uv, dims) * dims;        // evaluate from the viewport cell centre, in px
+    float2 e = snapViewport(uv, dims) * dims;        // evaluate from the viewport cell center, in px
     float2 c = float2(gate.y, gate.z);
     float2 d = e - c;
     float  r = length(d);
@@ -198,7 +198,7 @@ float4 spriteArtSample(float2 uv, uint tile, uint atlasPalette, uint flags, uint
 // #ifdef in main() compiles the built-in path, not this call). A generated <ns>_sprite_below variant
 // (gen_shader.cmake SPRITE_BELOW mode) replaces the marker below with the game body + its scene-reading
 // sampleSource (retropp_sprite_below_effect.hlsli) + a record-lane param loader, and #defines
-// RETROPP_SPRITE_BELOW_CUSTOM so the built-in path is compiled out and this call produces the lens colour.
+// RETROPP_SPRITE_BELOW_CUSTOM so the built-in path is compiled out and this call produces the lens color.
 // `sceneUv` is the fragment's screen uv, `viewportDim` the viewport size (the displacement quantization unit;
 // an emission-consumer variant maps a uv to a field read by `uv * viewportDim * uComposeScale`), `ri` the
 // sprite's single Below-custom record row in the sprite-effect store.
@@ -220,7 +220,7 @@ float4 main(float2 spriteUV : TEXCOORD0,
             nointerpolation uint fxCount      : TEXCOORD10,
             float4 pos : SV_Position) : SV_Target0 {
     // The within-sprite QUAD coordinate — the coverage-read space, pre-orientation. A transformed sprite on
-    // the analytic flag (bit 4) resolves coverage per VIEWPORT cell (SV_Position → viewport → cell centre →
+    // the analytic flag (bit 4) resolves coverage per VIEWPORT cell (SV_Position → viewport → cell center →
     // screen→unit inverse); a plain sprite takes the rasterized spriteUV. A Below sprite's footprint is NOT
     // inflated (Below displacement re-reads the scene, not the art — spriteDisplacedRead skips Below), so a
     // fragment outside the true quad on the analytic path is off-silhouette and discards.
@@ -257,7 +257,7 @@ float4 main(float2 spriteUV : TEXCOORD0,
     float3 c = retroppSpriteBelowCustom(sceneUv, viewportDim, int(fxOffset)).rgb;
 #else
     // Displacement pre-pass — compose the Below run's displacing effects (RowDisplacement / Ripple / Swirl)
-    // into the scene READ coordinate before the scene is sampled. Colour kinds then apply to the read colour.
+    // into the scene READ coordinate before the scene is sampled. Color kinds then apply to the read color.
     float2 readUv = sceneUv;
     [loop]
     for (uint di = 0u; di < fxCount; di++) {
@@ -269,11 +269,11 @@ float4 main(float2 spriteUV : TEXCOORD0,
             readUv = sceneDisplace(readUv, dp, viewportDim);
         } else if (dk == 2u) {                          // Ripple
             float4 dp = uFxStore.Load(int3(2, dri, 0));
-            float4 dg = uFxStore.Load(int3(1, dri, 0)); // gate: centre (yz) + decay (w)
+            float4 dg = uFxStore.Load(int3(1, dri, 0)); // gate: center (yz) + decay (w)
             readUv = sceneRipple(readUv, dp, dg, viewportDim);
         } else if (dk == 10u) {                         // Swirl
             float4 dp = uFxStore.Load(int3(2, dri, 0)); // params (twist radians, radius, _, _)
-            float4 dg = uFxStore.Load(int3(1, dri, 0)); // gate: centre (yz)
+            float4 dg = uFxStore.Load(int3(1, dri, 0)); // gate: center (yz)
             readUv = sceneSwirl(readUv, dp, dg, viewportDim);
         }
     }
@@ -309,7 +309,7 @@ float4 main(float2 spriteUV : TEXCOORD0,
             else if (kind == 8u) {                                              // Bloom — the scene's own light
                 if (params.z != 0.0f)
                     c = c + params.z * sampleEmissionField(readPx, params.w).rgb;
-            } else if (kind == 9u) {                                            // Glow — authored-colour aura;
+            } else if (kind == 9u) {                                            // Glow — authored-color aura;
                 if (params.z != 0.0f)                                           //   tint rides the gate lanes
                     c = c + params.z * sampleEmissionField(readPx, params.w).a
                           * float3(gate.y, gate.z, gate.w);
@@ -342,7 +342,7 @@ float4 main(float2 spriteUV : TEXCOORD0,
         float4 src = float4(params.xyz, gate.x);                            // ColorFill: the fill; gate.x = region alpha
         if (kind == 6u) src = float4(applyGleam(c, sceneUv.x, sceneUv.y, params), gate.x);
         else if (kind == 7u) src = float4(applySaturation(c, params.x), gate.x);
-        else if (kind == 8u)   // Bloom — this step's own halo graded in as the region's source colour
+        else if (kind == 8u)   // Bloom — this step's own halo graded in as the region's source color
             src = float4(params.z != 0.0f ? c + params.z * sampleEmissionField(readPx, params.w).rgb : c,
                          gate.x);
         c = applyBlendMode(float4(c, 1.0f), src, (uint)head.z).rgb;         // head.z = region blend; grade the scene

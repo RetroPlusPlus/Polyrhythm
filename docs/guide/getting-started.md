@@ -1,6 +1,6 @@
 # Getting started
 
-This page takes you from a fresh clone to a window with a scrolling, full-colour tile background you
+This page takes you from a fresh clone to a window with a scrolling, full-color tile background you
 can steer with the d-pad — the smallest complete *interactive* program that uses the platform for real.
 It is about 60 lines, uses no asset files, and every line is explained below. The full source is
 [`examples/controller_scrolling.cpp`](../../examples/controller_scrolling.cpp); it builds as the
@@ -97,8 +97,8 @@ int main() {
     }
     const AtlasId atlasId = renderer.uploadAtlas(atlas.data(), kTile * kCols, kTile).atlasId;
 
-    const std::array<Rgba8, 4> colours{{{20, 20, 30}, {70, 110, 180}, {0, 0, 0}, {200, 230, 255}}};
-    const PaletteId pal = renderer.uploadPalette(std::span<const Rgba8>(colours));
+    const std::array<Rgba8, 4> colors{{{20, 20, 30}, {70, 110, 180}, {0, 0, 0}, {200, 230, 255}}};
+    const PaletteId pal = renderer.uploadPalette(std::span<const Rgba8>(colors));
 
     // 4. A tilemap. Each cell names its own sheet + palette.
     constexpr int kMapW = 32, kMapH = 32;
@@ -165,11 +165,11 @@ the recommended minimal path.)
   viewport. Drawing is the renderer's job; the platform owns the window/device.
 - `RunLoop` — the fixed-step scheduler. It takes the clock and inherits the active timing profile.
 
-**Step 3 — upload art.** The platform's colour model is **indexed**: an atlas holds one palette *index*
-per pixel, and colour comes from a palette chosen at render time — never baked into the art (full
-detail in [tiles-and-colour.md](tiles-and-colour.md)). Here we build a tiny 16×8 atlas of two 8×8
+**Step 3 — upload art.** The platform's color model is **indexed**: an atlas holds one palette *index*
+per pixel, and color comes from a palette chosen at render time — never baked into the art (full
+detail in [tiles-and-color.md](tiles-and-color.md)). Here we build a tiny 16×8 atlas of two 8×8
 tiles by hand: tile 0 is solid index 1, tile 1 has a bright (index 3) border. `uploadPalette` gives
-those indices colours; `uploadAtlas` uploads the index plane. Both uploads are **amortized** — you do
+those indices colors; `uploadAtlas` uploads the index plane. Both uploads are **amortized** — you do
 them once, and the per-frame draw state just references the returned `AtlasId` / `PaletteId` handles.
 A real game loads art from PNG instead of building it in code (see
 [images-and-transparency.md](images-and-transparency.md)); hand-building keeps this example
@@ -217,7 +217,7 @@ mapping) or a gamepad d-pad and the field scrolls. Close the window to quit.
 - **Do specific things** — scroll, animate a sprite, make a character walk behind scenery, add a HUD,
   fade the screen, load a PNG: [how-to.md](how-to.md).
 - **The frame you submit, in depth** — layers, sprites, z-ordering, modifiers: [draw-state.md](draw-state.md).
-- **Colour** — indexed atlases, palettes, recolouring without new art: [tiles-and-colour.md](tiles-and-colour.md).
+- **Color** — indexed atlases, palettes, recoloring without new art: [tiles-and-color.md](tiles-and-color.md).
 - **Richer running examples** — the `retropp-beach-demo` target
   ([`examples/beach_demo.cpp`](../../examples/beach_demo.cpp)) composites a beach scene with a wavy
   ocean (per-layer screen-space effects) beating over a rock, and the `retropp-layer-transparency-demo`

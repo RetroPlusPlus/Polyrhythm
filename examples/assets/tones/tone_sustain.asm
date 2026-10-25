@@ -1,7 +1,7 @@
 ; tone_sustain — a self-contained CONTINUOUS pulse tone (CH2, ~512 Hz). Its envelope pace is 0, so the
 ; envelope is DISABLED and the volume stays constant — the tone plays forever once triggered and its output
 ; is never silent. For the auto-close NEGATIVE test: a still-sounding voice must NOT auto-close, even when
-; tagged Sfx (the high-pass-centred square oscillates through 0 but never holds (0,0)).
+; tagged Sfx (the high-pass-centered square oscillates through 0 but never holds (0,0)).
 ld a, $80
 ldh [rNR52], a    ; APU master enable
 ld a, $FF

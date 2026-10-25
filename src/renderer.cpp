@@ -58,9 +58,9 @@ namespace {
 constexpr SDL_FColor kBackdropClear{0.0f, 0.0f, 0.0f, 1.0f};
 constexpr SDL_FColor kLetterboxClear{0.0f, 0.0f, 0.0f, 1.0f};
 
-// The offscreen colour intermediates — the viewport composite target, the post-process ping-pong
+// The offscreen color intermediates — the viewport composite target, the post-process ping-pong
 // scratch, and the per-layer effect scratch — and the captureViewport download all use this format.
-// R16G16B16A16_FLOAT lets a colour above 1 survive the effect→blend round-trip (so a Multiply ColorFill
+// R16G16B16A16_FLOAT lets a color above 1 survive the effect→blend round-trip (so a Multiply ColorFill
 // with fillIntensity > 1 brightens instead of only darkening); the blit to the 8-bit swapchain is the
 // single clamp back into displayable range.
 constexpr SDL_GPUTextureFormat kViewportColorFormat = SDL_GPU_TEXTUREFORMAT_R16G16B16A16_FLOAT;
@@ -122,8 +122,8 @@ inline Uint16 floatToHalfBits(float f) noexcept {
     return half;
 }
 
-// Quantize a colour channel to 8-bit the way the swapchain blit's UNORM write does: round(clamp(v,0,1)·255).
-// A float16 headroom colour above 1 clamps to 255 — the single clamp into displayable range.
+// Quantize a color channel to 8-bit the way the swapchain blit's UNORM write does: round(clamp(v,0,1)·255).
+// A float16 headroom color above 1 clamps to 255 — the single clamp into displayable range.
 inline std::uint8_t quantizeChannel(float v) noexcept {
     return static_cast<std::uint8_t>(std::clamp(v, 0.0f, 1.0f) * 255.0f + 0.5f);
 }
@@ -153,7 +153,7 @@ constexpr std::uint64_t kFnv64Prime  = 1099511628211ull;
 
 // ── hashFrameStructure helpers — the frame-level compose-skip fingerprint ─────────────────────────────
 // Fold a trivially-copyable value's object bytes into the running hash. Used for the scalar draw-state fields
-// (positions, colours, transforms, enums). Never applied to a whole struct that owns a vector/span/string —
+// (positions, colors, transforms, enums). Never applied to a whole struct that owns a vector/span/string —
 // those are followed field-by-field so the hash tracks contents, not container pointers.
 template <class T>
 [[nodiscard]] std::uint64_t foldValue(std::uint64_t h, const T& v) noexcept {
@@ -332,7 +332,7 @@ template <class T>
     return false;
 }
 
-using detail::kPaletteStoreWidth;  // the palette store's row width, in colours (store_upload.h)
+using detail::kPaletteStoreWidth;  // the palette store's row width, in colors (store_upload.h)
 
 // Per-layer uniform block — must match tile.frag.hlsl's TileUniforms cbuffer exactly
 // (std140-style 16-byte-register packing; no member straddles a 16-byte boundary). Each cell carries
@@ -363,7 +363,7 @@ struct TileUniforms {
     float layerW, layerH;
     float tilemapW, tilemapH;    // register 1
     float tilePx, alpha;
-    float paletteStoreW;         // register 2: palette-store row width (colours); flat offset → (f%W, f/W)
+    float paletteStoreW;         // register 2: palette-store row width (colors); flat offset → (f%W, f/W)
     float composeScale;          //             compose grid ÷ viewport (1 = faithful); output pixel → viewport
     float snap;                  //             1 = snap the transform's destination pixel to the viewport grid
     float pad2;
@@ -391,9 +391,9 @@ static_assert(sizeof(TileUniforms) == 112, "TileUniforms must match the HLSL cbu
 struct SpriteFragUniforms {
     float tilePx;        // register 0: tile edge length, pixels
     float alpha;         // layer alpha, [0,1]
-    float paletteStoreW; // palette-store row width (colours); flat offset → (f%W, f/W)
+    float paletteStoreW; // palette-store row width (colors); flat offset → (f%W, f/W)
     float composeScale;  // compose grid ÷ viewport (1 = faithful) — the analytic branch's output→viewport map
-    float evalSnap;      // register 1: 1 = Viewport grid (the field read snaps to the cell centre), 0 = Output
+    float evalSnap;      // register 1: 1 = Viewport grid (the field read snaps to the cell center), 0 = Output
     float pad[3];        // the register's remaining lanes — a cbuffer register is 16 bytes whatever it holds
 };
 static_assert(sizeof(SpriteFragUniforms) == 32, "SpriteFragUniforms must match the HLSL cbuffer");
@@ -414,7 +414,7 @@ static_assert(sizeof(DisplaceFragUniforms) == 48, "DisplaceFragUniforms must mat
 
 // Built-in radial-ripple stage uniform — must match ripple.frag.hlsl's RippleUniforms
 // cbuffer exactly (two 16-byte registers). Filled from retropp::rippleParams(effect, viewport);
-// the layout mirrors RippleParams's fields (centre normalized px→UV, the inverse-viewport amplitude
+// the layout mirrors RippleParams's fields (center normalized px→UV, the inverse-viewport amplitude
 // scale, the radial decay).
 struct RippleFragUniforms {
     float centerU, centerV, amplitude, frequency;  // register 0
@@ -425,7 +425,7 @@ struct RippleFragUniforms {
 static_assert(sizeof(RippleFragUniforms) == 48, "RippleFragUniforms must match the ripple.frag cbuffer");
 
 // Built-in angular-twist stage uniform — must match swirl.frag.hlsl's SwirlUniforms cbuffer exactly (two
-// 16-byte registers). Filled from retropp::swirlParams(effect): the centre and radius stay in viewport
+// 16-byte registers). Filled from retropp::swirlParams(effect): the center and radius stay in viewport
 // pixels (the shader works in square pixel units so the disc is circular on any aspect) and the twist
 // arrives already resolved to radians, the degrees-to-radians conversion having happened in swirlParams.
 struct SwirlFragUniforms {
@@ -434,12 +434,12 @@ struct SwirlFragUniforms {
 };
 static_assert(sizeof(SwirlFragUniforms) == 32, "SwirlFragUniforms must match the swirl.frag cbuffer");
 
-// Built-in colour-fill stage uniform — must match colorfill.frag.hlsl's ColorFillUniforms cbuffer exactly:
-// one 16-byte register holding the fill colour (rgb, normalized) + a pad lane. Filled from
-// retropp::colorFillParams(effect). The ColorFill stage emits this colour, opaque; opacity belongs to the
+// Built-in color-fill stage uniform — must match colorfill.frag.hlsl's ColorFillUniforms cbuffer exactly:
+// one 16-byte register holding the fill color (rgb, normalized) + a pad lane. Filled from
+// retropp::colorFillParams(effect). The ColorFill stage emits this color, opaque; opacity belongs to the
 // owning Region / Layer / Frame.
 struct ColorFillFragUniforms {
-    float r, g, b, pad;   // register 0 — fill colour (normalized) + pad
+    float r, g, b, pad;   // register 0 — fill color (normalized) + pad
 };
 static_assert(sizeof(ColorFillFragUniforms) == 16, "ColorFillFragUniforms must match the colorfill.frag cbuffer");
 
@@ -451,9 +451,9 @@ struct GleamFragUniforms {
 };
 static_assert(sizeof(GleamFragUniforms) == 16, "GleamFragUniforms must match the gleam.frag cbuffer");
 
-// Built-in colour-saturation stage uniform — must match saturation.frag.hlsl's SaturationUniforms cbuffer (one
+// Built-in color-saturation stage uniform — must match saturation.frag.hlsl's SaturationUniforms cbuffer (one
 // 16-byte register; the shader reads only the first float). Filled from retropp::saturationParams(effect). The
-// stage pulls each pixel toward its own luminance; saturation 1 is identity, 0 greyscale.
+// stage pulls each pixel toward its own luminance; saturation 1 is identity, 0 grayscale.
 struct SaturationFragUniforms {
     float saturation, pad0, pad1, pad2;   // register 0
 };
@@ -474,7 +474,7 @@ static_assert(sizeof(EmissionExtractFragUniforms) == 32,
 // register). A field is a viewport-grid image and the accumulator it reads is a compose-grid one, so the
 // scale between them is the only thing the pass needs beyond its per-rect record. Threshold and extract kind
 // ride the record; intensity and tint are absent because the extract is neutral — one field serves lenses of
-// differing strength and colour, each applying its own as it samples.
+// differing strength and color, each applying its own as it samples.
 struct EmissionExtractRectFragUniforms {
     float composeScale, pad0, pad1, pad2;
 };
@@ -1075,7 +1075,7 @@ Renderer::Renderer(SDL_GPUDevice* device, SDL_Window* window, ViewportResolution
     // blended (SRC_ALPHA / ONE_MINUS_SRC_ALPHA) so per-layer alpha composites back-to-front.
     // The fragment shader binds NO sampler and three read-only storage textures — the indexed
     // atlas (R8_UINT), the tilemap cells (R32_UINT), and the palette store (RGBA8) — plus one
-    // uniform buffer (the per-layer block); colour is all integer Load + palette lookup.
+    // uniform buffer (the per-layer block); color is all integer Load + palette lookup.
     {
         SDL_GPUShader* vertex   = createShader(device_, SDL_GPU_SHADERSTAGE_VERTEX, shaders::tile_vert, 0, 0, 0);
         SDL_GPUShader* fragment = createShader(device_, SDL_GPU_SHADERSTAGE_FRAGMENT, shaders::tile_frag, 0, 4, 1);
@@ -1150,7 +1150,7 @@ Renderer::Renderer(SDL_GPUDevice* device, SDL_Window* window, ViewportResolution
     // (the screen→clip transform is baked into each record); the fragment shader binds five
     // read-only storage textures (indexed atlas, palette store, atlas-region table, sprite-effect
     // records, the emission-field array — t0..t4 space2) + one uniform buffer (b0 space3) and no
-    // sampler — all integer Load, colour-index-0 discarded for OBJ transparency.
+    // sampler — all integer Load, color-index-0 discarded for OBJ transparency.
     {
         SDL_GPUShader* vertex   = createShader(device_, SDL_GPU_SHADERSTAGE_VERTEX, shaders::sprite_vert, 0, 0, 0, 1);
         SDL_GPUShader* fragment = createShader(device_, SDL_GPU_SHADERSTAGE_FRAGMENT, shaders::sprite_frag, 1, 5, 1);
@@ -1193,9 +1193,9 @@ Renderer::Renderer(SDL_GPUDevice* device, SDL_Window* window, ViewportResolution
 
     // Sprite-emission pipeline: the SAME instanced sprite vertex stage and the same four storage textures +
     // uniform as sprite_, but the sprite_emission fragment writes a glowing sprite's EMISSION instead of its
-    // art. The blend is purely ADDITIVE on both colour and alpha — emission fields sum, so every sprite in a
+    // art. The blend is purely ADDITIVE on both color and alpha — emission fields sum, so every sprite in a
     // bucket accumulates into one image the chain then blurs and composites once. The target is the emission
-    // scratch, which shares the viewport colour format.
+    // scratch, which shares the viewport color format.
     {
         SDL_GPUShader* vertex   = createShader(device_, SDL_GPU_SHADERSTAGE_VERTEX, shaders::sprite_vert, 0, 0, 0, 1);
         SDL_GPUShader* fragment =
@@ -1232,7 +1232,7 @@ Renderer::Renderer(SDL_GPUDevice* device, SDL_Window* window, ViewportResolution
     // samples the source viewport at a displaced UV and writes a viewport-sized RGBA8 scratch
     // target. Shares postprocess.vert with future stages; the fragment binds one sampled texture
     // (the source) + one uniform (the displacement params) and no storage. No blend — the stage
-    // fully replaces its target. The colour target format is the viewport's (RGBA8), NOT the
+    // fully replaces its target. The color target format is the viewport's (RGBA8), NOT the
     // swapchain's, since it renders into post0_/post1_.
     {
         SDL_GPUShader* vertex   = createShader(device_, SDL_GPU_SHADERSTAGE_VERTEX, shaders::postprocess_vert, 0);
@@ -1417,11 +1417,11 @@ Renderer::Renderer(SDL_GPUDevice* device, SDL_Window* window, ViewportResolution
         if (!swirlBlend_) fail("SDL_CreateGPUGraphicsPipeline (swirlBlend) failed");
     }
 
-    // Built-in colour-fill post-process pipeline: a fullscreen-triangle pass over postprocess.vert with
-    // one uniform (ColorFillFragUniforms) and no sampled source — a fill is a pure source colour, so the
+    // Built-in color-fill post-process pipeline: a fullscreen-triangle pass over postprocess.vert with
+    // one uniform (ColorFillFragUniforms) and no sampled source — a fill is a pure source color, so the
     // stage emits it directly, and it means the same thing at every scope. No blend (it replaces its
     // scratch). The runEffect built-in branch dispatches to this by ScreenSpaceEffectKind::ColorFill. A
-    // Region confines it to a shape, so a colour fills that shape — a stroked region becomes a drawn
+    // Region confines it to a shape, so a color fills that shape — a stroked region becomes a drawn
     // line, a filled region a solid shape.
     {
         SDL_GPUShader* vertex   = createShader(device_, SDL_GPU_SHADERSTAGE_VERTEX, shaders::postprocess_vert, 0);
@@ -1447,7 +1447,7 @@ Renderer::Renderer(SDL_GPUDevice* device, SDL_Window* window, ViewportResolution
         if (!colorFill_) fail("SDL_CreateGPUGraphicsPipeline (colorFill) failed");
     }
 
-    // Per-layer (Layer scope) colour-fill composite pipeline: the SAME colorfill shaders, premultiplied-
+    // Per-layer (Layer scope) color-fill composite pipeline: the SAME colorfill shaders, premultiplied-
     // over blend onto target_ — mirroring rippleBlend_ (the isolated layer is rendered alone over a
     // transparent-cleared scratch first, so this composites the PREMULTIPLIED result).
     {
@@ -1543,10 +1543,10 @@ Renderer::Renderer(SDL_GPUDevice* device, SDL_Window* window, ViewportResolution
         if (!gleamBlend_) fail("SDL_CreateGPUGraphicsPipeline (gleamBlend) failed");
     }
 
-    // Built-in colour-saturation post-process pipeline: the SAME shape as gleam_ — a fullscreen-triangle pass
+    // Built-in color-saturation post-process pipeline: the SAME shape as gleam_ — a fullscreen-triangle pass
     // over postprocess.vert, one sampled source + one uniform (SaturationFragUniforms), no blend (replaces its
     // scratch). The runEffect built-in branch dispatches to this by ScreenSpaceEffectKind::ColorSaturation. The
-    // fragment pulls each pixel toward its own luminance; saturation 1 is identity, 0 greyscale.
+    // fragment pulls each pixel toward its own luminance; saturation 1 is identity, 0 grayscale.
     {
         SDL_GPUShader* vertex   = createShader(device_, SDL_GPU_SHADERSTAGE_VERTEX, shaders::postprocess_vert, 0);
         SDL_GPUShader* fragment = createShader(device_, SDL_GPU_SHADERSTAGE_FRAGMENT, shaders::saturation_frag, 1, 0, 1);
@@ -1571,7 +1571,7 @@ Renderer::Renderer(SDL_GPUDevice* device, SDL_Window* window, ViewportResolution
         if (!saturation_) fail("SDL_CreateGPUGraphicsPipeline (saturation) failed");
     }
 
-    // Per-layer (Layer scope) colour-saturation composite pipeline: the SAME saturation shaders,
+    // Per-layer (Layer scope) color-saturation composite pipeline: the SAME saturation shaders,
     // premultiplied-over blend onto target_ — mirroring gleamBlend_ (the isolated layer is rendered alone over
     // a transparent-cleared scratch first, so this composites the PREMULTIPLIED result).
     {
@@ -2122,7 +2122,7 @@ Renderer::Renderer(SDL_GPUDevice* device, SDL_Window* window, ViewportResolution
     }
 
     // Blit pipeline: the fragment shader uses one sampled texture (the viewport); the vertex
-    // shader needs none. The pipeline's colour target must match the swapchain — which needs the
+    // shader needs none. The pipeline's color target must match the swapchain — which needs the
     // window. A compose-only renderer (window == nullptr) skips it: it composes + captures the
     // viewport offscreen but never presents, so it has no swapchain and no blit pipeline (blit_ stays
     // null; the destructor and renderFrame's blit section both guard on it).
@@ -2180,7 +2180,7 @@ void Renderer::resizeComposeTargets(int scale) {
     texInfo.num_levels           = 1;
     texInfo.sample_count         = SDL_GPU_SAMPLECOUNT_1;
 
-    // Offscreen compose target: the colour target the compositor renders into, and the blit's sampler source.
+    // Offscreen compose target: the color target the compositor renders into, and the blit's sampler source.
     target_ = SDL_CreateGPUTexture(device_, &texInfo);
     if (!target_) fail("SDL_CreateGPUTexture (viewport) failed");
     // Two scratch targets for the post-process chain: it ping-pongs between them, never writing target_,
@@ -2360,7 +2360,7 @@ int Renderer::resolveComposeScale() const {
     int w = 0, h = 0;
     if (!SDL_GetWindowSizeInPixels(window_, &w, &h) || w <= 0 || h <= 0) return 1;
     // The window's integer-scale-to-fit factor (clamped): compose at exactly the drawn-region size so the
-    // blit is a 1:1 centring copy — fill parity with the faithful path.
+    // blit is a 1:1 centering copy — fill parity with the faithful path.
     return composeScaleToFit(PixelSize{w, h},
                              PixelSize{viewport_.width, viewport_.height}, kMaxComposeScale);
 }
@@ -2741,7 +2741,7 @@ SDL_GPUGraphicsPipeline* Renderer::buildBatchedStagePipeline(const ShaderVariant
                                          /*samplers=*/0, /*storageTex=*/0, /*uniforms=*/0, /*storageBuf=*/1);
     SDL_GPUShader* fragShader = createShader(device_, SDL_GPU_SHADERSTAGE_FRAGMENT, batchedFragment, 1, 1, 2);
 
-    // ADDITIVE colour blend (ONE / ONE): each region's delta D accumulates onto the destination — the
+    // ADDITIVE color blend (ONE / ONE): each region's delta D accumulates onto the destination — the
     // composite IS the blend, so there is no gate pass. Alpha ZERO / ONE preserves the destination alpha
     // (the per-region path's gate output alpha was the source pixel's own; here dst == source at the site).
     SDL_GPUColorTargetDescription colorTarget{};
@@ -2893,7 +2893,7 @@ SDL_GPUGraphicsPipeline* Renderer::buildSpriteBelowStagePipeline(const ShaderVar
 }
 
 // Core indexed-atlas upload: one palette INDEX per pixel as R32_UINT, so a pixel can address an
-// arbitrary palette. Read in-shader by integer Load — no sampler; colour is resolved from
+// arbitrary palette. Read in-shader by integer Load — no sampler; color is resolved from
 // a palette at render time, not stored here. The public overloads widen 8-/16-bit source indices
 // into the 32-bit texel (Texture2D<uint> reads any width identically).
 AtlasId Renderer::uploadAtlas32(const std::uint32_t* indices, int width, int height, TransparentIndices transparent) {
@@ -3277,7 +3277,7 @@ AtlasManifest Renderer::carveUploaded(AtlasId atlas, AssetDimensions assetSize, 
 PaletteId Renderer::loadPaletteImage(LiteralPath path, ReadOrder order, int count,
                                      std::optional<AssetPolicy> policy) {
     // Resolve embed-vs-load: per-call > loadPaletteImage's per-type default (Embed — a palette image is
-    // bespoke build-time colour data, like a map PNG). An Embed image decodes from the bytes the build
+    // bespoke build-time color data, like a map PNG). An Embed image decodes from the bytes the build
     // baked in, keyed by its logical path; if none were baked we fall through to the disk read.
     if (resolveAssetPolicy(policy, AssetPolicy::Embed) == AssetPolicy::Embed) {
         if (const std::span<const std::uint8_t> bytes = detail::findEmbeddedAsset(path.view());
@@ -3424,7 +3424,7 @@ PaletteId Renderer::uploadPalette(std::span<const Rgba8> colors) {
 }
 
 PaletteId Renderer::uploadPalette(std::span<const Rgba16> colors) {
-    // A 16-bit colour source appends direct — no widening.
+    // A 16-bit color source appends direct — no widening.
     const std::size_t first = paletteData_.size();
     paletteData_.insert(paletteData_.end(), colors.begin(), colors.end());
     writePaletteColors(first, colors.size());
@@ -3480,9 +3480,9 @@ void Renderer::writePaletteColors(std::size_t first, std::size_t count) {
 
 void Renderer::rebuildPaletteStore() {
     ++storeGeneration_;  // a new store texture the compose binds — force the next frame to recompose
-    pendingPaletteWrites_.clear();  // every colour is written below
+    pendingPaletteWrites_.clear();  // every color is written below
     // paletteData_ is the FLAT, contiguous CPU mirror; a PaletteId IS an entry's flat offset into it.
-    // The store texture is that flat array wrapped kPaletteStoreWidth colours wide; palettes pack
+    // The store texture is that flat array wrapped kPaletteStoreWidth colors wide; palettes pack
     // contiguously (no per-palette padding) and may straddle rows. The texture is allocated with rows past
     // what the entries need, and the whole of that flat array is written here — so the palettes uploaded
     // next are appended into the spare rows instead of bringing the array back through here.
@@ -3504,7 +3504,7 @@ void Renderer::rebuildPaletteStore() {
     if (!paletteStore_) fail("SDL_CreateGPUTexture (palette store) failed");
     paletteStoreRows_ = capacity;
 
-    // Upload a W×rows buffer: the flat colours followed by opaque-black padding out to the last row.
+    // Upload a W×rows buffer: the flat colors followed by opaque-black padding out to the last row.
     std::vector<Rgba16> upload(static_cast<std::size_t>(W) * static_cast<std::size_t>(rows));
     std::copy(paletteData_.begin(), paletteData_.end(), upload.begin());
 
@@ -4243,7 +4243,7 @@ SDL_GPUTexture* Renderer::composeViewport(SDL_GPUCommandBuffer* cmd, const Frame
 
                     // One emission instance per demand: a copy of the sprite's art record naming that step
                     // in its flags word. Its light is read INSIDE the art fragment, which applies the layer
-                    // and per-sprite alpha to the composed pixel afterwards, so the raster runs at neutral
+                    // and per-sprite alpha to the composed pixel afterward, so the raster runs at neutral
                     // opacity (uniform alpha 1 below, record alpha 1 here) — the chain path's buckets
                     // composite separately and do carry both.
                     for (const SpriteRegionEmissionDemand& d : asked) {
@@ -4282,7 +4282,7 @@ SDL_GPUTexture* Renderer::composeViewport(SDL_GPUCommandBuffer* cmd, const Frame
                         emitSprites.push_back(es);
                         emitSteps.push_back(st);
                     }
-                    // A whole-silhouette Bloom / Glow authored alongside a Custom step radiates the colour as
+                    // A whole-silhouette Bloom / Glow authored alongside a Custom step radiates the color as
                     // it stood BEFORE the custom shader ran — the emission raster has no variant for a Custom
                     // step. That is a real limitation for an UNDECLARED custom (no emission pass at all); an
                     // emission-DECLARED custom joins the emission grammar by construction, so the message does
@@ -5073,7 +5073,7 @@ SDL_GPUTexture* Renderer::composeViewport(SDL_GPUCommandBuffer* cmd, const Frame
         return blurred;
     };
 
-    // The chain's last pass — the one that honours the caller: read `source` and the blurred halo, write
+    // The chain's last pass — the one that honors the caller: read `source` and the blurred halo, write
     // `dest` under the caller's compositing, load op and scissor. `blurred` null runs the passthrough
     // instead, handing the source straight through (the identity path).
     auto compositeEmission = [&](SDL_GPUTexture* dest, SDL_GPUTexture* source, SDL_GPUTexture* blurred,
@@ -5188,7 +5188,7 @@ SDL_GPUTexture* Renderer::composeViewport(SDL_GPUCommandBuffer* cmd, const Frame
                 SDL_EndGPURenderPass(ep);
             } else {
                 // No body: the stock brightpass at the effect's threshold, neutral (glow 0, intensity 1, no
-                // tint) — a source-coloured emission the stage then shapes.
+                // tint) — a source-colored emission the stage then shapes.
                 const EmissionExtractFragUniforms eu{0.0f, static_cast<float>(effect.threshold) / 255.0f,
                                                      1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
                 runEmissionPass(emission0_, source, sampler_, emissionExtract_, &eu, sizeof(eu));
@@ -5283,13 +5283,13 @@ SDL_GPUTexture* Renderer::composeViewport(SDL_GPUCommandBuffer* cmd, const Frame
     // composite pipeline (an isolated Layer's effected image back onto target_). The pass is shader-
     // agnostic: a built-in effect dispatches BY KIND to its pipeline pair + resolved uniform —
     // RowDisplacement → displace_/displaceBlend_ + DisplaceParams (`blankTransparent` controlling the
-    // Blank-edge colour), Ripple → ripple_/rippleBlend_ + RippleParams, ColorFill → colorFill_/
+    // Blank-edge color), Ripple → ripple_/rippleBlend_ + RippleParams, ColorFill → colorFill_/
     // colorFillBlend_ + ColorFillParams; a Custom effect binds the registered pipeline pair + pushes the
     // game's own uniform bytes. Same scope/compositing/ping-pong plumbing for every kind.
     auto runEffect = [&](SDL_GPUTexture* dest, SDL_GPUTexture* source, const ScreenSpaceEffect& effect,
                          bool blankTransparent, bool blend, SDL_GPULoadOp loadOp,
                          const SDL_Rect* scissor = nullptr) {
-        // Bloom and Glow are neighbourhood reads, so they realize as the multi-pass emission chain rather
+        // Bloom and Glow are neighborhood reads, so they realize as the multi-pass emission chain rather
         // than as one pass here. It presents this same contract, so every caller is unaffected.
         if (effect.kind == ScreenSpaceEffectKind::Bloom || effect.kind == ScreenSpaceEffectKind::Glow) {
             runEmissionChain(dest, source, effect, blend, loadOp, scissor);
@@ -5354,7 +5354,7 @@ SDL_GPUTexture* Renderer::composeViewport(SDL_GPUCommandBuffer* cmd, const Frame
             SDL_BindGPUFragmentSamplers(pass, 0, &binding, 1);
             SDL_PushGPUFragmentUniformData(cmd, 0, &ru, sizeof(ru));
         } else if (effect.kind == ScreenSpaceEffectKind::Swirl) {
-            // The centre and radius stay in viewport pixels; the twist arrives already in radians from
+            // The center and radius stay in viewport pixels; the twist arrives already in radians from
             // swirlParams (the public surface is degrees). The inverse viewport carries the px<->UV scale.
             const SwirlParams p = swirlParams(effect);
             const float invW = viewport_.width  > 0 ? 1.0f / static_cast<float>(viewport_.width)  : 0.0f;
@@ -5577,16 +5577,16 @@ SDL_GPUTexture* Renderer::composeViewport(SDL_GPUCommandBuffer* cmd, const Frame
     // Append the confined step for ONE effect. Every effect is region-agnostic: it confines to `defaultShape`
     // (the owning Region's shape) when it has one, else it is whole-reach. `regionAlpha` is the owning
     // Region's opacity (1 for a whole-reach effect). A Transparency is no exception — its shape comes from
-    // its Region just like a colour effect's. None / invalid-Custom effects are dropped.
+    // its Region just like a color effect's. None / invalid-Custom effects are dropped.
     auto appendEffectSteps = [&](std::vector<ConfinedStep>& steps, const ScreenSpaceEffect& e,
                                  bool hasDefaultShape, const ShapePoints& defaultShape, float regionAlpha,
                                  BlendMode regionBlend) {
         if (e.kind == ScreenSpaceEffectKind::None || !effectRenderable(e)) return;
         if (hasDefaultShape) {
             // A region with no shape is a WHOLE-VIEWPORT region: synthesize a viewport-covering rectangle so
-            // it flows through the same gate as a shaped region and honours its blend + alpha across the whole
+            // it flows through the same gate as a shaped region and honors its blend + alpha across the whole
             // frame (a shaped region keeps its own shape). Inflated a few px so every viewport pixel is
-            // strictly inside the gate. This is what makes a whole-frame colour grade / flash / fade — a
+            // strictly inside the gate. This is what makes a whole-frame color grade / flash / fade — a
             // ColorFill region with no shape — composite correctly.
             ShapePoints shape = defaultShape.hasRegion()
                 ? defaultShape
@@ -6076,7 +6076,7 @@ SDL_GPUTexture* Renderer::composeViewport(SDL_GPUCommandBuffer* cmd, const Frame
     // PAGE, the fields sharing a reach. So the pass count tracks the reaches a layer authors and the sheets it
     // needs, never its field count, and never the mix of the two kinds.
     //
-    // Neither path composites here: a region's halo is the source colour its blend grades with, and a lens's
+    // Neither path composites here: a region's halo is the source color its blend grades with, and a lens's
     // is a scene-sourced halo its own record adds as it samples. Both are consumed by the fragment that reads
     // them.
     //
@@ -6185,7 +6185,7 @@ SDL_GPUTexture* Renderer::composeViewport(SDL_GPUCommandBuffer* cmd, const Frame
             // texel already IS four atlas texels. Dividing by the reduced width instead would step four
             // times too far and smear the halo away entirely.
             //
-            // The crisp snap walks from viewport-cell centres, which here are the texels themselves; at
+            // The crisp snap walks from viewport-cell centers, which here are the texels themselves; at
             // quarter resolution a cell is smaller than a texel, so no snap is applied there.
             const float stepU = plan.stepPx / static_cast<float>(atlasW);
             const float stepV = plan.stepPx / static_cast<float>(atlasH);
@@ -6781,7 +6781,7 @@ void Renderer::renderFrame(const FrameDrawState& frame) {
         scTarget.store_op    = SDL_GPU_STOREOP_STORE;
         SDL_GPURenderPass* pass = SDL_BeginGPURenderPass(cmd, &scTarget, 1, nullptr);
 
-        // The compose image always fills the window at the largest integer scale that fits, centred +
+        // The compose image always fills the window at the largest integer scale that fits, centered +
         // letterboxed. Output SIZE is the window's size (Platform owns it, via setWindowSize sized to
         // viewport × the chosen scale); the blit just fills whatever window it's given, crisply. The
         // scale is relative to the compose grid (== the viewport at composeScale_ 1).
@@ -6813,7 +6813,7 @@ void Renderer::renderFrame(const FrameDrawState& frame) {
         SDL_EndGPURenderPass(pass);
     }
 
-    // Submit even with no swapchain texture (e.g. minimised) so the command buffer is never
+    // Submit even with no swapchain texture (e.g. minimized) so the command buffer is never
     // leaked; then release this frame's staged scratch — upload transfer buffers plus any transient
     // textures/buffers a degenerate-keyed layer needed (both were used by the just-submitted buffer).
     SDL_SubmitGPUCommandBuffer(cmd);
@@ -6884,7 +6884,7 @@ std::vector<Rgba8> Renderer::captureViewport(const FrameDrawState& frame, int co
     for (SDL_GPUTexture* texture : scratch.textures)          SDL_ReleaseGPUTexture(device_, texture);
     for (SDL_GPUBuffer* buffer : scratch.buffers)             SDL_ReleaseGPUBuffer(device_, buffer);
 
-    // Pack the downloaded texels into Rgba8, keyed on the offscreen colour format. R8G8B8A8_UNORM is already
+    // Pack the downloaded texels into Rgba8, keyed on the offscreen color format. R8G8B8A8_UNORM is already
     // packed Rgba8 (a straight copy). R16G16B16A16_FLOAT carries the post-process headroom (a channel may
     // exceed 1); decode each half and quantize with round(clamp(v,0,1)·255) — the same conversion the 8-bit
     // swapchain blit applies on write, so the capture matches what a present would show.

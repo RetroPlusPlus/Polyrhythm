@@ -63,12 +63,12 @@ enum Pal {
 // Text-layer palette-set indices.
 enum TextPal { TXT_WHITE = 0, TXT_GOLD, TXT_CYAN };
 
-// One brick cell: its kind, its remaining hits, and (for a colour brick) which row palette colours it.
+// One brick cell: its kind, its remaining hits, and (for a color brick) which row palette colors it.
 enum class Brick : std::uint8_t { None, Colour, Silver, Gold };
 struct Cell {
     Brick type   = Brick::None;
     int   hp     = 0;
-    int   colour = 0;  // palette index 0..5 for a Colour brick
+    int   colour = 0;  // palette index 0..5 for a Color brick
 };
 
 // The two app states the S1 scaffold carries (S4 fleshes this into the full shell).

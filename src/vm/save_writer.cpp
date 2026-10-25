@@ -52,7 +52,7 @@ bool SaveWriter::writeNow(const UserFiles& files, std::string_view document,
     const std::filesystem::path at = files.pathFor(document);
     {
         std::unique_lock<std::mutex> lock(mx_);
-        // Whatever was waiting for this file is dropped in favour of the bytes handed over here: they
+        // Whatever was waiting for this file is dropped in favor of the bytes handed over here: they
         // are the machine's final state, and the older snapshot would only overwrite them if it landed
         // second. A copy already IN FLIGHT is a different matter — it is being written right now, so
         // this waits for it rather than racing it into the same file.

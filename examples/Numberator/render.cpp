@@ -52,7 +52,7 @@ void View::build(FrameDrawState& frame, const Assets& a, const Sprite& closeBox,
     keyLayer.content = SpriteContent{std::span<const Sprite>(keys_)};
     frame.layers.push_back(std::move(keyLayer));
 
-    // z=20 — the glyphs: each key's label centred on it, plus the right-aligned display digits. The font's
+    // z=20 — the glyphs: each key's label centered on it, plus the right-aligned display digits. The font's
     // background index is the palette's alpha-0 entry, so the black ink composites over keys and the well.
     glyphs_.clear();
     for (int k = 0; k < static_cast<int>(kKeys.size()); ++k) {

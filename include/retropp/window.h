@@ -91,7 +91,7 @@ public:
     Window& operator=(const Window&) = delete;
 
     // The window's top-left corner in logical points, signed (a window can sit at negative
-    // coordinates on a multi-monitor desktop). position(pos) places the window — centre on launch,
+    // coordinates on a multi-monitor desktop). position(pos) places the window — center on launch,
     // snap, restore a saved position; position() reads where it actually is.
     [[nodiscard]] Vec2i position() const;
     void position(Vec2i pos);
@@ -130,7 +130,7 @@ public:
     [[nodiscard]] const std::optional<WindowMovement>& autoMove() const { return movement_; }
 
     // Whether a viewport point lies inside any declared drag handle — the predicate the platform's OS
-    // hit-test asks (tested at the pixel's centre, matching how the drawn region resolves it).
+    // hit-test asks (tested at the pixel's center, matching how the drawn region resolves it).
     [[nodiscard]] bool hitsDragRegion(Vec2i viewportPos) const;
 
     // Platform-internal: WindowedHost calls it once per frame with the fresh sample and the frame

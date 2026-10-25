@@ -1,5 +1,5 @@
-// Sprite::effects + Sprite::regions — the carrier surface (built-in colour kinds). A sprite carries an
-// effects chain (whole-silhouette colour transforms in list order) and a regions list (confined effects
+// Sprite::effects + Sprite::regions — the carrier surface (built-in color kinds). A sprite carries an
+// effects chain (whole-silhouette color transforms in list order) and a regions list (confined effects
 // graded over the sprite's own pixel by each region's alpha/blend, gated by a quad-space shape ∩ the
 // silhouette). Two halves:
 //
@@ -9,7 +9,7 @@
 //
 //   2. Evaluation (device-backed, via captureViewport). A solid sprite over a known scene carries an
 //      effect; each covered pixel is compared against the CPU oracle evalSpriteFxRecords (the exact mirror
-//      the fragment reproduces), with the sprite's base colour read from a no-effect capture so
+//      the fragment reproduces), with the sprite's base color read from a no-effect capture so
 //      palette→float→8-bit rounding cancels. Off-sprite pixels stay byte-identical to the no-sprite scene.
 //
 // The effect MATH itself (applyColorFill / applyGleam / applyBlendMode / the region SDF) is the device-free
@@ -228,7 +228,7 @@ Art uploadSolid(Renderer& r, Rgba8 colour) {
 }
 
 // The whole per-pixel oracle sweep. `configure` sets the sprite's effects/regions. Every covered pixel is
-// checked against evalSpriteFxRecords (its base colour from a no-effect capture, its u/v from the pixel);
+// checked against evalSpriteFxRecords (its base color from a no-effect capture, its u/v from the pixel);
 // a discarded pixel must reveal the background. OFF the sprite the effect frame equals the no-sprite scene.
 // Returns the count of covered pixels the effect actually MOVED off the base (so a test can require motion).
 int runEffectCell(SDL_GPUDevice* dev, const char* name,
@@ -257,7 +257,7 @@ int runEffectCell(SDL_GPUDevice* dev, const char* name,
     std::vector<Sprite> sN, sG;
     FrameDrawState fN = scene(false, cN, sN);
     FrameDrawState fG = scene(true,  cG, sG);
-    const std::vector<Rgba8> N = r.captureViewport(fN);   // base sprite colour on coverage
+    const std::vector<Rgba8> N = r.captureViewport(fN);   // base sprite color on coverage
     const std::vector<Rgba8> G = r.captureViewport(fG);   // the effected sprite
     EXPECT_EQ(N.size(), B.size());
     EXPECT_EQ(G.size(), B.size());
@@ -282,7 +282,7 @@ int runEffectCell(SDL_GPUDevice* dev, const char* name,
             } else {
                 // The sprite composites over the background by its final alpha (layer/sprite alpha are 1 here);
                 // a Transparency effect that lowers alpha reveals the opaque background beneath, exactly as the
-                // fragment's premultiplied blend does. alpha 1 (the colour-only effects) leaves want == the fill.
+                // fragment's premultiplied blend does. alpha 1 (the color-only effects) leaves want == the fill.
                 const Vec4 over = alphaOver(norm(B[i]), *out);
                 want = Rgba8{quant(over.x), quant(over.y), quant(over.z), quant(over.w)};
             }
@@ -311,7 +311,7 @@ TEST_F(SpriteEffects, ChainColorFillReplacesTheSilhouette) {
 
 TEST_F(SpriteEffects, RegionColorFillFlashesInsideTheRectangleOnly) {
     // A rectangle over the left half of the sprite (quad x∈[0,4]); a Normal flash at alpha 0.6. Covered
-    // pixels inside the rect grade toward the fill; covered pixels outside stay the base colour.
+    // pixels inside the rect grade toward the fill; covered pixels outside stay the base color.
     const int moved = runEffectCell(device_, "region_flash", [](Sprite& s) {
         Region rg{.key = "flash"};
         rg.shape   = ShapePoints::rectangle(Point{0, 0}, 4, 8);
@@ -349,7 +349,7 @@ TEST_F(SpriteEffects, GleamBrightensAlongTheBand) {
 }
 
 TEST_F(SpriteEffects, TransparencyRegionPunchesAHole) {
-    // A circle at the sprite centre, TransparentInside: those pixels discard and reveal the background. The
+    // A circle at the sprite center, TransparentInside: those pixels discard and reveal the background. The
     // oracle returns nullopt there, so `want` becomes B (the no-sprite scene) — verified per pixel.
     const int moved = runEffectCell(device_, "transparency_hole", [](Sprite& s) {
         Region rg{.key = "hole"};
@@ -416,7 +416,7 @@ TEST_F(SpriteEffects, CorruptedOracleReddens) {
         return f;
     };
     std::vector<Sprite> sN, sG;
-    FrameDrawState fN = scene(BlendMode::Normal,   cN, sN);   // base colour capture (region present but…)
+    FrameDrawState fN = scene(BlendMode::Normal,   cN, sN);   // base color capture (region present but…)
     FrameDrawState fG = scene(BlendMode::Multiply,  cG, sG);
     const std::vector<Rgba8> N = r.captureViewport(fN);
     const std::vector<Rgba8> G = r.captureViewport(fG);
@@ -478,8 +478,8 @@ TEST(SpriteFxDisplacement, RipplePacksCentreAndDecayInTheGateLanes) {
     EXPECT_FLOAT_EQ(r[0].params[0], 4.0f);
     EXPECT_FLOAT_EQ(r[0].params[1], 1.5f);
     EXPECT_FLOAT_EQ(r[0].params[2], 0.1f);
-    EXPECT_FLOAT_EQ(r[0].radius, 4.5f);        // centre X (art px) in the idle radius lane
-    EXPECT_FLOAT_EQ(r[0].strokeWidth, 2.5f);   // centre Y in the idle strokeWidth lane
+    EXPECT_FLOAT_EQ(r[0].radius, 4.5f);        // center X (art px) in the idle radius lane
+    EXPECT_FLOAT_EQ(r[0].strokeWidth, 2.5f);   // center Y in the idle strokeWidth lane
     EXPECT_FLOAT_EQ(r[0].pad0, 0.3f);          // decay in the idle pad lane
 }
 
@@ -568,8 +568,8 @@ TEST(SpriteDisplaceInflation, DisplacingForcesAnalyticAndBounds) {
     EXPECT_EQ(gp.flags & kSpriteAnalyticFlag, 0u);         // a plain untransformed sprite stays on the cheap path
     EXPECT_EQ(gp.flags & kSpriteHasDisplacementFlag, 0u);  // no pre-pass gate ⇒ no record scan
 
-    // A colour-only effect sprite carries NO displacement flag — it skips the pre-pass and pays only its
-    // colour-path cost.
+    // A color-only effect sprite carries NO displacement flag — it skips the pre-pass and pays only its
+    // color-path cost.
     Sprite colourOnly{.key = "c"};
     colourOnly.effects = {ScreenSpaceEffect{.kind = ScreenSpaceEffectKind::ColorFill, .fill = Rgba8{9, 9, 9, 255}}};
     const GpuSprite gc = makeGpuSprite(colourOnly, 64, 64, 24, 20, 0, 0);

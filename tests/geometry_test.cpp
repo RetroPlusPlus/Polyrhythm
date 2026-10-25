@@ -27,7 +27,7 @@ TEST(Geometry, BindingDimensionLimitsTheScale) {
 }
 
 TEST(Geometry, SmallerThanViewportClampsToOneXAndOverflows) {
-    // Below 1× the content is shown at 1× and the centred rect goes negative rather
+    // Below 1× the content is shown at 1× and the centered rect goes negative rather
     // than collapsing — the window is simply smaller than a single GB frame.
     EXPECT_EQ(integerScaleToFitRect(PixelSize{100, 100}, kGb), (IntRect{-30, -22, 160, 144}));
 }
@@ -93,8 +93,8 @@ TEST(Geometry, WindowToViewportDividesByIntegerScale) {
 }
 
 TEST(Geometry, WindowToViewportSubtractsTheLetterboxOrigin) {
-    // 4× blit centred in a 700×600 window (origin 30,12 — the geometry from integerScaleToFitRect):
-    // a window pixel at the blit origin maps to viewport (0,0); the centre maps inside.
+    // 4× blit centered in a 700×600 window (origin 30,12 — the geometry from integerScaleToFitRect):
+    // a window pixel at the blit origin maps to viewport (0,0); the center maps inside.
     const IntRect blit = integerScaleToFitRect(PixelSize{700, 600}, kGb);  // {30, 12, 640, 576}
     EXPECT_EQ(blit, (IntRect{30, 12, 640, 576}));
     EXPECT_EQ(windowToViewport(Vec2i{30, 12}, blit, kGb), (ViewportHit{Vec2i{0, 0}, true}));
@@ -127,7 +127,7 @@ static_assert(windowToViewport(Vec2i{0, 0}, IntRect{30, 12, 640, 576}, kGb).insi
 
 TEST(Geometry, ComposeScaleEqualsTheIntegerFitFactor) {
     // The compose scale is the window's integer-scale-to-fit multiple — compose at the drawn-region
-    // size so the blit is a 1:1 centring copy (fill parity with the faithful path).
+    // size so the blit is a 1:1 centering copy (fill parity with the faithful path).
     EXPECT_EQ(composeScaleToFit(PixelSize{640, 576}, kGb, 16), 4);   // exactly 4×
     EXPECT_EQ(composeScaleToFit(PixelSize{700, 600}, kGb, 16), 4);   // 4× fits, remainder letterboxes
     EXPECT_EQ(composeScaleToFit(kGb, kGb, 16), 1);                   // 1:1 window

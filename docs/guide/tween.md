@@ -1,6 +1,6 @@
 # Tween
 
-A small helper layer for **animating a value over time** — a fade, a colour ramp, an effect parameter
+A small helper layer for **animating a value over time** — a fade, a color ramp, an effect parameter
 that swells and recedes — over the platform's immediate-mode draw model. Where [animation](animation.md)
 resolves elapsed ticks → *which frame to show*, a tween resolves elapsed ticks → *a value* (a layer's
 `alpha`, a `ColorFill` channel, a transform angle, a shader uniform). It is the same shape as the
@@ -140,7 +140,7 @@ constexpr Vec4  lerp(Vec4  a, Vec4  b, float t);
 ```
 
 A `Tween<T>` interpolates over the platform's float vocabulary — `float`, `Vec2`, `Vec3`, `Vec4`. There is
-**no integer `lerp`**: an integer draw-state sink (a `LayerScroll`, a pixel centre) is animated by
+**no integer `lerp`**: an integer draw-state sink (a `LayerScroll`, a pixel center) is animated by
 tweening a `float` / `Vec2` and **quantizing at the write** into draw state — which the game already
 owns, since the game writes the resolved value in. Keeping the resolver pure-float makes the easing math
 exact and free of integer-accumulation artifacts. `lerp` is `constexpr` (the non-eased path is usable in
@@ -252,7 +252,7 @@ loop.renderLoop([&] {
     upperLayer.alpha = fader.value();                      // scalar sink
     const Vec3 m     = dusker.value();                     // a per-channel multiplier (vector sink)
     const auto u8    = [](float v) { return std::uint8_t(v * 255.0f); };
-    // Whole-frame day/night is just an effect: a Multiply ColorFill region. The tween drives the fill colour.
+    // Whole-frame day/night is just an effect: a Multiply ColorFill region. The tween drives the fill color.
     frame.regions.clear();
     frame.regions.push_back(Region{
         .effects = {ScreenSpaceEffect{.kind = ScreenSpaceEffectKind::ColorFill,
@@ -292,7 +292,7 @@ the tick counter yourself; both ship. A worked example — a layer-alpha fade pl
   `loopIndefinitely()` — there is no yoyo mode.
 - **Change the curve feel:** pass a different `Easing` to `of` / `then` (per segment). `Back` overshoots,
   `Elastic` springs and rings in, `Bounce` hops onto the target; `Linear` is unshaped.
-- **Animate an integer sink (scroll, a pixel centre):** tween a `float` / `Vec2` and round at the write
+- **Animate an integer sink (scroll, a pixel center):** tween a `float` / `Vec2` and round at the write
   into draw state — there is no integer `lerp`.
 - **Drive a value without the cursor object:** call the pure `sampleTweenValue` / `sampleTween` and own the
   elapsed-tick counter yourself.

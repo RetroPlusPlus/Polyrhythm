@@ -1,6 +1,6 @@
 // Device-free coverage for the action-binding surface (input_actions.h): the ActionMap value, the
 // Source vocabulary and its implicit conversions, preset bundles, the pad-button resolution table
-// (labelled aliases per family, Sony synonyms), the family-qualified suppression rule, and the
+// (labeled aliases per family, Sony synonyms), the family-qualified suppression rule, and the
 // digital thresholds of analog-backed sources.
 #include <gtest/gtest.h>
 

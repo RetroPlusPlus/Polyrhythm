@@ -1,13 +1,13 @@
 // Tween demo — a runnable host proving the value-animation thesis across THREE kinds of draw-state sink
-//: a layer field, a frame-wide colour transform, and a SHADER/EFFECT parameter. Open a
+//: a layer field, a frame-wide color transform, and a SHADER/EFFECT parameter. Open a
 // window, load a real committed PNG (examples/assets/demo_tiles.png), and composite two role-free tile
-// layers in real colour: a fully-opaque lower background and, above it, the same art in a different
+// layers in real color: a fully-opaque lower background and, above it, the same art in a different
 // palette. Three game-owned TweenPlayers drive existing draw-state values, each writing value() into the
 // draw state every frame; the engine never touches a tween (immediate-mode lock preserved):
 //
 //   1. LAYER ALPHA (scalar)   — TweenPlayer<float> yoyos the upper field's alpha 1→0→1, dissolving it to
 //                               reveal the lower field, then restoring it.
-//   2. FRAME colour grade (vector) — TweenPlayer<Vec3> ramps a Multiply ColorFill region from noon (white) toward
+//   2. FRAME color grade (vector) — TweenPlayer<Vec3> ramps a Multiply ColorFill region from noon (white) toward
 //                               a dim dusk tint and back — the day/night case.
 //   3. SHADER / EFFECT PARAMETER (scalar) — TweenPlayer<float> swells the built-in Ripple effect's
 //                               AMPLITUDE (a value that becomes a shader uniform) 0→6px→0, so a radial
@@ -19,10 +19,10 @@
 //
 // All three are authored as 2-segment yoyo tracks under LoopIndefinitely. Run it on a dev machine and
 // confirm: the upper diamond field slowly fades to reveal the lower field and back; the whole scene
-// drifts toward dusk and back; a radial ripple swells from the centre and recedes. The window does
+// drifts toward dusk and back; a radial ripple swells from the center and recedes. The window does
 // NOT auto-launch.
 //
-// X (pad south) pauses/resumes the dusk ramp (pause/play the colour player); Z (pad east) restarts all
+// X (pad south) pauses/resumes the dusk ramp (pause/play the color player); Z (pad east) restarts all
 // players. This is one of the runnable example hosts that instantiates SdlPlatform + Renderer, so it
 // keeps the live path compiling on every CI platform even though CI never opens the window.
 
@@ -119,7 +119,7 @@ int main() {
     // 3s, forever. InOutSine so the dissolve eases in and out (no hard edges).
     const Tween<float> alphaTween =
         Tween<float>::of(1.0f, 0.0f, 3s, Easing::InOutSine).then(1.0f, 3s, Easing::InOutSine);
-    // Frame colour-grade multiplier: noon (1,1,1) → a dim dusk tint and back over 5s each way. The Vec3
+    // Frame color-grade multiplier: noon (1,1,1) → a dim dusk tint and back over 5s each way. The Vec3
     // is the per-channel multiply; the demo writes it into a Multiply ColorFill region's fill.
     const Tween<Vec3> duskTween =
         Tween<Vec3>::of(Vec3{1, 1, 1}, Vec3{0.45f, 0.35f, 0.55f}, 5s, Easing::InOutSine)
@@ -187,10 +187,10 @@ int main() {
                                     .cells = std::span<const TileCell>(coolCells)};
         frame.layers.push_back(std::move(upper));
 
-        // ← THE TWEEN: a whole-frame colour grade as an ordinary effect (vector, component-wise). A
+        // ← THE TWEEN: a whole-frame color grade as an ordinary effect (vector, component-wise). A
         // Multiply-blended ColorFill region covering the viewport; its fill is the per-channel multiplier —
         // white (1,1,1) at noon multiplies to no change, a dim tint at dusk multiplies the whole frame down.
-        // The tween drives the fill colour. Whole-frame colour is just an effect; there is no frame member.
+        // The tween drives the fill color. Whole-frame color is just an effect; there is no frame member.
         const Vec3 mul = duskPlayer.value();
         const auto u8  = [](float v) { return static_cast<std::uint8_t>(v * 255.0f); };
         frame.regions.clear();
@@ -201,7 +201,7 @@ int main() {
             .blend   = BlendMode::Multiply});
 
         // ← THE TWEEN: a SHADER/EFFECT parameter. A frame-level built-in Ripple whose AMPLITUDE (a ripple
-        // shader uniform) is the tweened value — the ripple swells from the centre and recedes. The rest
+        // shader uniform) is the tweened value — the ripple swells from the center and recedes. The rest
         // of the effect's params are static; `phase` advances monotonically off the tick so the rings
         // drift outward calmly. Amplitude 0 (the yoyo's resting points) → the frame is the faithful
         // baseline. This is the headline: an effect parameter is just another draw-state value a tween
@@ -212,7 +212,7 @@ int main() {
             .amplitude = ripplePlayer.value(),               // ← the tweened shader parameter
             .frequency = 5.0f,                                // 5 rings across the field
             .phase     = static_cast<float>(tick) * 0.01f,    // ~0.6 cycles/s — rings drift out slowly
-            .center    = Point{80, 72},                       // viewport centre (160×144)
+            .center    = Point{80, 72},                       // viewport center (160×144)
             .decay     = 1.5f});
 
         renderer.renderFrame(frame);

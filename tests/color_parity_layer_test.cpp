@@ -1,6 +1,6 @@
-// Colour-parity on the PER-LAYER path: a ColorFill under a container blend mode, carried by a
+// Color-parity on the PER-LAYER path: a ColorFill under a container blend mode, carried by a
 // DrawLayer's region, graded at each ScreenSpaceEffectScope over transparent-holed content. This is
-// the colour-modifier idiom — Multiply tint / day-night, Add / Screen glow, Normal flash-fade, a
+// the color-modifier idiom — Multiply tint / day-night, Add / Screen glow, Normal flash-fade, a
 // Multiply that BRIGHTENS via fillIntensity > 1 — verified end-to-end on the layer path a sprite's
 // effect surface routes through: Layer scope grades a layer's own art in place (holes stay
 // transparent), Below scope grades the accumulated image beneath (reaching through the holes).
@@ -71,7 +71,7 @@ inline constexpr bool kDeviceOptional = true;
 inline constexpr bool kDeviceOptional = false;
 #endif
 
-class ColourParityLayer : public ::testing::Test {
+class ColorParityLayer : public ::testing::Test {
 protected:
     static inline SDL_GPUDevice* device_ = nullptr;
     static inline std::string    initError_;
@@ -99,12 +99,12 @@ protected:
         if (!device_) {
             if (kDeviceOptional) {
                 GTEST_SKIP() << "Windows on ARM is a courtesy runner with no production-representative GPU "
-                                "backend in CI; the per-layer colour math is the device-free applyBlendMode "
+                                "backend in CI; the per-layer color math is the device-free applyBlendMode "
                                 "mirror (blend_mode_test.cpp), and the D3D12 path is covered by Windows x64. ("
                              << initError_ << ")";
             }
             FAIL() << "no GPU device reachable — " << initError_
-                   << ". This colour-parity harness requires a GPU device on every production-representative "
+                   << ". This color-parity harness requires a GPU device on every production-representative "
                       "platform (macOS/Metal, Windows-x64/D3D12, Linux/Vulkan); a software rasterizer "
                       "(lavapipe / WARP) suffices; on a headless runner set SDL_VIDEODRIVER=offscreen.";
         }
@@ -118,9 +118,9 @@ struct Art {
     PaletteId palette{};
 };
 
-// A 16×16 index atlas (a 2×2 grid of 8×8 tiles; indices 0..3 in 4-px blocks) + a 4-colour opaque
+// A 16×16 index atlas (a 2×2 grid of 8×8 tiles; indices 0..3 in 4-px blocks) + a 4-color opaque
 // palette — the same deterministic art the golden harness uses. `transparent` selects whether index 0
-// is a structural hole (GameBoy) or an opaque colour (None).
+// is a structural hole (GameBoy) or an opaque color (None).
 Art uploadArt(Renderer& r, TransparentIndices transparent) {
     std::array<std::uint8_t, 16 * 16> idx{};
     for (int y = 0; y < 16; ++y)
@@ -163,7 +163,7 @@ std::uint8_t quant(float v) {
     return static_cast<std::uint8_t>(std::lround(c * 255.0f));
 }
 
-// The colour a ColorFill of `fill` (scaled by `intensity`) under `mode` at container alpha `alpha`
+// The color a ColorFill of `fill` (scaled by `intensity`) under `mode` at container alpha `alpha`
 // grades over an opaque scene pixel — the applyBlendMode / colorFillParams authority, quantized.
 Rgba8 expectFillBlend(Rgba8 scenePx, Rgba8 fill, float intensity, float alpha, BlendMode mode) {
     const ColorFillParams fp =
@@ -206,8 +206,8 @@ bool changed(Rgba8 a, Rgba8 b) {
 }
 
 // One whole-layer ColorFill grade: a DrawLayer carrying a single empty-shape (whole-reach) Region whose
-// ColorFill is graded by the region's `blend` at `scope`. This is the colour-modifier idiom (the
-// no-shape region that honours blend + alpha), on the per-layer path.
+// ColorFill is graded by the region's `blend` at `scope`. This is the color-modifier idiom (the
+// no-shape region that honors blend + alpha), on the per-layer path.
 Region gradeRegion(Rgba8 fill, float intensity, float alpha, BlendMode blend, ScreenSpaceEffectScope scope) {
     Region reg{.key = "grade"};
     reg.blend   = blend;
@@ -252,12 +252,12 @@ void runBelowCell(SDL_GPUDevice* dev, const BelowCell& cell) {
     EXPECT_TRUE(matchesGrade(got, baseline, cell.fill, 1.0f, 1.0f, cell.mode)) << cell.name;
 }
 
-TEST_F(ColourParityLayer, BelowScopeNormal)   { runBelowCell(device_, {"below_normal",   BlendMode::Normal,   Rgba8{200, 100, 50, 255}}); }
-TEST_F(ColourParityLayer, BelowScopeAdd)      { runBelowCell(device_, {"below_add",      BlendMode::Add,      Rgba8{40, 30, 20, 255}}); }
-TEST_F(ColourParityLayer, BelowScopeSubtract) { runBelowCell(device_, {"below_subtract", BlendMode::Subtract, Rgba8{40, 30, 20, 255}}); }
-TEST_F(ColourParityLayer, BelowScopeMultiply) { runBelowCell(device_, {"below_multiply", BlendMode::Multiply, Rgba8{128, 128, 200, 255}}); }
-TEST_F(ColourParityLayer, BelowScopeScreen)   { runBelowCell(device_, {"below_screen",   BlendMode::Screen,   Rgba8{80, 80, 120, 255}}); }
-TEST_F(ColourParityLayer, BelowScopeHalf)     { runBelowCell(device_, {"below_half",     BlendMode::Half,     Rgba8{200, 100, 50, 255}}); }
+TEST_F(ColorParityLayer, BelowScopeNormal)   { runBelowCell(device_, {"below_normal",   BlendMode::Normal,   Rgba8{200, 100, 50, 255}}); }
+TEST_F(ColorParityLayer, BelowScopeAdd)      { runBelowCell(device_, {"below_add",      BlendMode::Add,      Rgba8{40, 30, 20, 255}}); }
+TEST_F(ColorParityLayer, BelowScopeSubtract) { runBelowCell(device_, {"below_subtract", BlendMode::Subtract, Rgba8{40, 30, 20, 255}}); }
+TEST_F(ColorParityLayer, BelowScopeMultiply) { runBelowCell(device_, {"below_multiply", BlendMode::Multiply, Rgba8{128, 128, 200, 255}}); }
+TEST_F(ColorParityLayer, BelowScopeScreen)   { runBelowCell(device_, {"below_screen",   BlendMode::Screen,   Rgba8{80, 80, 120, 255}}); }
+TEST_F(ColorParityLayer, BelowScopeHalf)     { runBelowCell(device_, {"below_half",     BlendMode::Half,     Rgba8{200, 100, 50, 255}}); }
 
 // ── The Layer-scope matrix: each blend mode grades the layer's OWN opaque art in place ─────────────
 //
@@ -283,9 +283,9 @@ void runLayerCell(SDL_GPUDevice* dev, const char* name, BlendMode mode, Rgba8 fi
     EXPECT_TRUE(matchesGrade(got, baseline, fill, 1.0f, 1.0f, mode)) << name;
 }
 
-TEST_F(ColourParityLayer, LayerScopeNormal)   { runLayerCell(device_, "layer_normal",   BlendMode::Normal,   Rgba8{200, 100, 50, 255}); }
-TEST_F(ColourParityLayer, LayerScopeMultiply) { runLayerCell(device_, "layer_multiply", BlendMode::Multiply, Rgba8{128, 128, 200, 255}); }
-TEST_F(ColourParityLayer, LayerScopeAdd)      { runLayerCell(device_, "layer_add",      BlendMode::Add,      Rgba8{40, 30, 20, 255}); }
+TEST_F(ColorParityLayer, LayerScopeNormal)   { runLayerCell(device_, "layer_normal",   BlendMode::Normal,   Rgba8{200, 100, 50, 255}); }
+TEST_F(ColorParityLayer, LayerScopeMultiply) { runLayerCell(device_, "layer_multiply", BlendMode::Multiply, Rgba8{128, 128, 200, 255}); }
+TEST_F(ColorParityLayer, LayerScopeAdd)      { runLayerCell(device_, "layer_add",      BlendMode::Add,      Rgba8{40, 30, 20, 255}); }
 
 // ── Region alpha: a partial-strength grade lies between the scene and the full grade ───────────────
 //
@@ -313,8 +313,8 @@ void runAlphaCell(SDL_GPUDevice* dev, const char* name, BlendMode mode, Rgba8 fi
     EXPECT_TRUE(matchesGrade(got, baseline, fill, 1.0f, alpha, mode)) << name;
 }
 
-TEST_F(ColourParityLayer, RegionAlphaNormalHalf)   { runAlphaCell(device_, "alpha_normal_half",   BlendMode::Normal,   Rgba8{240, 240, 255, 255}, 0.5f); }
-TEST_F(ColourParityLayer, RegionAlphaMultiplyHalf) { runAlphaCell(device_, "alpha_multiply_half", BlendMode::Multiply, Rgba8{128, 128, 200, 255}, 0.5f); }
+TEST_F(ColorParityLayer, RegionAlphaNormalHalf)   { runAlphaCell(device_, "alpha_normal_half",   BlendMode::Normal,   Rgba8{240, 240, 255, 255}, 0.5f); }
+TEST_F(ColorParityLayer, RegionAlphaMultiplyHalf) { runAlphaCell(device_, "alpha_multiply_half", BlendMode::Multiply, Rgba8{128, 128, 200, 255}, 0.5f); }
 
 // ── fillIntensity > 1 under Multiply BRIGHTENS on the layer path ───────────────────────────────────
 //
@@ -322,7 +322,7 @@ TEST_F(ColourParityLayer, RegionAlphaMultiplyHalf) { runAlphaCell(device_, "alph
 // intermediates carry past 1 before the blit clamps. Checked both as a capability (no pixel darker than
 // the baseline) and against the mirror (clamp(scene · 1.5)).
 
-TEST_F(ColourParityLayer, LayerScopeMultiplyBrighten) {
+TEST_F(ColorParityLayer, LayerScopeMultiplyBrighten) {
     Renderer r{device_, nullptr, ViewportResolution{kW, kH}};
     const Art art = uploadArt(r, TransparentIndices::None);
     std::vector<TileCell> baseCells, gradeCells;
@@ -369,11 +369,11 @@ TEST_F(ColourParityLayer, LayerScopeMultiplyBrighten) {
 // the fill over whatever its scope reads, so Layer and Below differ there by the blend's definition,
 // not the fill's.
 
-TEST_F(ColourParityLayer, AFillRendersTheSameAtEveryScope) {
+TEST_F(ColorParityLayer, AFillRendersTheSameAtEveryScope) {
     Renderer r{device_, nullptr, ViewportResolution{kW, kH}};
     const Art lower = uploadArt(r, TransparentIndices::None);     // opaque backing
     const Art upper = uploadArt(r, TransparentIndices::GameBoy);  // index 0 → holes
-    const Rgba8 fill{60, 60, 255, 255};                           // a strongly visible fill colour
+    const Rgba8 fill{60, 60, 255, 255};                           // a strongly visible fill color
 
     // Three scenes sharing the lower + holed-upper stack; the region's scope is the only variable.
     auto build = [&](ScreenSpaceEffectScope scope, bool withGrade, std::vector<TileCell>& lo,
@@ -414,11 +414,11 @@ TEST_F(ColourParityLayer, AFillRendersTheSameAtEveryScope) {
 // ── A fill needs nothing underneath it ────────────────────────────────────────────────────────────
 //
 // A layer carrying no content at all, holding one region fill over an opaque lower layer. The fill is
-// the colour asked for: a fill emits its colour into the region's shape, so it is fully determined by
-// the colour and the shape. The empty layer is the strongest form of that claim — the region's pixels
+// the color asked for: a fill emits its color into the region's shape, so it is fully determined by
+// the color and the shape. The empty layer is the strongest form of that claim — the region's pixels
 // come from the fill alone.
 
-TEST_F(ColourParityLayer, AFillNeedsNothingUnderneathIt) {
+TEST_F(ColorParityLayer, AFillNeedsNothingUnderneathIt) {
     Renderer r{device_, nullptr, ViewportResolution{kW, kH}};
     const Art   lower = uploadArt(r, TransparentIndices::None);  // opaque backing
     const Rgba8 fill{60, 60, 255, 255};
@@ -439,8 +439,8 @@ TEST_F(ColourParityLayer, AFillNeedsNothingUnderneathIt) {
     for (const Rgba8 px : got) {
         if (px.r == fill.r && px.g == fill.g && px.b == fill.b) ++matched;
     }
-    EXPECT_GT(matched, 0) << "no pixel carries the fill colour — a fill over a layer that draws nothing "
-                             "must still be the colour asked for";
+    EXPECT_GT(matched, 0) << "no pixel carries the fill color — a fill over a layer that draws nothing "
+                             "must still be the color asked for";
 }
 
 }  // namespace

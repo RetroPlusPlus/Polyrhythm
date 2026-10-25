@@ -103,8 +103,8 @@ public:
     }
     // The shake as a frame-level effect, or nullopt while idle (no post-process pass when quiet).
     [[nodiscard]] std::optional<retropp::ScreenSpaceEffect> screenShake() const;
-    // The round card: live while its track plays. bannerX01 is the card centre's x as a fraction
-    // of the viewport (−0.35 offscreen-left → 0.5 centre → 1.35 offscreen-right).
+    // The round card: live while its track plays. bannerX01 is the card center's x as a fraction
+    // of the viewport (−0.35 offscreen-left → 0.5 center → 1.35 offscreen-right).
     [[nodiscard]] bool  bannerActive() const { return !banner_.finished(); }
     [[nodiscard]] float bannerX01() const { return banner_.value(); }
     [[nodiscard]] int   bannerWave() const { return bannerWave_; }

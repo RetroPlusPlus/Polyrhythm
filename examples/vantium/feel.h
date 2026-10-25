@@ -26,7 +26,7 @@
 namespace vant {
 
 struct Boom {
-    float                    x = 0, y = 0;   // centre, world px
+    float                    x = 0, y = 0;   // center, world px
     int                      id = 0;
     retropp::AnimationPlayer player{};
 };

@@ -18,7 +18,7 @@ namespace retropp {
 // elapsed ticks → a POSITION and a FACING along a curve. The geometry (Curve / ArcLengthTable) answers
 // "where is arc-length s, and which way does travel point there"; it carries no clock. Time enters the
 // geometry HERE, and only here — as a pacing driver that converts elapsed ticks into a distance along the
-// path. The platform provides the pure stateless resolver (sampleWalk, the analogue of sampleAnimation / sampleTween);
+// path. The platform provides the pure stateless resolver (sampleWalk, the analog of sampleAnimation / sampleTween);
 // the game owns the cursor (PathWalker) and writes the resolved position + facing into whatever it likes.
 //
 // A walker is content-agnostic: it returns raw Vec2 geometry and never touches a Sprite. A camera on a
@@ -67,7 +67,7 @@ struct WalkSample {
 };
 
 // THE pure resolver — the single point of movement truth (PathWalker is the stateful wrapper over it), the
-// sampleWalk analogue of sampleAnimation / sampleTween. Takes the baked table by const ref (pure functions own nothing);
+// sampleWalk analog of sampleAnimation / sampleTween. Takes the baked table by const ref (pure functions own nothing);
 // position = table.atDistance(s) and facing = table.tangentAtDistance(s) — the pair that always agrees.
 //
 // Per pacing kind, under the reused PlaybackMode (loop = wrap the DISTANCE — continuous on a closed curve,

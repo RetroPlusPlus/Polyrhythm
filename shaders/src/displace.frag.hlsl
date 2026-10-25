@@ -48,7 +48,7 @@ cbuffer DisplaceUniforms : register(b0, space3) {
 float4 main(float2 uv : TEXCOORD0) : SV_Target0 {
     const float kTwoPi = 6.283185307179586f;
 
-    // Crisp evaluation (uSnap): evaluate the wave at the fragment's viewport-cell centre and quantize the
+    // Crisp evaluation (uSnap): evaluate the wave at the fragment's viewport-cell center and quantize the
     // resulting offset to whole viewport pixels (round-half-up), then displace the UNSNAPPED uv by it. Under
     // the pass's nearest sampler this reproduces the viewport-resolution rasterization exactly (a no-op at
     // compose scale 1), and at a finer compose grid it copies each source cell's interior intact. HLSL

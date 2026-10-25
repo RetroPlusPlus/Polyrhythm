@@ -1,5 +1,5 @@
 // UserFiles end-to-end, hermetic: every test roots its store at a unique directory under the system temp
-// path (UserFiles::atPath — no SDL pref-path, no device, no display) and removes it afterwards. Four
+// path (UserFiles::atPath — no SDL pref-path, no device, no display) and removes it afterward. Four
 // layers:
 //   * Byte transparency — a file on disk is EXACTLY the bytes written, with no envelope in front of it,
 //     which is the whole difference from SaveStore and the reason another program can read it.

@@ -130,7 +130,7 @@ int main() {
         printTile(decodeTile(raw));
     }
 
-    // The bytes are the caller's. Hand them to uploadData if they should be catalogued, or convert
+    // The bytes are the caller's. Hand them to uploadData if they should be cataloged, or convert
     // them and hand the result to uploadAtlas — this demo prints them instead, so it needs no GPU.
 
     // ── Writing one back ────────────────────────────────────────────────────────────────────────

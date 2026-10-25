@@ -1,8 +1,8 @@
 // What a free-running machine waits for between steps: the arithmetic that says when its next step
-// is due, and the park that honours it.
+// is due, and the park that honors it.
 //
 // A step is one whole frame of the machine's own time, landed at once, so the wall clock owes that
-// frame for a while afterwards. The governor answers how long; the runner waits that long or its
+// frame for a while afterward. The governor answers how long; the runner waits that long or its
 // park interval, whichever comes first. The governor half is exact and asserted against clocks whose
 // arithmetic reads by hand — one cycle per microsecond, so a thousand cycles is a millisecond. The
 // runner half is asserted by what the two bounds do differently, never by how long a wait took.
@@ -79,7 +79,7 @@ TEST(RunGovernor, CyclesAlreadyOwedAreNoWait) {
     EXPECT_EQ(gov.timeUntilOwed(5001), 0ns);
 }
 
-// The wait is the owed arithmetic run backwards: the cycles still to come, at the clock's rate.
+// The wait is the owed arithmetic run backward: the cycles still to come, at the clock's rate.
 TEST(RunGovernor, TheWaitIsWhatTheOutstandingCyclesCost) {
     vm::RunGovernor gov{kMicrosecondClock};
     const auto      t0 = std::chrono::steady_clock::now();
@@ -134,7 +134,7 @@ TEST(RunGovernor, AWaitThatNeverEndsIsReportedAsTheFold) {
     EXPECT_EQ(gov.timeUntilOwed(1), vm::RunGovernor::kMaxFold);  // paused, so never
 }
 
-// ── The park that honours it ──────────────────────────────────────────────────────────────────
+// ── The park that honors it ──────────────────────────────────────────────────────────────────
 
 // A runner waits for its deadline or its park interval, whichever comes first — so a deadline
 // already met turns a park over promptly, where a deadline far out runs the interval.

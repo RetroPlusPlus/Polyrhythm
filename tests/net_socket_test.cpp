@@ -132,7 +132,7 @@ TEST(NetSocket, StreamPreservesOrderAcrossPartialReads) {
     SocketStream client{clientSide};
     SocketStream server{serverSide};
 
-    // A sequence that reads differently backwards, so reassembling it in reverse is visible.
+    // A sequence that reads differently backward, so reassembling it in reverse is visible.
     const std::vector<std::byte> sent = bytesOf({1, 2, 3, 4, 5, 6, 7, 8});
     ASSERT_EQ(client.send(sent).status, Status::Ok);
 

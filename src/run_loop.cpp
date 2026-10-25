@@ -21,7 +21,7 @@ void RunLoop::advance() {
     auto frame = t - last_;
     last_ = t;
     if (frame < std::chrono::nanoseconds::zero()) {
-        frame = std::chrono::nanoseconds::zero();  // monotonic guard (backwards clock)
+        frame = std::chrono::nanoseconds::zero();  // monotonic guard (backward clock)
     }
     if (frame > kMaxFrameTime) {
         frame = kMaxFrameTime;                     // spiral-of-death clamp

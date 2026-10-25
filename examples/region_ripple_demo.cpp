@@ -85,7 +85,7 @@ int main() {
                                  .cells = std::span<const TileCell>(cells)};
         frame.layers.push_back(bg);
 
-        // The BUILT-IN ripple, centred in viewport pixels (the engine normalizes to UV).
+        // The BUILT-IN ripple, centered in viewport pixels (the engine normalizes to UV).
         ScreenSpaceEffect rip{
             .kind = ScreenSpaceEffectKind::Ripple, .amplitude = 6.0f, .frequency = 6.0f,
             .phase = static_cast<float>(tick) * 0.012f,

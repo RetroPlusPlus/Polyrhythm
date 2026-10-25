@@ -77,7 +77,7 @@ TEST(EmissionAtlasPlacement, ATransformedSpriteCoversTheQuadItActuallyDraws) {
 
 TEST(EmissionAtlasPlacement, OffScreenDoesNotEnlargeTheBox) {
     // Position never costs atlas area: a sprite hanging off the edge asks for exactly what an on-screen one
-    // does, so the box is never clipped and its overhang can never raster into a neighbour's rect.
+    // does, so the box is never clipped and its overhang can never raster into a neighbor's rect.
     const GpuSprite inside  = makeGpuSprite(spriteAt(40.0f, 24.0f, 32, 16), 160, 144, 0.0f, 0.0f);
     const GpuSprite hanging = makeGpuSprite(spriteAt(-20.0f, 24.0f, 32, 16), 160, 144, 0.0f, 0.0f);
 

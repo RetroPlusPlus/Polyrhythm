@@ -47,7 +47,7 @@ float4 main(float2 uv : TEXCOORD0) : SV_Target0 {
     } else {
         // Fragment UV → viewport pixels → shape-local via the inverse homography (perspective divide).
         float2 fragPx = float2(uv.x / uMisc.x, uv.y / uMisc.y);
-        // Crisp evaluation (uStencil.z): snap the fragment to its viewport-cell centre before the SDF, so
+        // Crisp evaluation (uStencil.z): snap the fragment to its viewport-cell center before the SDF, so
         // the stencil resolves per viewport pixel (pixel-identical upscale). A no-op at compose scale 1.
         if (uStencil.z != 0.0) fragPx = floor(fragPx) + 0.5;
         float  wgt    = uInvRow2.x * fragPx.x + uInvRow2.y * fragPx.y + uInvRow2.z;

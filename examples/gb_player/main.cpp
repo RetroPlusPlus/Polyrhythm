@@ -88,7 +88,7 @@ constexpr int kGuestW = 160, kGuestH = 144;   // one machine's screen
 constexpr int kViewW = kGuestW * 2, kViewH = kGuestH;  // two of them, side by side
 constexpr int kScale = 4;                     // 320×144 × 4 = a 1280×576 window
 
-// How the dialog ended. Cancelling and failing are different things: one is an answer, the other is
+// How the dialog ended. Canceling and failing are different things: one is an answer, the other is
 // the dialog never having opened, and only the second has an error worth printing.
 enum class DialogEnd : std::uint8_t { Chosen, Cancelled, Failed };
 
@@ -128,7 +128,7 @@ DialogEnd askForRom(std::filesystem::path& chosen) {
     // The dialog is a platform window, so the video subsystem has to be up. There is no window of our
     // own yet — the dialog is parentless, which every supported platform allows. SDL refcounts
     // subsystem initialization, so asking here is safe whether or not video is already up, and it is
-    // deliberately NOT torn down afterwards: the panel's completion handler is still unwinding when
+    // deliberately NOT torn down afterward: the panel's completion handler is still unwinding when
     // the callback returns, and quitting the subsystem out from under it hangs the process on macOS.
     if (!SDL_InitSubSystem(SDL_INIT_VIDEO)) {
         std::printf("Could not start SDL video, so no file dialog can be shown: %s\n", SDL_GetError());

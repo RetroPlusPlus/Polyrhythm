@@ -15,9 +15,9 @@ namespace retropp {
 //
 // The structural mirror of the animation system, applied to a VALUE instead of a frame index. Where
 // animation resolves elapsed ticks → which frame to show, this resolves elapsed ticks → a value of type
-// T (a layer's alpha, a colour-fill intensity, an effect parameter, a transform rotation — ANY
-// time-varying draw-state value). The platform provides the PURE STATELESS resolver (sampleTween, the analogue
-// of sampleAnimation); the game owns the cursor (TweenPlayer, the analogue of AnimationPlayer) and writes the
+// T (a layer's alpha, a color-fill intensity, an effect parameter, a transform rotation — ANY
+// time-varying draw-state value). The platform provides the PURE STATELESS resolver (sampleTween, the analog
+// of sampleAnimation); the game owns the cursor (TweenPlayer, the analog of AnimationPlayer) and writes the
 // resolved value into draw state each frame. The platform never ticks a tween into a draw-state field
 // itself — the same immediate-mode relationship animation has: no platform state, no new render path, no
 // tween field on any public struct.
@@ -59,7 +59,7 @@ enum class Easing : std::uint8_t {
 
 // lerp(a, b, t) = a + (b - a) * t, with t the EASED progress. constexpr (no transcendentals) so the
 // non-eased path is usable in constant expressions. Float family only: a Tween<T> interpolates over
-// float / Vec2 / Vec3 / Vec4. INTEGER draw-state sinks (LayerScroll, a Point centre) are animated by
+// float / Vec2 / Vec3 / Vec4. INTEGER draw-state sinks (LayerScroll, a Point center) are animated by
 // tweening a float / Vec2 and QUANTIZING at the write into draw state — which the game already owns
 // ("the game writes the resolved value into draw state"). The resolver stays pure-float so the easing
 // math is exact and free of integer-accumulation artifacts; there is deliberately NO int lerp (it would
@@ -77,7 +77,7 @@ enum class Easing : std::uint8_t {
 
 // ── The track ───────────────────────────────────────────────────────────────────────────────────────
 
-// One timed, eased move toward `to`. The structural analogue of AnimationFrame (which value, for how
+// One timed, eased move toward `to`. The structural analog of AnimationFrame (which value, for how
 // long, under which curve). PURE DATA.
 template <typename T>
 struct TweenSegment {
@@ -87,7 +87,7 @@ struct TweenSegment {
     [[nodiscard]] bool operator==(const TweenSegment&) const noexcept = default;
 };
 
-// A tween: a start anchor `from` plus an ordered list of timed, eased moves. The structural analogue of
+// A tween: a start anchor `from` plus an ordered list of timed, eased moves. The structural analog of
 // Animation's frame vector — chosen because it makes YOYO fall out for free (a ping-pong is a
 // 2-segment looped track: of(0,1,d).then(0,d) under LoopIndefinitely), the same way per-frame palette
 // makes palette-cycling fall out of the animation system. `from` + segments (rather than a keyframe

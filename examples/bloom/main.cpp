@@ -29,7 +29,7 @@
 // Motion advances on the sim tick, so the breathe runs the same on any display. Space = toggle the
 // whole-frame bloom, Backspace = fullscreen. Close to quit.
 //
-// Bloom's halo is the art's OWN light — dark art barely blooms. For an aura in a colour you CHOOSE
+// Bloom's halo is the art's OWN light — dark art barely blooms. For an aura in a color you CHOOSE
 // (dark art radiating gold), see the sibling ScreenSpaceEffectKind::Glow and examples/glow.
 
 #include <array>

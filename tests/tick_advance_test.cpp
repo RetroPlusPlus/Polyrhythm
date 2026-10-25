@@ -3,7 +3,7 @@
 //
 // The arithmetic cases walk the budget one tick at a time through the internal seam
 // (src/vm/vm_testing.h), because the exactness claim is about the cycle count itself and no guest
-// observable is that fine. The behavioural cases use cartridges these tests author byte for byte
+// observable is that fine. The behavioral cases use cartridges these tests author byte for byte
 // (tests/authored_cartridge.h), assembled by the engine's own SM83 assembler — an authored image is
 // the only one with ground truth.
 

@@ -5,12 +5,12 @@
 // samples the source at the scaled UV. A single sine could not make this profile — the game writes the
 // whole array each frame and the effect reads it row by row.
 //
-// The scene is a procedural diagonal-band tilemap (no PNG): four solid-colour tiles, a 20×18 map, scrolling
+// The scene is a procedural diagonal-band tilemap (no PNG): four solid-color tiles, a 20×18 map, scrolling
 // slowly so the per-line warp is legible against moving structure.
 //
 // Run on a dev machine: B — toggle the effect on / off (off = the table is unused → identity, the unwarped
 // scene). Up — toggle WHERE the effect runs: the WHOLE frame (FrameDrawState::postEffects) vs a CIRCLE
-// REGION in the centre (FrameDrawState::regions) — the same table-driven effect, confined for free by a
+// REGION in the center (FrameDrawState::regions) — the same table-driven effect, confined for free by a
 // Region. Select — fullscreen; Start — nearest / bilinear.
 
 #include <array>
@@ -72,7 +72,7 @@ int main() {
     const PostProcessStageId warp =
         renderer.registerPostProcessStage("examples/row_data_table_demo/shaders/row_warp.frag.hlsl");
 
-    // A procedural indexed atlas: four 8×8 tiles, tile k filled with palette index k (one solid colour
+    // A procedural indexed atlas: four 8×8 tiles, tile k filled with palette index k (one solid color
     // each). Laid out 4 tiles wide × 1 tall = 32×8 indices.
     std::array<std::uint8_t, 32 * 8> atlasPixels{};
     for (int row = 0; row < 8; ++row) {
@@ -129,12 +129,12 @@ int main() {
         const float t     = static_cast<float>(tick);
         const int   drift = tick / 6;  // gentle same-direction scroll (~10 px/s); no strobing moiré
 
-        // Refill the per-line scale table: a dome (centre scanlines scaled, edges left at 1.0) whose depth
+        // Refill the per-line scale table: a dome (center scanlines scaled, edges left at 1.0) whose depth
         // drifts slowly between squeeze and stretch. Only the x lane is used; the rest stay 0.
         const float depth = 0.30f * std::sin(t * 0.02f);  // slow [-0.30, 0.30]
         for (int r = 0; r < kViewportH; ++r) {
             const float v    = kViewportH > 1 ? static_cast<float>(r) / (kViewportH - 1) : 0.0f;  // 0..1
-            const float dome = 1.0f - std::fabs(v - 0.5f) * 2.0f;                                 // 1 centre → 0 edges
+            const float dome = 1.0f - std::fabs(v - 0.5f) * 2.0f;                                 // 1 center → 0 edges
             scaleTable[static_cast<std::size_t>(r)] = Vec4{1.0f + depth * dome, 0.0f, 0.0f, 0.0f};
         }
 
@@ -151,7 +151,7 @@ int main() {
         frame.layers.push_back(std::move(bg));
 
         if (effectOn) {
-            // The same table-driven Custom effect, attached whole-frame or confined to a centre circle. The
+            // The same table-driven Custom effect, attached whole-frame or confined to a center circle. The
             // paramTable is the inline per-frame span (valid for this renderFrame call).
             const ScreenSpaceEffect fx{.kind       = ScreenSpaceEffectKind::Custom,
                                        .customShader = warp,

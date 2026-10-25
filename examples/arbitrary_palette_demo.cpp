@@ -1,15 +1,15 @@
-// Arbitrary-palette demo — live-GPU proof that the colour pipeline has NO 256-colour
+// Arbitrary-palette demo — live-GPU proof that the color pipeline has NO 256-color
 // palette cap and NO 8-bit-per-pixel atlas-index cap.
 //
 // Everything is built in code (no asset file):
-//   • a 1024-colour palette (a smooth HSV rainbow) via uploadPalette — far past the former 256 limit;
+//   • a 1024-color palette (a smooth HSV rainbow) via uploadPalette — far past the former 256 limit;
 //   • an indexed atlas 1024 px wide × 8 px tall where pixel column x holds palette INDEX x (0..1023),
 //     uploaded through the 16-bit uploadAtlas overload — indices past 255 only fit because the atlas
 //     is now R32_UINT;
-//   • a 128-tile-wide tilemap (map column c → atlas cell c), so each 8-px tile shows an 8-colour band
-//     and the full row sweeps all 1024 colours.
+//   • a 128-tile-wide tilemap (map column c → atlas cell c), so each 8-px tile shows an 8-color band
+//     and the full row sweeps all 1024 colors.
 // The band drifts slowly sideways (a slow, same-direction scroll — no flashing). If the pipeline were
-// still capped you would see banding or garbage past colour 256; instead the whole smooth rainbow shows.
+// still capped you would see banding or garbage past color 256; instead the whole smooth rainbow shows.
 //
 // The arbitrary-palette + flat-offset math is proven headlessly in tests (paletteStoreTexel /
 // paletteSetOffsets); this is the on-a-real-device proof CI can't run (no display).
@@ -51,7 +51,7 @@ Rgba8 hue(float h) {
 int main() {
 
     constexpr int kColors = 1024;            // > 256 — the whole point
-    constexpr int kAtlasW = kColors;         // one column per colour
+    constexpr int kAtlasW = kColors;         // one column per color
     constexpr int kAtlasH = 8;               // one tile tall
     constexpr int kTiles  = kAtlasW / 8;     // 128 tiles wide
     constexpr int kMapH   = 28;              // rows of the band (each row is the same sweep)
@@ -67,7 +67,7 @@ int main() {
     SdlPlatform platform;
     Renderer    renderer{platform.device(), platform.sdlWindow()};
 
-    // 1024-colour palette — a full HSV rainbow. uploadPalette has no cap now.
+    // 1024-color palette — a full HSV rainbow. uploadPalette has no cap now.
     std::vector<Rgba8> rainbow(static_cast<std::size_t>(kColors));
     for (int i = 0; i < kColors; ++i) {
         rainbow[static_cast<std::size_t>(i)] = hue(static_cast<float>(i) / static_cast<float>(kColors));
@@ -84,7 +84,7 @@ int main() {
     }
     const AtlasId atlas = renderer.uploadAtlas(atlasIdx.data(), kAtlasW, kAtlasH).atlasId;
 
-    // Tilemap: map column c → atlas cell c, so column c draws the 8-colour band [c*8 .. c*8+7].
+    // Tilemap: map column c → atlas cell c, so column c draws the 8-color band [c*8 .. c*8+7].
     std::vector<TileCell> cells(static_cast<std::size_t>(kTiles) * kMapH);
     for (int row = 0; row < kMapH; ++row) {
         for (int col = 0; col < kTiles; ++col) {

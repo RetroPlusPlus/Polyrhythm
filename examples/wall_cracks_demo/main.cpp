@@ -1,23 +1,23 @@
 // Cracked-wall demo — a runnable showcase of MATERIAL palette transparency: a palette entry's own
-// alpha makes the holes. A brick wall is drawn over a slowly drifting background and coloured through
+// alpha makes the holes. A brick wall is drawn over a slowly drifting background and colored through
 // palette IMAGES (16-bit RGBA PNGs loaded with Renderer::loadPaletteImage), whose alpha does three
 // visible things:
 //
 //   1. ALPHA 0 = a true hole. The wall palette's entry 0 is alpha 0; a "missing brick" tile is all
 //      index 0, so the shader discards it and the background shows through. The background SCROLLS, so
-//      you watch it move through the gaps — the proof the hole is real, not a painted-on colour.
+//      you watch it move through the gaps — the proof the hole is real, not a painted-on color.
 //   2. ALPHA 1-254 = a blend. The wall's "weathered" entry is partial-alpha, so weathered bricks let
 //      the moving background faintly bleed through them.
-//   3. The same on the SPRITE path. A fracture is a column of sprites coloured through a crack palette
+//   3. The same on the SPRITE path. A fracture is a column of sprites colored through a crack palette
 //      whose surround entry is alpha 0 (so only the crack lines composite onto the wall) and whose edge
 //      entry is partial-alpha (soft crack edges that blend over the brick). A Tween eases the fracture
 //      layer's alpha in and back out.
 //
-// Transparency here is the PALETTE'S alpha — never a colour key and never a per-index hole list (the
+// Transparency here is the PALETTE'S alpha — never a color key and never a per-index hole list (the
 // structural TransparentIndices set is the other mechanism, shown by palette_image_demo). The atlas is
 // uploaded with TransparentIndices::None; every hole is a palette entry at alpha 0.
 //
-// Controls (printf-labelled, no on-screen text): A pauses/resumes the fracture fade; B pauses/resumes
+// Controls (printf-labeled, no on-screen text): A pauses/resumes the fracture fade; B pauses/resumes
 // the background drift. The window does not open until you run the demo. One of the runnable example
 // hosts: it keeps the live loadPaletteImage / loadAtlas / Tween path compiling on every CI platform
 // even though CI never opens a window.
@@ -98,7 +98,7 @@ int main() {
     };
     platform.actions(map);
 
-    // The tile art (indices only) + three palette IMAGES carrying the colours and their alpha. The
+    // The tile art (indices only) + three palette IMAGES carrying the colors and their alpha. The
     // palette images are 16-bit RGBA PNGs; loadPaletteImage decodes and slices them one pixel per entry.
     AtlasId   atlas{};
     PaletteId wallPal{};
@@ -133,7 +133,7 @@ int main() {
         }
     }
 
-    // The fracture: a column of 8x8 crack sprites down the wall's centre, alternating the two crack
+    // The fracture: a column of 8x8 crack sprites down the wall's center, alternating the two crack
     // tiles so the core flows from one into the next. Built once; the layer's alpha is the tween sink.
     std::vector<Sprite> crackSprites;
     static const std::vector<std::string> crackKeys =

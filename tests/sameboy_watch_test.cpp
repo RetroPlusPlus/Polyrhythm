@@ -581,7 +581,7 @@ TEST(WatchTableThreads, AChangeIsNotVisibleToTheReadThatFollowsIt) {
 }
 
 // Three switches with nothing running to apply them, ending on a value the reversed sequence would
-// not reach: off, on, off ends OFF only for a queue that kept its order, and read backwards would
+// not reach: off, on, off ends OFF only for a queue that kept its order, and read backward would
 // end ON. A sequence that reads the same both ways would pass either way and pin nothing.
 TEST(WatchTableThreads, ChangesLandInTheOrderTheyWereIssued) {
     RunningWatched r;

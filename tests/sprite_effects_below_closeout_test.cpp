@@ -7,7 +7,7 @@
 //      the authored pipeline mix, never the sprite count.
 //
 //   2. Record packing (device-free). buildSpriteBelowRecords packs a whole-silhouette Transparency (a built-in
-//      below kind) and a Below-scope region's colour/transparency effects; a region's displacing / Custom kinds
+//      below kind) and a Below-scope region's color/transparency effects; a region's displacing / Custom kinds
 //      and a curve boundary are excluded.
 //
 //   3. Compositing (device-backed, via captureViewport). A whole-silhouette Below Transparency
@@ -265,8 +265,8 @@ TEST_F(SpriteBelowCloseout, ARegionConfinesTheSceneGradeToItsShapeIntersectTheSi
     FrameDrawState fN = buildScene(bg, sprite, cN, sN, true, {}, {});
     const std::vector<Rgba8> N = r.captureViewport(fN);   // marks the silhouette
 
-    // A lens whose region (a small centred circle, sprite-quad px) carries a Below ColorFill: the scene is
-    // recoloured only inside the circle ∩ silhouette; the rest of the silhouette shows the untouched scene.
+    // A lens whose region (a small centered circle, sprite-quad px) carries a Below ColorFill: the scene is
+    // recolored only inside the circle ∩ silhouette; the rest of the silhouette shows the untouched scene.
     Region rg{.key = "r", .shape = ShapePoints::circle(Point{4, 4}, 2)};
     ScreenSpaceEffect fill = below(ScreenSpaceEffectKind::ColorFill);
     fill.fill = FILL;
@@ -283,7 +283,7 @@ TEST_F(SpriteBelowCloseout, ARegionConfinesTheSceneGradeToItsShapeIntersectTheSi
         if (!exactEq(N[i], B[i])) {                 // covered by the silhouette
             ++covered;
             if (chDelta(R[i], wantFill) <= 3) {
-                ++inRegion;                          // the region recoloured the scene here
+                ++inRegion;                          // the region recolored the scene here
             } else {
                 EXPECT_TRUE(exactEq(R[i], B[i]))     // covered but outside the region → untouched scene
                     << "covered-but-out-of-region pixel " << i << " changed";

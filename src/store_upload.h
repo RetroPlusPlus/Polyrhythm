@@ -29,16 +29,16 @@ struct PaletteAppend {
     [[nodiscard]] constexpr bool wraps() const noexcept { return wrapped.w > 0; }
 };
 
-// The palette store texture's row width, in colours. The store is a FLAT array of palette colours wrapped
-// into a 2-D texture this many wide; a palette's flat offset + a colour index address the texel at
+// The palette store texture's row width, in colors. The store is a FLAT array of palette colors wrapped
+// into a 2-D texture this many wide; a palette's flat offset + a color index address the texel at
 // (flat % W, flat / W). Palettes pack contiguously (no per-palette padding) and may straddle rows; only
 // the final row is padded out to W. The store holds as many rows as the palettes need, so palette
-// capacity is W × maxTextureHeight — arbitrary for any real use (no per-palette colour cap). 16384 keeps
+// capacity is W × maxTextureHeight — arbitrary for any real use (no per-palette color cap). 16384 keeps
 // the height minimal for typical palettes, and a row of 16-bit RGBA is 131072 B, which satisfies backend
 // upload-pitch alignment.
 inline constexpr int kPaletteStoreWidth = 16384;
 
-// The rows `colors` flat colours occupy in a `width`-wide store. At least one, so the texture a shader
+// The rows `colors` flat colors occupy in a `width`-wide store. At least one, so the texture a shader
 // binds has a row even before anything is uploaded.
 [[nodiscard]] constexpr int paletteStoreRows(std::size_t colors, int width) noexcept {
     const std::size_t w    = static_cast<std::size_t>(width);

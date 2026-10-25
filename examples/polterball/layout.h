@@ -111,7 +111,7 @@ enum class GameState { Title, Playing };
 //   'o' power pellet     '-' plain corridor (no pellet)  '=' court gate (ball-only opening)
 //   'G' pen gate         'P' pen floor
 // Rules the layouts are authored against (checked by eye + the dev run):
-//   • Every corridor cell keeps ≥2 ghost-open neighbours WITH THE SOFT WALLS INTACT — ghosts never
+//   • Every corridor cell keeps ≥2 ghost-open neighbors WITH THE SOFT WALLS INTACT — ghosts never
 //     reverse, so a dead end would trap one forever. Breaking a soft wall only ADDS routes.
 //   • '=' gates live only in the bottom row: open for the ball (maze ↔ court), closed for ghosts.
 //   • The pen is the same 4 cells on both boards (see the kPen* constants above).

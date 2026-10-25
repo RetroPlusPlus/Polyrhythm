@@ -1,6 +1,6 @@
 // The SaveStore end-to-end, hermetic: every test roots its store at a unique directory under
 // the system temp path (SaveStore::atPath — no SDL pref-path, no device, no display) and
-// removes it afterwards. Four layers:
+// removes it afterward. Four layers:
 //   * Byte transparency — write/read round-trips return the exact payload bytes and schema
 //     version, for empty, small, and multi-KB payloads over the full byte range.
 //   * Durability — the atomic-commit guarantee: a write severed before its rename commit
@@ -296,7 +296,7 @@ TEST_F(SaveStoreTest, DefaultConstructionRefusesAnUnsetIdentity) {
     // Every platform requires an explicit application identity; the store enforces the same
     // before anything touches disk. No fallback name exists — a fallback would resolve every
     // unconfigured game to one shared directory. Assigned directly (not via setActive) so the
-    // check stays local to this test; restored afterwards.
+    // check stays local to this test; restored afterward.
     const AppIdentity saved = SaveStore::defaultIdentity;
     SaveStore::defaultIdentity = {};
     EXPECT_THROW(SaveStore{}, SaveStoreError);

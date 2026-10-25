@@ -5,12 +5,12 @@
 //   • X (pad A) → a LOOPING walk cycle   (PlaybackMode::loopIndefinitely) — runs forever; toggles play/pause.
 //   • Z (pad B) → a ONE-OFF cycle        (PlaybackMode::single)           — plays once and holds the last frame.
 //   • Up        → an N-LOOP cycle        (PlaybackMode::loopNTimes(3))    — three passes, then holds the last frame.
-//   • Down      → a PALETTE-CYCLE for 2s (PlaybackMode::playForDuration)  — colour pulses for two seconds, then stops.
+//   • Down      → a PALETTE-CYCLE for 2s (PlaybackMode::playForDuration)  — color pulses for two seconds, then stops.
 //
 // One press = one state step on that animation: a fresh or finished one (re)STARTS from frame 0,
 // a playing one PAUSES, a paused one RESUMES. So you press X and the loop starts; press it again to
 // pause; press Z and the one-off plays once; press Up for the three-pass run; press Down for the timed
-// colour pulse. The console logs each transition so you can correlate the press with the policy.
+// color pulse. The console logs each transition so you can correlate the press with the policy.
 //
 // HOW TO IMPLEMENT (the whole pattern, top to bottom):
 //   1. loadAtlas → an AtlasManifest of carved frame slots.
@@ -21,7 +21,7 @@
 //      engine keeps NO playback state — the player (and its elapsed-tick clock) lives here in the game.
 //   4. Each frame, thread player.current() into draw state: frame.atlas()/frame.tile()/frame.size() resolve
 //      the art (leave it untouched when frame.hasArt() is false — a palette-only frame), and frame.palette
-//      sets the colour. Palette-cycling is the SAME loop with the art held and only the palette varying.
+//      sets the color. Palette-cycling is the SAME loop with the art held and only the palette varying.
 //
 // Dev-run only (CI has no display); the resolver math is proven headlessly in
 // tests/animation_test.cpp.
@@ -118,10 +118,10 @@ int main() {
         return 1;
     }
 
-    // Two-entry palettes (index 0 background, index 1 digit). The fixed palette colours every numbered
-    // cell identically — so the frame animations below change only the NUMBER, never the colour. The
-    // three hue variants recolour only the DIGIT (background held), so the palette-cycle animation
-    // changes only the COLOUR of a constant number. That contrast is the whole point of the demo.
+    // Two-entry palettes (index 0 background, index 1 digit). The fixed palette colors every numbered
+    // cell identically — so the frame animations below change only the NUMBER, never the color. The
+    // three hue variants recolor only the DIGIT (background held), so the palette-cycle animation
+    // changes only the COLOR of a constant number. That contrast is the whole point of the demo.
     auto upload = [&](std::array<Rgba8, 2> c) { return renderer.uploadPalette(std::span<const Rgba8>(c)); };
     const PaletteId palFixed = upload({{{28, 28, 40}, {238, 238, 242}}});  // dark bg, near-white digit
     const PaletteId palWarm  = upload({{{28, 28, 40}, {240, 150, 90}}});   // digit → warm orange
@@ -132,7 +132,7 @@ int main() {
     // Each frame is a plain { label, sheet, tileIndex, palette, duration } literal: `.sheet` names the
     // loaded sheet and `.tileIndex` is a slot index into it (a different frame could name a different
     // sheet). The three frame animations (A/B/Up) all use palFixed, so their numbers change but their
-    // colour does NOT; only the palette-cycle (Down) varies .palette — and it omits `.tileIndex` after the
+    // color does NOT; only the palette-cycle (Down) varies .palette — and it omits `.tileIndex` after the
     // first frame, proving frame animation and palette animation are the same unit, one differing field.
 
     // StepLoop: a looping cycle over the first three cells.
@@ -157,8 +157,8 @@ int main() {
         {.label = "t5", .sheet = sheet.atlasId, .tileIndex = 5, .palette = palFixed, .duration = 250ms},
     }};
     // StepCycle: palette-cycling animation — the FIRST frame names the art (cell 0); the rest OMIT `.tile`,
-    // so they are palette-only frames that recolour that carried-over art. Only `.palette` varies, proving
-    // colour animation is the same mechanism with art held — a frame without a tile. Plays 2s, then stops.
+    // so they are palette-only frames that recolor that carried-over art. Only `.palette` varies, proving
+    // color animation is the same mechanism with art held — a frame without a tile. Plays 2s, then stops.
     const Animation cycleAnim{{
         {.label = "c0", .sheet = sheet.atlasId, .tileIndex = 0, .palette = palFixed, .duration = 300ms},
         {.label = "c1", .palette = palWarm, .duration = 300ms},

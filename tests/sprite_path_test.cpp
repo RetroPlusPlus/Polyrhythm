@@ -264,7 +264,7 @@ TEST(SpritePathApplyTo, ComposesScaleThenRotationAboutTheDefaultCentrePivot) {
     p.nodes[0].rotationDegrees = Tween<float>::of(90.0f, 90.0f, 1s, Easing::Linear);  // constant 90°
     p.nodes[0].scale           = Tween<Vec2>::of({2.0f, 2.0f}, {2.0f, 2.0f}, 1s, Easing::Linear);  // constant 2×
     p.advance();
-    Sprite s{.key = "mover"};  // default size 8×8 → centre pivot (4, 4)
+    Sprite s{.key = "mover"};  // default size 8×8 → center pivot (4, 4)
     p.applyTo(s);
     const Transform expected =
         Transform::scale(2.0f, 2.0f, 4.0f, 4.0f).then(Transform::rotation(90.0f, 4.0f, 4.0f));
@@ -416,7 +416,7 @@ TEST(SpritePathSequence, SecondNodeChainsFromTheFirstNodesEnd) {
     run(p, 6, PlaybackMode::single());
     expectNear(p.position(), {60.0f, 0.0f}, 2.0f);          // node 0's end == node 1's inherited origin
     run(p, 6, PlaybackMode::single());
-    expectNear(p.position(), {60.0f, 60.0f}, 2.0f);         // node 1 travelled from (60,0) to (60,60)
+    expectNear(p.position(), {60.0f, 60.0f}, 2.0f);         // node 1 traveled from (60,0) to (60,60)
 }
 
 TEST(SpritePathSequence, ThreeNodesChainInOrder) {
@@ -459,7 +459,7 @@ TEST(SpritePathSequence, ChainsFromADistanceTweenRestingMidCurve) {
     p.restart();
     run(p, 60, PlaybackMode::single());   // node 0's tween finishes at 60 ticks, resting at 40px → (40,0)
     expectNear(p.position(), {40.0f, 0.0f}, 2.0f);
-    run(p, 60, PlaybackMode::single());   // node 1 chained from (40,0), travelling to (0,60)
+    run(p, 60, PlaybackMode::single());   // node 1 chained from (40,0), traveling to (0,60)
     expectNear(p.position(), {0.0f, 60.0f}, 2.0f);
 }
 
@@ -842,7 +842,7 @@ TEST(SpritePathEnvelope, FlipXWrittenWhenAnyNodeUsesItAndHeldAcrossNodes) {
                            leg({-60.0f, -60.0f}, 600.0f)},               // vertical, no FlipX policy
                  .start = {0.0f, 0.0f}};
     p.restart();
-    run(p, 4, PlaybackMode::single());   // node 0: travelling -x
+    run(p, 4, PlaybackMode::single());   // node 0: traveling -x
     Sprite s0{.key = "m"};
     p.applyTo(s0);
     EXPECT_TRUE(s0.flipX);
@@ -966,7 +966,7 @@ TEST_F(SpritePathArtDevice, DefaultPivotUsesTheFrameSizeAfterTheFrameWrite) {
     p.nodes[0].rotationDegrees = Tween<float>::of(90.0f, 90.0f, 1s, Easing::Linear);
     p.advance();
     Sprite s{.key = "mover"};
-    p.applyTo(s);  // size becomes 8×16 → centre pivot (4, 8)
+    p.applyTo(s);  // size becomes 8×16 → center pivot (4, 8)
     const Transform expected =
         Transform::scale(1.0f, 1.0f, 4.0f, 8.0f).then(Transform::rotation(90.0f, 4.0f, 8.0f));
     EXPECT_EQ(s.transform, expected);

@@ -48,7 +48,7 @@ constexpr int kWidth  = 4;
 constexpr int kHeight = 2;   // a field's height; a woven picture is 4 lines
 
 // A field whose line y is every byte `base + y`, so a line landing at the wrong parity is caught and
-// two lines read backwards are not the two lines read forwards.
+// two lines read backward are not the two lines read forward.
 std::vector<std::uint8_t> fieldOf(std::uint8_t base) {
     std::vector<std::uint8_t> pixels(static_cast<std::size_t>(kWidth) * kHeight * 4);
     for (int y = 0; y < kHeight; ++y) {

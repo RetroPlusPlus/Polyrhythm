@@ -115,7 +115,7 @@ struct FerrymanGame {
     int rescued = 0;   // toward this wave's quota
     [[nodiscard]] int quota() const { return std::min(kQuotaBase + wave, kQuotaCap); }
 
-    // The ferry: free centre-based position. lifeNum keys the sprite per life (a respawn is a
+    // The ferry: free center-based position. lifeNum keys the sprite per life (a respawn is a
     // teleport home — the fresh key mount-snaps it).
     float  ferryX = kViewW / 2.0f, ferryY = kViewH - 80.0f;
     int    lifeNum = 0;

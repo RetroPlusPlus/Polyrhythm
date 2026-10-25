@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Author Vantium's indexed-PNG art: a 16x16-cell deck-tile strip, a sprite sheet, and a HUD font.
 
-All three are colortype-3 (indexed) PNGs -- pixels are palette INDICES; colour comes from palettes
+All three are colortype-3 (indexed) PNGs -- pixels are palette INDICES; color comes from palettes
 the demo uploads and selects per cell / per sprite. EVERY palette in the game holds AT MOST 8
 entries, so every index emitted here is 0..7 (asserted at write time). Index 0 is transparent on
 the sprite sheet and on the deck strip (the deck layer's holes reveal the starfield beneath).
@@ -24,7 +24,7 @@ The art direction is rich, dense hull greebling achieved procedurally -- the tec
     player bolt (16x8), enemy shot (8x8), explosion frames x4 (24x24).
   - vantium_font.png    -- RICH 16x16 cells (each a 2x2 tile stamp): digits 0-9, A-Z, space, and
     a border rule -- doubled 5x7 cores under a 4-step vertical gradient with a 1px outline and a
-    drop shadow, the Amiga-HUD look; the gradient recolours per palette (white/gold/cyan).
+    drop shadow, the Amiga-HUD look; the gradient recolors per palette (white/gold/cyan).
 
 Engine-original art (an original homage -- no Graftgold / Hewson content). One-time authoring
 tool, kept committed so the PNGs stay regenerable and auditable; stdlib zlib/struct only.
@@ -41,11 +41,11 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent  # engine/examples/vantium/assets
 
-# Neutral viewable PLTE (the demo overrides with its own <=8-entry palettes): a grey ramp.
+# Neutral viewable PLTE (the demo overrides with its own <=8-entry palettes): a gray ramp.
 PALETTE = [(0, 0, 0), (40, 44, 56), (72, 78, 92), (104, 112, 128), (136, 144, 160),
            (168, 176, 192), (204, 210, 224), (240, 244, 252)]
 
-MAX_INDEX = 7  # the 8-colour lock -- every emitted pixel must be 0..7
+MAX_INDEX = 7  # the 8-color lock -- every emitted pixel must be 0..7
 
 
 def _chunk(tag: bytes, data: bytes) -> bytes:
@@ -54,7 +54,7 @@ def _chunk(tag: bytes, data: bytes) -> bytes:
 
 
 def _png_indexed8(width: int, height: int, plane: list[list[int]]) -> bytes:
-    for row in plane:  # the 8-colour lock, enforced at the door
+    for row in plane:  # the 8-color lock, enforced at the door
         for idx in row:
             assert 0 <= idx <= MAX_INDEX, f"index {idx} exceeds the 8-colour palette lock"
     sig = b"\x89PNG\r\n\x1a\n"
@@ -203,7 +203,7 @@ def _pipe_h() -> list[list[int]]:
 
 def _pod(scorched: bool) -> list[list[list[int]]]:
     """The 16x32 fuel pod as its two 16x16 cells (top, bottom): a rounded capsule with a glowing
-    core (palette 6/7 = the glow) -- or its burnt-out husk after a hit."""
+    core (palette 6/7 = the glow) -- or its burned-out husk after a hit."""
     tall = _blank(16, 32)
     for y in range(32):
         for x in range(16):
@@ -518,7 +518,7 @@ BORDER_SLOT = len(FONT_ORDER)  # 37
 # Vantium's font is RICH: 16x16 cells (each stamps as a 2x2 tile group, like the deck blocks).
 # Each glyph is the 5x7 core doubled to 10x14 — chunky, authentically pixel — then dressed the
 # Amiga-HUD way: a 4-step vertical gradient fill (7 bright top → 4 at the base), a 1px dark
-# outline (1), and a bottom-right drop shadow (2). The gradient recolours per palette, so one
+# outline (1), and a bottom-right drop shadow (2). The gradient recolors per palette, so one
 # sheet yields white/gold/cyan liveries. Palette layout: 0 = HUD bar background, 1 = outline,
 # 2 = shadow, 4..7 = the gradient ramp (3 reserved).
 RICH_CELL = 16
@@ -535,7 +535,7 @@ def _rich_glyph(mask_rows: list[str]) -> list[list[int]]:
                         filled.add((2 + gx * 2 + dx, 1 + gy * 2 + dy))
     for (x, y) in filled:                    # gradient fill by row band
         art[y][x] = 7 if y < 5 else (6 if y < 8 else (5 if y < 11 else 4))
-    for (x, y) in list(filled):              # 1px outline, 8-neighbour
+    for (x, y) in list(filled):              # 1px outline, 8-neighbor
         for dy in (-1, 0, 1):
             for dx in (-1, 0, 1):
                 nx, ny = x + dx, y + dy
@@ -575,7 +575,7 @@ def build_font() -> bytes:
 # The deck sections are authored HERE, as glyph rows, and emitted as 20x18 16-BIT GRAYSCALE map
 # PNGs the demo loads through the engine's map-import pipeline (loadMapPng -> IndexGrid). Ids are
 # spread so a HUMAN can read the maps: Void is pure black (0) and every other class climbs from
-# 25% grey to pure white in even bands — id = 16383 + (class - 1) * 3072, topping out at exactly
+# 25% gray to pure white in even bands — id = 16383 + (class - 1) * 3072, topping out at exactly
 # 65535. The class ORDER matches vant::MapGlyph in layout.h.
 #
 # Glyphs: ' ' void  '.' plate  ',' riveted  ':' seamed  '-' hazard  '|' hazard-vertical
@@ -780,7 +780,7 @@ SECTIONS: dict[str, list[str]] = {
 
 def _png_gray16(width: int, height: int, values: list[list[int]]) -> bytes:
     """A 16-bit GRAYSCALE PNG — the engine map-import's headline format. The stored sample IS the
-    id, big-endian, never derived from a colour."""
+    id, big-endian, never derived from a color."""
     sig = b"\x89PNG\r\n\x1a\n"
     ihdr = struct.pack(">IIBBBBB", width, height, 16, 0, 0, 0, 0)  # bit depth 16, grayscale
     raw = bytearray()

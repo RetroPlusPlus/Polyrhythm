@@ -23,7 +23,7 @@ constexpr int kH = 144;
 // ── Tight bounding boxes ────────────────────────────────────────────────────────────────
 
 TEST(RegionScissor, CircleBoundingBox) {
-    // centre (80,72), r 30 → viewport box [50,110]×[42,102]; floor/ceil ±1 → [49,111]×[41,103].
+    // center (80,72), r 30 → viewport box [50,110]×[42,102]; floor/ceil ±1 → [49,111]×[41,103].
     const IntRect r = regionScissorRect(ShapePoints::circle({80, 72}, 30), 1, kW, kH);
     EXPECT_EQ(r, (IntRect{49, 41, 62, 62}));
 }

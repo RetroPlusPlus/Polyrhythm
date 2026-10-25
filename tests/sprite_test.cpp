@@ -180,7 +180,7 @@ TEST(GpuSprite, MakeAppliesScrollAndViewport) {
     s.x = 64;
     s.y = 0;
     s.size = AssetDimensions::GameBoy8x8;
-    // No scroll, square viewport: x at the centre maps to clip 0.
+    // No scroll, square viewport: x at the center maps to clip 0.
     const Transform a = spriteHomography(makeGpuSprite(s, 128, 128, 0, 0));
     EXPECT_FLOAT_EQ(a.applyX(0.0f, 0.0f), 0.0f);   // 64/128*2 - 1
     EXPECT_FLOAT_EQ(a.applyY(0.0f, 0.0f), 1.0f);   // 1 - 0/128*2  (top edge)

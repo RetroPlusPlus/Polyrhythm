@@ -428,7 +428,7 @@ TEST(RomRun, AStoppedWriteDoesNotOutliveTheRunItWasIssuedIn) {
 
 TEST(RomRun, AQueuedWriteMeetsItsWatchWhenTheMachineStops) {
     // The write that lands at the stop is the game's own verb, so a watch that asked for those is
-    // offered it and its verdict is honoured: a veto keeps the byte the cell already holds.
+    // offered it and its verdict is honored: a veto keeps the byte the cell already holds.
     Vm::GBC machine;
     machine.hostRom(runnableCartridge(machine, kModeProbeSource, 0x80));
     const RegionMapId<Places> places = declarePlaces(machine);

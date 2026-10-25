@@ -498,7 +498,7 @@ TEST(SameBoyNesting, ARoutineLivingInWorkRamIsCallableToo) {
         ret
     )");
     machine.write(MemoryRegion{.at = 0xC100, .size = static_cast<std::uint32_t>(code.size())}, code);
-    // Cleared first, so what is found afterwards was put there by the routine rather than by a
+    // Cleared first, so what is found afterward was put there by the routine rather than by a
     // machine that came up holding it.
     machine.write(MemoryRegion{.at = 0xC012, .size = 1}, std::vector<std::uint8_t>{0x00});
 
@@ -660,7 +660,7 @@ TEST(SameBoyNesting, IdlingTheClockLeavesABootedCartridgeWhereItWas) {
     ASSERT_GT(counted, 0u);
     ASSERT_EQ(byteAt(machine, 0xC030), 0xAA);  // it has been through its entry, once
 
-    // Rub the mark out, so anything found there afterwards was written by a second pass through the
+    // Rub the mark out, so anything found there afterward was written by a second pass through the
     // entry — which is where a guest parked on the idle landing ends up.
     machine.write(MemoryRegion{.at = 0xC030, .size = 1}, std::vector<std::uint8_t>{0x00});
 

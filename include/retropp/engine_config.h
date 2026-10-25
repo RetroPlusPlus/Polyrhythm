@@ -21,13 +21,13 @@ struct WindowConfig {
     // once at construction — the platform opens the window borderless from the first frame, so the
     // native decorations never flash at launch. Default false = the standard decorated window. For an
     // app that draws its OWN chrome (a custom draggable title bar), this removes the OS chrome that
-    // would otherwise stack underneath it. Toggleable live afterwards via
+    // would otherwise stack underneath it. Toggleable live afterward via
     // Platform::suppressNativeWindowChrome (the runtime path uses SDL_SetWindowBordered).
     bool suppressNativeWindowChrome = false;
 };
 
 // Presentation-enhancement settings — every user-opt-in enhancement, defaulted so a default config
-// plays exactly like the original (faithful colour/sampling, windowed) at a sensible default size.
+// plays exactly like the original (faithful color/sampling, windowed) at a sensible default size.
 // `fullscreen` + `sampling` default OFF/identity (faithful); `windowScale` is the one sizing field.
 // A world zoom factor, an audio-pack selection, and post-process filter selection are appended
 // later (additive — never a reshape).
@@ -43,7 +43,7 @@ struct EnhancementToggles {
 // timing + forward enhancement toggles. Platform-agnostic VALUE types only (no live device
 // handles): the platform layer reads `window`; the renderer reads `viewport`; the run loop reads
 // `timing`. Every field defaults to the faithful Game Boy Color baseline, so a default-constructed
-// EngineConfig reproduces the original behaviour.
+// EngineConfig reproduces the original behavior.
 //
 // Input carries NO config field: the game's action map (input_actions.h) is a value handed to the
 // platform directly (SdlPlatform::actions) — an unconfigured platform simply reports no actions.

@@ -42,7 +42,7 @@ constexpr float kBtnW = 84, kBtnH = 36, kLedSize = 20;
     return static_cast<Control>(1 + s * 11 + role);
 }
 
-// ── Colours ───────────────────────────────────────────────────────────────────────────────────────
+// ── Colors ───────────────────────────────────────────────────────────────────────────────────────
 constexpr Rgba8 kBackdrop  {18, 20, 28};
 constexpr Rgba8 kPanel     {30, 34, 46};
 constexpr Rgba8 kPadIdle   {52, 60, 84};
@@ -217,7 +217,7 @@ void drawColumnText(int s, const ColumnState& cs, const Fonts& fonts, auto&& wri
 std::vector<Sprite> textSprites(const PanelState& s, const Fonts& fonts) {
     std::vector<Sprite> out;
     // Draw `text` left-aligned at (x, y). `keyPrefix` gives each glyph slot a stable key across frames, so
-    // a value rolling over never re-identifies its neighbours.
+    // a value rolling over never re-identifies its neighbors.
     const auto write = [&](int x, int y, std::string_view text, PaletteId pal,
                            std::string_view keyPrefix) {
         for (std::size_t i = 0; i < text.size(); ++i) {

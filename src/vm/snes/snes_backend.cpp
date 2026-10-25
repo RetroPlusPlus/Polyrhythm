@@ -825,7 +825,7 @@ void SnesBackend::callInContext(std::uint32_t entry, std::span<const ResidentReg
                                " is not memory the landing can be pushed to");
     }
     // The output is read while the routine's answer is still in the registers it left it in, and the
-    // whole file goes back afterwards — with the interrupt lines as they now stand, so an edge the
+    // whole file goes back afterward — with the interrupt lines as they now stand, so an edge the
     // routine's run took is not taken twice.
     if (readOutputs) {
         readOutputs();

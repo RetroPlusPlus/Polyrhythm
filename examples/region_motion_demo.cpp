@@ -3,7 +3,7 @@
 // One idea: because the whole frame's draw state is recomputed each frame, you move a shaped effect
 // just by giving its region new coordinates every frame — no animation API. A circular wavy "porthole"
 // glides slowly left↔right across a static grid: inside the moving circle the grid waves, everywhere
-// else it is still. The circle's centre is recomputed each frame from a slow sine.
+// else it is still. The circle's center is recomputed each frame from a slow sine.
 //
 // Opens a real window so the live gate path keeps compiling on every CI platform.
 
@@ -79,7 +79,7 @@ int main() {
         bg.content = TileContent{.widthInTiles = kMapW, .heightInTiles = kMapH,
                                  .cells = std::span<const TileCell>(cells)};
 
-        // The ONLY moving part: the circle's centre, recomputed each frame. Slow horizontal glide.
+        // The ONLY moving part: the circle's center, recomputed each frame. Slow horizontal glide.
         const float cx = 80.0f + 56.0f * std::sin(static_cast<float>(tick) * 0.01f);
         bg.regions = {Region{
             .key     = "porthole",

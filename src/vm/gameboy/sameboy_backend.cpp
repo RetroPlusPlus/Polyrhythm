@@ -171,7 +171,7 @@ void SameBoyBackend::advanceClock(std::uint64_t cycles) {
     // (The machine runs headless with PPU rendering disabled — see SameBoyMachine's ctor — so running
     // the CPU for extended periods here is safe.)
     //
-    // The register file is put back afterwards, so a machine that was parked in the middle of its own
+    // The register file is put back afterward, so a machine that was parked in the middle of its own
     // program is still there: idling moves the timing state and leaves everything else where it was.
     const std::size_t instructions = static_cast<std::size_t>(cycles / kCyclesPerIdleStep);
     if (instructions == 0) {
@@ -730,7 +730,7 @@ void SameBoyBackend::callInContext(std::uint32_t entry, std::span<const Resident
     machine_.runInContext(kReturnLanding, maxInstructions);
 
     // The output is read while the routine's answer is still in the registers it left it in, and the
-    // whole file goes back afterwards: what the routine promised its callers reaches native code
+    // whole file goes back afterward: what the routine promised its callers reaches native code
     // through the binding, never through a register left behind.
     if (readOutputs) {
         readOutputs();

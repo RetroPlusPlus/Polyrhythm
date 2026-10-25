@@ -552,7 +552,7 @@ struct Vm::Impl {
     }
 
     // Whether a guest hook holds the machine right now — set for the length of a dispatch, restored
-    // afterwards. A call into the guest asks it whose stack to use: an escape or a watch holds a
+    // afterward. A call into the guest asks it whose stack to use: an escape or a watch holds a
     // guest that is mid-instruction, with a live stack to push onto.
     bool inGuestHook = false;
     // Registered region batches, in registration order; a RegionMapId holds an index into this.
@@ -894,7 +894,7 @@ struct Vm::Impl {
     }
 
     // Call a routine the machine already holds, in whatever context the machine is already in. The
-    // marshalling is invoke's — memory inputs written live, register inputs applied over the guest's
+    // marshaling is invoke's — memory inputs written live, register inputs applied over the guest's
     // own file, the output read where the routine left it — and the backend owns the frame.
     std::uint64_t invokeInContext(const ResolvedRoutine& routine,
                                   std::span<const CallValue> inputs) {

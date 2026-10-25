@@ -7,7 +7,7 @@
 //   • A SQUADRON is five fighters in single file along a smooth Catmull-Rom curve spanning the
 //     view — authored as waypoints per spawn, baked ONCE into an ArcLengthTable, and walked at
 //     constant speed (members trail the leader by a fixed arc length: the classic conga swoop).
-//   • Each wave rotates its LIVERY: one dart shape, four 8-colour palettes.
+//   • Each wave rotates its LIVERY: one dart shape, four 8-color palettes.
 //   • Fighters on screen fire aimed shots on independent cooldowns.
 //   • MINES rise from authored deck spawn points when on screen (max 2 alive) and home slowly.
 //   • Clearing the wave QUOTA raises the LAND NOW prompt; killing all five of a squadron pays
@@ -67,7 +67,7 @@ public:
     // The sim's collision queries / mutations.
     [[nodiscard]] Wave&                    wave() { return wave_; }
     [[nodiscard]] const Wave&              wave() const { return wave_; }
-    [[nodiscard]] retropp::Vec2            fighterPos(int i) const;  // centre, world px
+    [[nodiscard]] retropp::Vec2            fighterPos(int i) const;  // center, world px
     void killFighter(int i, std::vector<GameEvent>& events);
     [[nodiscard]] std::vector<Mine>&       mines() { return mines_; }
     [[nodiscard]] const std::vector<Mine>& mines() const { return mines_; }

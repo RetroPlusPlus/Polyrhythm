@@ -5,7 +5,7 @@
 //
 //   1. Mirror-ghost   — a faint, point-mirrored copy of the frame cross-fades over the real one, its
 //                        pivot slowly orbiting. A doppelgänger of your game wandering on top of it.
-//   2. Homesick pixels— every pixel slowly creeps toward screen-centre and back; the frame breathes
+//   2. Homesick pixels— every pixel slowly creeps toward screen-center and back; the frame breathes
 //                        inward and outward forever, for no reason.
 //   3. Fwoomf          — the frame partially swaps its X and Y and slides back, smearing toward its
 //                        across-the-diagonal mirror.
@@ -24,9 +24,9 @@
 //   • ONE LAYER (DrawLayer::effect, Layer scope) on the sprite layer: ONLY the sprites warp; the tile
 //     background stays put. A sprite layer takes an effect identically to a tile layer.
 //
-// The effects sample through sampleSource(), so where they reach past the frame edge the behaviour is the
+// The effects sample through sampleSource(), so where they reach past the frame edge the behavior is the
 // EFFECT's edge policy, not the shader's: Blank (the faithful default) shows nothing there (the layers below
-// reveal through); Stretch clamps/smears the border. Down toggles it — the SAME shader honours both, because
+// reveal through); Stretch clamps/smears the border. Down toggles it — the SAME shader honors both, because
 // the layer decides.
 //
 // Run on a dev machine: Z / pad B cycles none → mirror-ghost → homesick → Fwoomf → none; Up toggles the
@@ -132,15 +132,15 @@ int main() {
     bool attachToLayer = false;
     auto targetName    = [](bool layer) { return layer ? "sprite layer only" : "whole frame"; };
 
-    // The active effect's EDGE policy (ScreenSpaceEffect::edge) — proof the edge behaviour comes from the
+    // The active effect's EDGE policy (ScreenSpaceEffect::edge) — proof the edge behavior comes from the
     // EFFECT/layer, not the shader. Blank (default): where an effect samples PAST the frame edge it shows
     // nothing (the backdrop / layers below reveal through). Clamp (Stretch): the border smears. The SAME
-    // custom shader (it samples through sampleSource()) honours whichever the layer sets. Down toggles it.
+    // custom shader (it samples through sampleSource()) honors whichever the layer sets. Down toggles it.
     bool clampEdges = false;
     auto edgeName   = [](bool clamp) { return clamp ? "clamp (Stretch)" : "blank (default)"; };
 
     // The layer-transparency scene below the effects: one committed indexed PNG uploaded twice (opaque +
-    // index-0-transparent), coloured through warm/cool palettes, two scrolling tile layers.
+    // index-0-transparent), colored through warm/cool palettes, two scrolling tile layers.
     LoadedImage tiles;
     try {
         tiles = loadPng(assetPath("demo_tiles.png"));
@@ -157,8 +157,8 @@ int main() {
     const PaletteId coolPal = renderer.uploadPalette(std::span<const Rgba8>(cool));
 
     // The same tile pattern on two layers, but each cell names its own sheet + palette directly: the lower
-    // (opaque) field draws from `opaqueAtlas` coloured warm; the upper (holed) field from `holeAtlas`
-    // coloured cool. Two cell arrays carry the per-cell handles; the tile index is identical between them.
+    // (opaque) field draws from `opaqueAtlas` colored warm; the upper (holed) field from `holeAtlas`
+    // colored cool. Two cell arrays carry the per-cell handles; the tile index is identical between them.
     std::vector<TileCell> lowerCells(static_cast<std::size_t>(kMapW) * kMapH);
     std::vector<TileCell> upperCells(static_cast<std::size_t>(kMapW) * kMapH);
     for (int y = 0; y < kMapH; ++y) {

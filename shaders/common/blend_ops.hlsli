@@ -6,7 +6,7 @@
 // deliberately kept off the include path.
 //
 // Include guards rather than #pragma once — a plain guard is the one construct both frontends' C
-// preprocessors are guaranteed to honour.
+// preprocessors are guaranteed to honor.
 
 #ifndef RETROPP_COMMON_BLEND_OPS_HLSLI
 #define RETROPP_COMMON_BLEND_OPS_HLSLI

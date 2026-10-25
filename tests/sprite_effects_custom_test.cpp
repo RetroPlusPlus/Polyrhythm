@@ -208,7 +208,7 @@ TEST_F(SpriteCustom, TintLiftRendersTheComputedColourOnTheSilhouette) {
     ASSERT_EQ(N.size(), B.size());
     ASSERT_EQ(G.size(), B.size());
 
-    // The expected covered-pixel colour: saturate(art * tint + lift), opaque over the background.
+    // The expected covered-pixel color: saturate(art * tint + lift), opaque over the background.
     const Vec4  col = Vec4{spriteColour.r / 255.0f, spriteColour.g / 255.0f, spriteColour.b / 255.0f, 1.0f};
     const Rgba8 want{quant(col.x * tint.x + lift), quant(col.y * tint.y + lift),
                      quant(col.z * tint.z + lift), 255};

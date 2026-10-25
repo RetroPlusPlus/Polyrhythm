@@ -29,7 +29,7 @@
 //   - freezeMask() copies the coverage mask on every call — per-frame-per-object use is allocation
 //     churn plus retained memory. maskShape() traces the coverage on every call — cache the result.
 // To re-draw the sprite's ART, the mask is the wrong tool: a second Sprite with the same atlas / tile /
-// transform is one instanced quad (a whole-silhouette ColorFill flat-colours it). That covers re-drawing
+// transform is one instanced quad (a whole-silhouette ColorFill flat-colors it). That covers re-drawing
 // the art and nothing else — it cannot give a textureless region, a detached shape, or an evenly
 // inflated outline (ShapePoints::radius can).
 
@@ -64,7 +64,7 @@ struct ArtMask {
 
 // Trace a mask's OUTER silhouette to a polygon of at most `maxPoints` vertices, in ART pixels. The boundary
 // is the marching-squares outer contour (interior holes are bridged — outer boundary only; disconnected
-// blobs merge through their common convex hull). Simplification honours `trace`: Conservative keeps the
+// blobs merge through their common convex hull). Simplification honors `trace`: Conservative keeps the
 // silhouette CONTAINED at every budget (only ever adding area, degenerating toward the hull then the box);
 // Balanced hugs it minimax-tight. Returns {} for an empty / fully-transparent mask. Throws
 // std::invalid_argument when maxPoints < 3.

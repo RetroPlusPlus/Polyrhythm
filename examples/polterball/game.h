@@ -104,7 +104,7 @@ private:
     void nextBoard();
 
     void collideMaze();      // ball vs wall cells: reflect, break soft walls
-    void eatAtBallCell();    // pellets under the ball's centre + power-pellet pickups
+    void eatAtBallCell();    // pellets under the ball's center + power-pellet pickups
     void ghostContacts();    // swallow (normal) vs smash (ignited)
 };
 

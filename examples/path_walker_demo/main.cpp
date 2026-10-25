@@ -104,11 +104,11 @@ int main() {
         for (int x = 0; x < 8; ++x) gridArt[static_cast<std::size_t>(y) * 8 + x] = (x == 0 || y == 0) ? 2 : 1;
     const AtlasId gridAtlas = renderer.uploadAtlas(gridArt.data(), 8, 8).atlasId;
 
-    // One palette per role; entry [1] is the visible colour (entry [0] is unused — never sampled).
+    // One palette per role; entry [1] is the visible color (entry [0] is unused — never sampled).
     const std::array<Rgba8, 2> speedPal{{{0, 0, 0}, {90, 200, 255}}};   // cyan — constant speed
     const std::array<Rgba8, 2> easedPal{{{0, 0, 0}, {255, 210, 90}}};   // gold — eased
     const std::array<Rgba8, 2> tweenPal{{{0, 0, 0}, {255, 90, 150}}};   // pink — distance-tween (reverses)
-    const std::array<Rgba8, 2> dotPal{{{0, 0, 0}, {70, 90, 130}}};      // dim blue-grey — the path trace
+    const std::array<Rgba8, 2> dotPal{{{0, 0, 0}, {70, 90, 130}}};      // dim blue-gray — the path trace
     const PaletteId speedPalId = renderer.uploadPalette(std::span<const Rgba8>(speedPal));
     const PaletteId easedPalId = renderer.uploadPalette(std::span<const Rgba8>(easedPal));
     const PaletteId tweenPalId = renderer.uploadPalette(std::span<const Rgba8>(tweenPal));
@@ -159,16 +159,16 @@ int main() {
         return v;
     }();
 
-    // Build one oriented arrow sprite for a mover: centred on its position, rotated to its facing.
+    // Build one oriented arrow sprite for a mover: centered on its position, rotated to its facing.
     const auto arrowFor = [&](const PathWalker& w, AtlasId atlas, PaletteId palette, const char* key) {
         Sprite s{.key = key};
-        s.x         = static_cast<int>(std::lround(w.position().x)) - 4;  // centre the 8×8 cell
+        s.x         = static_cast<int>(std::lround(w.position().x)) - 4;  // center the 8×8 cell
         s.y         = static_cast<int>(std::lround(w.position().y)) - 4;
         s.size      = AssetDimensions::GameBoy8x8;
         s.tile      = 0;
         s.atlas     = atlas;
         s.palette   = palette;
-        s.transform = Transform::rotation(headingDegrees(w.facing()), 4.0f, 4.0f);  // about the sprite centre
+        s.transform = Transform::rotation(headingDegrees(w.facing()), 4.0f, 4.0f);  // about the sprite center
         return s;
     };
 

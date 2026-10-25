@@ -182,7 +182,7 @@ TEST(SnesGuestInput, PortTwoIsIndependentOfPortOne) {
     EXPECT_TRUE(SnesBackendTestAccess::state(backend).pads[1]->a);
 }
 
-// A cartridge that draws the JOY1 low byte as the backdrop colour: reset goes native, turns the screen
+// A cartridge that draws the JOY1 low byte as the backdrop color: reset goes native, turns the screen
 // on and enables the vblank NMI + the auto-joypad read; the native NMI acknowledges the NMI, waits for
 // the auto-read, reads $4218 and writes it to CGRAM entry 0. With no layers enabled the whole screen is
 // that backdrop, so the picture IS the pad word.
@@ -207,7 +207,7 @@ constexpr std::string_view kDrawsPad =
     "        LDA #$00\n"
     "        STA !$2121\n"   // CGADD: palette word 0 (the backdrop)
     "        LDA !$4218\n"   // JOY1 low byte
-    "        STA !$2122\n"   // CGDATA: the colour's low byte
+    "        STA !$2122\n"   // CGDATA: the color's low byte
     "        STA !$2122\n"   // CGDATA: its high byte
     "        RTI\n";
 

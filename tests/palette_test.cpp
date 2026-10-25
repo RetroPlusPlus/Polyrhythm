@@ -6,7 +6,7 @@
 
 namespace retropp {
 
-// Rgba8 is the engine's final output colour: four named channels, opaque by default, 4 bytes
+// Rgba8 is the engine's final output color: four named channels, opaque by default, 4 bytes
 // so it uploads as a tightly-packed RGBA8 texture row with no padding.
 
 TEST(Palette, Rgba8IsFourTightlyPackedBytes) {
@@ -34,7 +34,7 @@ TEST(Palette, Rgba8NamedFieldsAndEquality) {
     EXPECT_EQ(a.a, 40);
 }
 
-// Rgba16 is the 16-bit-per-channel output colour: four named channels, opaque by default, 8 bytes
+// Rgba16 is the 16-bit-per-channel output color: four named channels, opaque by default, 8 bytes
 // so it uploads as a tightly-packed RGBA16 texture row with no padding.
 
 TEST(Palette, Rgba16IsEightTightlyPackedBytes) {
@@ -63,7 +63,7 @@ TEST(Palette, Rgba16NamedFieldsAndEquality) {
 }
 
 // widen8 maps the 8-bit endpoints onto the 16-bit endpoints exactly (×257). This identity is what
-// makes the 16-bit palette store behaviour-preserving for 8-bit palettes: 255 → 65535, not 0xFF00.
+// makes the 16-bit palette store behavior-preserving for 8-bit palettes: 255 → 65535, not 0xFF00.
 TEST(Palette, Widen8MapsEndpointsExactly) {
     static_assert(widen8(0) == 0u, "0 must widen to 0");
     static_assert(widen8(255) == 65535u, "255 must widen to the 16-bit max, not 0xFF00");
@@ -74,7 +74,7 @@ TEST(Palette, Widen8MapsEndpointsExactly) {
     EXPECT_EQ(widen8(1), 257u);
 }
 
-// widen(Rgba8) widens every channel, including alpha: an opaque 8-bit colour stays opaque (65535).
+// widen(Rgba8) widens every channel, including alpha: an opaque 8-bit color stays opaque (65535).
 TEST(Palette, WidenColorWidensEveryChannel) {
     constexpr Rgba16 w = widen(Rgba8{0, 128, 255, 255});
     EXPECT_EQ(w.r, 0u);

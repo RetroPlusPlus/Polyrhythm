@@ -54,7 +54,7 @@ constexpr PixelSize kViewport{160, 144};
 TEST(SdCurveAnalytic, LinearSquareMatchesSignedDistanceSign) {
     const Curve sq = linearSquare();
     const std::span<const CurveSegment> segs(sq.segments);
-    // Centre inside (negative), a clear outside point (positive), an on-edge point (≈ 0).
+    // Center inside (negative), a clear outside point (positive), an on-edge point (≈ 0).
     EXPECT_LT(sdCurveAnalytic({70, 70}, segs), 0.0f);
     EXPECT_GT(sdCurveAnalytic({10, 70}, segs), 0.0f);
     EXPECT_LT(std::abs(sdCurveAnalytic({20, 70}, segs)), 0.5f);
@@ -156,28 +156,28 @@ TEST(CurveRegionContains, RadiusInflationFlipsAJustOutsidePoint) {
 }
 
 TEST(CurveRegionContains, TransformTranslationMovesTheCurve) {
-    // A small leaf centred at (40,72): two quadratics bulging above/below the (20,72)–(60,72) spine.
+    // A small leaf centered at (40,72): two quadratics bulging above/below the (20,72)–(60,72) spine.
     ShapePoints region;
     region.curve = {quad({20, 72}, {40, 52}, {60, 72}), quad({60, 72}, {40, 92}, {20, 72})};
-    EXPECT_TRUE(curveRegionContains({40, 72}, region));    // the leaf centre
+    EXPECT_TRUE(curveRegionContains({40, 72}, region));    // the leaf center
     EXPECT_FALSE(curveRegionContains({100, 72}, region));  // far to the right
-    region.transform = Transform::translation(60, 0);       // shape centre effectively at (100,72)
+    region.transform = Transform::translation(60, 0);       // shape center effectively at (100,72)
     EXPECT_TRUE(curveRegionContains({100, 72}, region));
 }
 
 TEST(CurveRegionContains, TransformScaleEnlargesTheCurve) {
-    // A small leaf centred at (40,72) spanning y ∈ [62,82] (apexes ±10 off the spine).
+    // A small leaf centered at (40,72) spanning y ∈ [62,82] (apexes ±10 off the spine).
     ShapePoints region;
     region.curve = {quad({30, 72}, {40, 52}, {50, 72}), quad({50, 72}, {40, 92}, {30, 72})};
-    const Point probe{40, 95};  // 23 px below centre — well outside the small leaf (bottom at y=82)
+    const Point probe{40, 95};  // 23 px below center — well outside the small leaf (bottom at y=82)
     EXPECT_FALSE(curveRegionContains(probe, region));
-    region.transform = Transform::scale(3.0f, 3.0f, 40.0f, 72.0f);  // 3× about the centre → reaches y=102
+    region.transform = Transform::scale(3.0f, 3.0f, 40.0f, 72.0f);  // 3× about the center → reaches y=102
     EXPECT_TRUE(curveRegionContains(probe, region));
 }
 
 TEST(CurveRegionContains, InvertFlipsInsideAndOutside) {
     ShapePoints region = ShapePoints::fromCurve(roundedQuad(80.0f, 72.0f, 30.0f));
-    EXPECT_TRUE(curveRegionContains({80, 72}, region));    // centre — inside the curve
+    EXPECT_TRUE(curveRegionContains({80, 72}, region));    // center — inside the curve
     EXPECT_FALSE(curveRegionContains({80, 130}, region));  // well outside
     region.invert = true;                                  // the region becomes the OUTSIDE of the curve
     EXPECT_FALSE(curveRegionContains({80, 72}, region));
@@ -189,7 +189,7 @@ TEST(CurveRegionContains, InvertFlipsInsideAndOutside) {
 TEST(CurveRegionStroke, ClosedCurveStrokeIsABandAlongTheBoundary) {
     ShapePoints region = ShapePoints::fromCurve(roundedQuad(80.0f, 72.0f, 30.0f));
     region.strokeWidth = 8.0f;                            // band |signedDistance| ≤ 4 along the rounded outline
-    EXPECT_FALSE(curveRegionContains({80, 72}, region));  // the centre (deep interior) → not in the stroke
+    EXPECT_FALSE(curveRegionContains({80, 72}, region));  // the center (deep interior) → not in the stroke
     EXPECT_TRUE(curveRegionContains({80, 102}, region));  // the south on-curve point → on the band
     EXPECT_FALSE(curveRegionContains({80, 130}, region)); // well past the outer edge → excluded
 }

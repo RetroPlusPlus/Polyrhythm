@@ -229,7 +229,7 @@ int main() {
                                     .cells = std::span<const TileCell>(sceneCells)};
         frame.layers.push_back(scene);
 
-        // The live blob — its own art is the mask's source. Centred on the cursor, pose cycling, a gentle
+        // The live blob — its own art is the mask's source. Centered on the cursor, pose cycling, a gentle
         // transform sway while `spin` is on.
         const int bx = cursorOn ? cursor.x : 80;
         const int by = cursorOn ? cursor.y : 72;
@@ -325,7 +325,7 @@ int main() {
             sprites.push_back(g);
         }
 
-        // Coins: the exact collision, split by which form covers them. Sampled at the coin's centre and rim,
+        // Coins: the exact collision, split by which form covers them. Sampled at the coin's center and rim,
         // so a coin lights when the mask TOUCHES its disc. GREEN = the live borrow covers it (tracks
         // the blob, exact — a coin in the notch or hole stays dark). RED = a frozen snapshot (or trail node)
         // covers it while the live blob does not (the owned form persisting where the sprite has left).

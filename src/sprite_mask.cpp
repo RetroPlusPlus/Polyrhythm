@@ -168,7 +168,7 @@ double signedArea(const std::vector<Point>& poly) {
 }
 
 // The outer boundary loops of a mask (interior holes excluded). Each visible pixel contributes the four
-// directed edges of its unit square; an edge shared by two visible pixels cancels its neighbour, so what
+// directed edges of its unit square; an edge shared by two visible pixels cancels its neighbor, so what
 // survives is exactly the boundary between visible and not. The surviving directed edges chain into loops;
 // the outer loops share the winding of the largest loop (a hole winds the other way and is dropped).
 std::vector<std::vector<Point>> outerContours(const ArtMask& mask) {
@@ -253,7 +253,7 @@ std::vector<std::vector<Point>> outerContours(const ArtMask& mask) {
     return outer;
 }
 
-// Drop vertices collinear with their neighbours (the long orthogonal runs of a pixel contour collapse to
+// Drop vertices collinear with their neighbors (the long orthogonal runs of a pixel contour collapse to
 // their corners).
 std::vector<Point> collinearMerge(const std::vector<Point>& loop) {
     const std::size_t n = loop.size();
@@ -321,7 +321,7 @@ std::vector<Point> boundingBoxPoly(const std::vector<Point>& poly) {
 
 // Conservative simplification: from the exact contour, remove concavities (reflex vertices — each removal
 // only fills area, never carves), then, if a convex polygon is still over budget, collapse edges outward to
-// their neighbour tangents (again only adding area). The result contains the silhouette at every budget.
+// their neighbor tangents (again only adding area). The result contains the silhouette at every budget.
 std::vector<Point> conservativeSimplify(std::vector<Point> poly, int maxPoints) {
     if (static_cast<int>(poly.size()) <= maxPoints) return poly;
     makeCcw(poly);
@@ -360,7 +360,7 @@ std::vector<Point> conservativeSimplify(std::vector<Point> poly, int maxPoints) 
         double bestArea = std::numeric_limits<double>::max();
         Point bestPt{};
         for (std::size_t i = 0; i < n; ++i) {
-            // edge (v, w); extend its neighbour edges (u→v) and (w→z) to their intersection `pt`.
+            // edge (v, w); extend its neighbor edges (u→v) and (w→z) to their intersection `pt`.
             const Point& u = poly[(i + n - 1) % n];
             const Point& v = poly[i];
             const Point& w = poly[(i + 1) % n];
@@ -381,7 +381,7 @@ std::vector<Point> conservativeSimplify(std::vector<Point> poly, int maxPoints) 
                 bestPt = pt;
             }
         }
-        if (bestEdge == n) break;  // every edge's neighbours are parallel — the box handles it below
+        if (bestEdge == n) break;  // every edge's neighbors are parallel — the box handles it below
         poly[bestEdge] = bestPt;                                                    // v → the apex
         poly.erase(poly.begin() + static_cast<std::ptrdiff_t>((bestEdge + 1) % n));  // drop w
     }
@@ -391,7 +391,7 @@ std::vector<Point> conservativeSimplify(std::vector<Point> poly, int maxPoints) 
 }
 
 // Balanced simplification: greedily drop the least-significant vertex (smallest perpendicular offset from
-// the segment between its neighbours) until at budget. Errs both ways — the tightest hug the budget buys.
+// the segment between its neighbors) until at budget. Errs both ways — the tightest hug the budget buys.
 std::vector<Point> balancedSimplify(std::vector<Point> poly, int maxPoints) {
     while (static_cast<int>(poly.size()) > maxPoints && poly.size() > 3) {
         const std::size_t n = poly.size();

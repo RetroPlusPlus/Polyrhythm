@@ -5,7 +5,7 @@
 // horizontal wave; press Z (or the pad's east button) to cycle how its transform animates:
 //   scale pulse → stretch (non-uniform) → skew → rotate → identity
 // The wave stays a plain horizontal wave; only the shape it lives in warps. The transform is composed on
-// top of the points (which stay put), about the shape's centre.
+// top of the points (which stay put), about the shape's center.
 //
 // Opens a real window so the live gate path keeps compiling on every CI platform.
 
@@ -33,7 +33,7 @@ namespace {
 using namespace retropp;
 constexpr int kViewW = 160, kViewH = 144;
 constexpr int kMapW = 20, kMapH = 18;
-constexpr float kCx = 80.0f, kCy = 72.0f;   // the region's centre / transform pivot
+constexpr float kCx = 80.0f, kCy = 72.0f;   // the region's center / transform pivot
 
 // The demo's input vocabulary: the mode cycler plus one dev toggle.
 enum class Action : std::uint8_t { NextMode, Fullscreen };
@@ -46,7 +46,7 @@ const char* modeName(int m) {
         default:         return "identity";
     }
 }
-// The animated transform for a mode at tick t. Composed about the region centre.
+// The animated transform for a mode at tick t. Composed about the region center.
 Transform transformFor(int mode, int t) {
     const float ft = static_cast<float>(t);
     switch (mode) {

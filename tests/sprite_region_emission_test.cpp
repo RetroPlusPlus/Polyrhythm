@@ -1,13 +1,13 @@
 // Region-Bloom emission fields — the graded-source path's CPU half.
 //
-// A Bloom inside a Layer-scope sprite REGION is the region's source colour, not an additive halo, so it
+// A Bloom inside a Layer-scope sprite REGION is the region's source color, not an additive halo, so it
 // cannot ride a shared bucket the way a chain Bloom does: it needs THIS sprite's own light, and it gets a
 // field of its own — a rect of the atlas sized to the sprite's footprint. These tests pin what the renderer
 // builds from: which steps ask for a field, what each is given, and that the emission index a step carries
 // addresses the RIGHT record in the sprite's packed slice however the sprite's chain and regions are
 // authored.
 //
-// That last one is the whole hazard: the index is what the emission raster walks the colour chain up to, so
+// That last one is the whole hazard: the index is what the emission raster walks the color chain up to, so
 // an index off by one rasters a different step's light. It is asserted against buildSpriteFxRecords' own
 // output rather than against a hand-counted number, so the two cannot drift apart.
 //
@@ -97,7 +97,7 @@ TEST(SpriteRegionEmission, AStepsIndexIsItsOwnRecordInThePackedSlice) {
 
 TEST(SpriteRegionEmission, ChainStepsBeforeARegionShiftTheEmissionIndex) {
     // buildSpriteFxRecords packs the chain first, then the regions. A step that assumed the region was at
-    // index 0 would raster the colour chain up to the WRONG step — the whole reason this is asserted against
+    // index 0 would raster the color chain up to the WRONG step — the whole reason this is asserted against
     // the packed slice rather than a literal.
     Sprite s{.key = "s"};
     s.effects = {fill(Rgba8{.r = 255, .g = 0, .b = 0, .a = 255}),
@@ -157,7 +157,7 @@ TEST(SpriteRegionEmission, ACurveBoundaryRegionContributesNoRecordAndNoField) {
 
 TEST(SpriteRegionEmission, EachRegionBloomGetsItsOwnRectNeverASharedOne) {
     // Two region Blooms authored identically still take TWO fields: a field holds one sprite's own light,
-    // and this one is consumed as a graded source, so sharing would mix a neighbour's light into it. They
+    // and this one is consumed as a graded source, so sharing would mix a neighbor's light into it. They
     // share a PAGE — one reach, one blur pass — while keeping rects of their own.
     Sprite a{.key = "a"};
     a.regions = {regionWith("rg", {bloom(4.0f)})};
@@ -487,7 +487,7 @@ TEST(SpriteRegionEmissionRead, OnTheOutputGridThePointAdvancesWithTheFragment) {
 }
 
 TEST(SpriteRegionEmissionRead, AtComposeScaleOneBothGridsGiveTheSamePoint) {
-    // Native resolution: a compose pixel IS a viewport pixel, its centre is already the cell's anchor, and
+    // Native resolution: a compose pixel IS a viewport pixel, its center is already the cell's anchor, and
     // the grid stops being a distinction at all.
     const EmissionRectEntry rect = placedRect();
     for (int i = 0; i < 6; ++i) {

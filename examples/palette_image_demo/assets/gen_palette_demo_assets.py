@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Author the palette-image demo's colour PNGs.
+"""Author the palette-image demo's color PNGs.
 
-The palette-image demo (examples/palette_image_demo/main.cpp) reads a colour image one pixel per
-palette entry. These exercise the FEATURE, not a toy: 16-bit-per-channel truecolour with a real ALPHA
-channel — the two reasons palette images exist (lossless colour + material transparency). Two images,
+The palette-image demo (examples/palette_image_demo/main.cpp) reads a color image one pixel per
+palette entry. These exercise the FEATURE, not a toy: 16-bit-per-channel truecolor with a real ALPHA
+channel — the two reasons palette images exist (lossless color + material transparency). Two images,
 one per asset policy the demo exercises:
 
   - palette_grid.png  (4x4, 16-bit RGBA) — loaded Embed (baked into the binary). 16 hues; alpha falls
@@ -12,10 +12,10 @@ one per asset policy the demo exercises:
                        alpha ramped 0 → full across the 8 entries: a pure transparency ramp.
 
 These are engine-original images (no third-party art). One-time authoring tool, kept committed
-so the binary assets stay regenerable and their exact colour planes are auditable — the same posture
+so the binary assets stay regenerable and their exact color planes are auditable — the same posture
 as tests/fixtures/gen_fixtures.py (whose minimal PNG encoder this mirrors).
 
-Dependency-free: a minimal 16-bit truecolour-alpha PNG encoder over the standard library (zlib +
+Dependency-free: a minimal 16-bit truecolor-alpha PNG encoder over the standard library (zlib +
 struct), so it runs anywhere Python does — no Pillow. Emits non-interlaced, filter-0, colortype-6,
 bitdepth-16 PNGs (samples big-endian, per the PNG spec).
 
@@ -40,7 +40,7 @@ def _chunk(tag: bytes, data: bytes) -> bytes:
 
 def write_rgba16(path: Path, width: int, height: int,
                  pixels: list[list[tuple[int, int, int, int]]]) -> None:
-    """16-bit truecolour-alpha PNG (colortype 6, bitdepth 16): four big-endian uint16 samples/pixel."""
+    """16-bit truecolor-alpha PNG (colortype 6, bitdepth 16): four big-endian uint16 samples/pixel."""
     raw = bytearray()
     for row in pixels:
         raw.append(0)  # filter type 0 (none)
@@ -65,7 +65,7 @@ def hsv16(h: float, s: float, v: float, a: float) -> tuple[int, int, int, int]:
 def main() -> None:
     # 4x4 hue grid, 16-bit. Hue marches across the wheel in natural (row-major) order; ALPHA falls per
     # row — row 0 opaque, row 3 fully transparent — so over a background the demo shows the palette's
-    # material transparency, and the colour values exercise the 16-bit path.
+    # material transparency, and the color values exercise the 16-bit path.
     row_alpha = [1.0, 0.66, 0.33, 0.0]
     grid = [[hsv16((row * 4 + col) / 16.0, 0.85, 0.95, row_alpha[row]) for col in range(4)]
             for row in range(4)]

@@ -142,8 +142,8 @@ protected:
     }
 };
 
-// An 8×8 solid of `colour` — a single-tile atlas (the default carve) whose one 8×8 tile is index 0, and a
-// palette whose entries are all `colour`. A sprite draws this at its native 8×8 footprint.
+// An 8×8 solid of `color` — a single-tile atlas (the default carve) whose one 8×8 tile is index 0, and a
+// palette whose entries are all `color`. A sprite draws this at its native 8×8 footprint.
 struct Art { AtlasId atlas{}; PaletteId palette{}; };
 Art uploadSolid(Renderer& r, Rgba8 colour) {
     std::array<std::uint8_t, 8 * 8> idxs{};   // all index 0
@@ -153,7 +153,7 @@ Art uploadSolid(Renderer& r, Rgba8 colour) {
 }
 
 // The scene: a full-height VERTICAL BAR of the emitter (a column of 8×8 sprites at x in [kBarX, kBarX+8),
-// y in [0,64)) on the opaque-black backdrop, so the source is the emitter colour on the bar and black
+// y in [0,64)) on the opaque-black backdrop, so the source is the emitter color on the bar and black
 // everywhere else — a clean vertical emission boundary at the bar's right edge (x = kBarX + 8). `effect`
 // (if any) is a whole-frame postEffect over the composite. captureViewport pins compose scale 1.
 constexpr int kBarX = 8, kBarRight = kBarX + 8;

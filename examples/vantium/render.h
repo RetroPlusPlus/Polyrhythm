@@ -37,7 +37,7 @@ private:
     std::vector<retropp::TileCell> hudCells_;      // the fixed 80×60 HUD/title layer
     std::vector<retropp::Sprite>   actorSprites_;
     std::vector<retropp::Sprite>   popupSprites_;
-    int                            pulseTick_ = 0;  // drives the LAND NOW colour pulse
+    int                            pulseTick_ = 0;  // drives the LAND NOW color pulse
 };
 
 }  // namespace vant

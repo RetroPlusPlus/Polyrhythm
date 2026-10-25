@@ -54,9 +54,9 @@ float4 main(float2 uv : TEXCOORD0) : SV_Target0 {
 
     // Fragment UV → viewport pixels → shape-local via the inverse homography (perspective divide).
     float2 fragPx = float2(uv.x / uMisc.x, uv.y / uMisc.y);
-    // Crisp evaluation (uBlend.y): snap the fragment to its viewport-cell centre before the SDF, so the
+    // Crisp evaluation (uBlend.y): snap the fragment to its viewport-cell center before the SDF, so the
     // gate resolves per viewport pixel — the upscale is pixel-identical to the viewport-resolution
-    // rasterization. A no-op at compose scale 1 (fragments already land on cell centres). Off = the
+    // rasterization. A no-op at compose scale 1 (fragments already land on cell centers). Off = the
     // per-output-pixel evaluation (smooth boundary).
     if (uBlend.y != 0.0) fragPx = floor(fragPx) + 0.5;
     float  wgt = uInvRow2.x * fragPx.x + uInvRow2.y * fragPx.y + uInvRow2.z;

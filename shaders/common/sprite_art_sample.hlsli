@@ -23,7 +23,7 @@ static float gSpritePaletteW;      // palette-store row width
 
 // Read the sprite's OWN art at a within-sprite quad coordinate `uv` (∈ [0,1]² over the art) — the sprite
 // sits in an infinite transparent field, so a read outside the art is transparent (Blank) unless `stretch`
-// clamps it to the border texel. Returns straight rgba (the palette colour); a structural hole or a fully
+// clamps it to the border texel. Returns straight rgba (the palette color); a structural hole or a fully
 // transparent palette entry returns (0,0,0,0). This is the sprite's material read, shared by main()'s own
 // pixel and a custom shader's sampleSource() (the transparent-field domain, one authority).
 float4 retroppSpriteArtSample(float2 uv, bool stretch) {

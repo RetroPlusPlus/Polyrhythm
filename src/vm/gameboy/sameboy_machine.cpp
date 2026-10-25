@@ -172,7 +172,7 @@ struct SameBoyMachine::Impl {
         GB_set_user_data(&gb, this);
         // The VM is headless — it never displays. Disable PPU rendering so running the CPU for
         // extended periods (e.g. ticking the divider between RNG calls) never drives the PPU to
-        // invoke the pixel/colour-encode callbacks this surgical backend never sets (a null call
+        // invoke the pixel/color-encode callbacks this surgical backend never sets (a null call
         // → crash). Short routine calls never render; sustained idle does.
         GB_set_rendering_disabled(&gb, true);
     }

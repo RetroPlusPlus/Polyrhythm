@@ -8,7 +8,7 @@ render path** — a frame still reaches the screen the same way any sprite or ti
 into `FrameDrawState` each tick.
 
 The art a frame points at comes from [images-and-transparency.md](images-and-transparency.md) (an atlas
-+ slots); the colour it carries is a palette from [tiles-and-colour.md](tiles-and-colour.md); the
++ slots); the color it carries is a palette from [tiles-and-color.md](tiles-and-color.md); the
 submission types it feeds (`Sprite`, `TileCell`) are in [draw-state.md](draw-state.md). For tweening a
 *value* over time (a fade, a ramp) rather than stepping through *frames*, see [tween.md](tween.md).
 
@@ -71,7 +71,7 @@ same type.
 
 A **palette-only frame** omits `.tileIndex`: `hasArt()` is `false`, the frame carries no art, and a
 consumer keeps whatever art the sprite already shows and updates only the palette — the shimmer idiom (the
-art holds, the colour changes) expressed as *a frame with no art*.
+art holds, the color changes) expressed as *a frame with no art*.
 
 The frame is authored with the **explicit projection** `.sheet = sheet.atlasId` — dropping the
 manifest's slots for the bare handle is always written, never implied. The frame keeps only the id —
@@ -124,7 +124,7 @@ const Animation mixed{{
 }};
 ```
 
-A **palette-only frame** omits `.tileIndex` — it recolours the art carried over from the frame before it:
+A **palette-only frame** omits `.tileIndex` — it recolors the art carried over from the frame before it:
 
 ```cpp
 const Animation shimmer{{

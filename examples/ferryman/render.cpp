@@ -69,7 +69,7 @@ void FerrymanRenderer::render(Renderer& renderer, const FerrymanGame& game,
 
     // ── The two water planes, rebuilt each render. THE SEA IS ONE SEAMLESS FIELD: the generator
     // authored a rich 128×128 design (4×4 tiles) that wraps at its own edges, and the slices are
-    // placed BY GRID POSITION — adjacent blocks are literal neighbours in that one design, so
+    // placed BY GRID POSITION — adjacent blocks are literal neighbors in that one design, so
     // full detail carries no seams. The water clip's index picks the field's animation frame
     // (crests twinkle, dashes breathe, sparkles drift over a static base) and its palette
     // carries the a/b breathing; the foam overlay swaps its own two frames on the same beat.
@@ -138,7 +138,7 @@ void FerrymanRenderer::render(Renderer& renderer, const FerrymanGame& game,
             cell.tile    = hole;
             cell.palette = assets.terrainPals[TP_WATER_A];
         }
-        // The sanctuary band: pads with the breathing beacon at centre, lamps at the quay ends,
+        // The sanctuary band: pads with the breathing beacon at center, lamps at the quay ends,
         // and the bannered trim edge facing the crossing.
         for (int bx = 0; bx < kBlockCols; ++bx) {
             if (bx == 9) {
@@ -726,7 +726,7 @@ void FerrymanRenderer::render(Renderer& renderer, const FerrymanGame& game,
         frame.layers.push_back(title);
 
         // The FERRYMAN marquee: the BESPOKE title set — eight 32×32 glyphs, gold above a foaming
-        // waterline, sea-teal below it — each a SPRITE scaling about its own centre by a
+        // waterline, sea-teal below it — each a SPRITE scaling about its own center by a
         // phase-offset sine, so the crest rolls left-to-right across the word (the stadium wave).
         titleSprites_.clear();
         constexpr std::size_t kTitleLen = 8;   // the title sheet holds exactly "FERRYMAN"

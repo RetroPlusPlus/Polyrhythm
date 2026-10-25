@@ -215,7 +215,7 @@ TEST_F(LaneUnderflow, AVoiceThatHasNotProducedYetIsNotCounted) {
     EXPECT_EQ(Access::laneUnderflowFrames(*audio, 1), 0u);
 }
 
-// Running further ahead than a neighbour is not starving the neighbour. Machines on their own clocks
+// Running further ahead than a neighbor is not starving the neighbor. Machines on their own clocks
 // run ahead in whole steps, so at any moment one of them holds a step more than another; the mix keeps
 // the OUTPUT's pace, and every voice stocked past that pace delivers in full. Pacing off the deepest
 // lane instead would read every shallower voice as starving and pad it with a step of silence — worse

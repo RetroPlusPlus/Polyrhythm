@@ -180,7 +180,7 @@ int main() {
         for (int x = 0; x < 8; ++x) gridArt[static_cast<std::size_t>(y) * 8 + x] = (x == 0 || y == 0) ? 2 : 1;
     const AtlasId gridAtlas = renderer.uploadAtlas(gridArt.data(), 8, 8).atlasId;
 
-    // ── Palettes (entry [1] is the visible colour; [0] the hole for the arrow / walk sheets) ────────────
+    // ── Palettes (entry [1] is the visible color; [0] the hole for the arrow / walk sheets) ────────────
     const std::array<Rgba8, 2> guardPal{{{0, 0, 0}, {120, 220, 140}}};      // green
     const std::array<Rgba8, 2> courierPal{{{0, 0, 0}, {120, 200, 255}}};    // cyan
     const std::array<Rgba8, 2> inspectorPal{{{0, 0, 0}, {200, 140, 255}}};  // violet
@@ -199,7 +199,7 @@ int main() {
 
     // ── Game-owned data the movers reference (must outlive them) ────────────────────────────────────────
     // The walk cycle's frames carry a nominal palette; each walk mover overrides it after applyTo, so one
-    // shared Animation dresses in five colours. Each frame names the walk sheet + a slot index.
+    // shared Animation dresses in five colors. Each frame names the walk sheet + a slot index.
     const Animation walkCycle{
         .frames = {AnimationFrame{.sheet = walkSheet.atlasId, .tileIndex = 0, .palette = guardPalId, .duration = 200ms},
                    AnimationFrame{.sheet = walkSheet.atlasId, .tileIndex = 1, .palette = guardPalId, .duration = 200ms}}};
@@ -377,7 +377,7 @@ int main() {
         movers.clear();
 
         // Walk-cycle movers: applyTo writes the frame art + position (+ flip); override the palette so one
-        // shared Animation dresses in its own colour.
+        // shared Animation dresses in its own color.
         const auto walker = [&](Mover& m, PaletteId pal, const char* key) {
             Sprite s{.key = key};
             m.path.applyTo(s);

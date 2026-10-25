@@ -30,7 +30,7 @@ struct FrameTiming {
 //
 // Scoped to the calling thread (the single-threaded loop publishes and renders on the same thread). A
 // thread whose loop has not published yet reads the default (alpha 0, tickAdvanced false) — which the
-// renderer composites as the submission verbatim, the correct first-frame behaviour.
+// renderer composites as the submission verbatim, the correct first-frame behavior.
 void                      publishFrameTiming(FrameTiming timing) noexcept;
 [[nodiscard]] FrameTiming frameTiming() noexcept;
 

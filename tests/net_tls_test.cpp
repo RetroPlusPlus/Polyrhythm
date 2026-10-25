@@ -166,7 +166,7 @@ std::vector<std::byte> readExactly(TlsStream& from, std::size_t count, std::size
     return assembled;
 }
 
-// A sequence that reads differently backwards, so reassembling it in reverse is visible.
+// A sequence that reads differently backward, so reassembling it in reverse is visible.
 std::vector<std::byte> risingPattern(std::size_t length) {
     std::vector<std::byte> bytes(length);
     for (std::size_t i = 0; i < length; ++i) bytes[i] = static_cast<std::byte>((i * 7 + 1) & 0xFF);

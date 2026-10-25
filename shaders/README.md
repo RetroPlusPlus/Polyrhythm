@@ -127,14 +127,14 @@ target); `tile.frag.hlsl` turns each output pixel into a layer-local pixel, appl
 the optional per-layer transform, wraps into the tilemap per the layer's wrap mode, `Load`s + unpacks the
 **two-word** cell, resolves the cell's atlas handle to its region in the flat store via the global
 atlas-region table, `Load`s the palette **index** from the indexed atlas, applies transparency, and
-`Load`s the final colour from the palette store. The tile path is **all integer `Load` — no sampler**.
+`Load`s the final color from the palette store. The tile path is **all integer `Load` — no sampler**.
 Its bindings:
 
 | Resource | Register | Kind | Notes |
 |---|---|---|---|
 | flat atlas store | `t0, space2` | read-only storage texture | `R32_UINT`, integer `Load`; every uploaded sheet stacked in one store |
 | tilemap cells | `t1, space2` | read-only storage texture | `R32G32_UINT`, integer `Load`; the `packTileCell` two-word layout |
-| palette store | `t2, space2` | read-only storage texture | a UNORM colour texture `Load`ed as `float4`; FLAT colours wrapped W wide → texel `(flat%W, flat/W)` |
+| palette store | `t2, space2` | read-only storage texture | a UNORM color texture `Load`ed as `float4`; FLAT colors wrapped W wide → texel `(flat%W, flat/W)` |
 | atlas-region table | `t3, space2` | read-only storage texture | `R32G32B32A32_UINT`, one texel per `AtlasId` → `(storeY, cols, transpMaskLo, transpMaskHi)` |
 | `TileUniforms` | `b0, space3` | uniform buffer | scroll, sizes, alpha, palette-store width, plus the inverse transform rows + a control word |
 
@@ -168,14 +168,14 @@ into a pixel, flips it per the sprite's flags, resolves the sprite's own atlas h
 via the global atlas-region table, addresses the indexed atlas at the sprite's top-left cell origin + that
 pixel (a `w×h` sprite reads a contiguous `w×h` atlas rectangle — a 16×16 sprite spans a 2×2 cell block),
 `Load`s the palette **index**, applies the **same two-layer transparency as the tile path** (the sheet's
-transparent-index set, then a fully-transparent palette entry), and `Load`s the colour from the palette
+transparent-index set, then a fully-transparent palette entry), and `Load`s the color from the palette
 store. All integer `Load`, no sampler.
 
 | Resource | Register | Kind | Notes |
 |---|---|---|---|
 | sprite records | `t0, space0` | read-only storage buffer (vertex) | `StructuredBuffer<GpuSprite>`; one 64-byte record per sprite, indexed by `SV_InstanceID` |
 | flat atlas store | `t0, space2` | read-only storage texture (fragment) | `R32_UINT`, integer `Load`; one palette index per pixel |
-| palette store | `t1, space2` | read-only storage texture (fragment) | a UNORM colour texture `Load`ed as `float4`; FLAT colours wrapped W wide → texel `(flat%W, flat/W)` |
+| palette store | `t1, space2` | read-only storage texture (fragment) | a UNORM color texture `Load`ed as `float4`; FLAT colors wrapped W wide → texel `(flat%W, flat/W)` |
 | atlas-region table | `t2, space2` | read-only storage texture (fragment) | `R32G32B32A32_UINT`, one texel per `AtlasId` → `(storeY, cols, transpMaskLo, transpMaskHi)` |
 | `SpriteFragUniforms` | `b0, space3` | uniform buffer (fragment) | tile px + layer alpha + palette-store width; 16 bytes |
 

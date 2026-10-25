@@ -5,7 +5,7 @@
 // multiplied UP by its own brightness (plus a small luminance-keyed white lift), so:
 //   • BRIGHT content catches the light hard (a specular glint rolling over it),
 //   • DARK content barely responds, and true black stays black — no halo, no box, just the shine.
-// That "brighter things shine more" behaviour is the whole point, so this demo lays out a BRIGHTNESS RAMP —
+// That "brighter things shine more" behavior is the whole point, so this demo lays out a BRIGHTNESS RAMP —
 // six horizontal bands from near-black up to gold — and sweeps the gleam diagonally across all of them. You
 // see one diagonal band of light travel down-right; it is invisible on the black band and a strong glint on
 // the gold band. That is luminance keying, on screen.
@@ -20,7 +20,7 @@
 //         .gain  = 1.2f,     // how HARD it shines at the crest — 0 is an exact no-op (the default)
 //         .slant = 0.35f});  // the diagonal LEAN of the band (axis is uv.x + uv.y*slant)
 //
-// The band's axis is d = uv.x + uv.y*slant; `sweep` is the band centre along d. To make a marquee shine you
+// The band's axis is d = uv.x + uv.y*slant; `sweep` is the band center along d. To make a marquee shine you
 // just advance `sweep` over time (below we ramp it across the screen, then park it off-frame to rest — the
 // classic "a glint every few seconds" cadence). The engine owns the shader; the game owns the timeline.
 // Gleam works at EVERY effect site — here it is a whole-frame postEffect; put the same struct on a
@@ -102,7 +102,7 @@ int main() {
 
     std::array<PaletteId, 6> bandPal{};
     for (std::size_t i = 0; i < bandPal.size(); ++i) {
-        const std::array<Rgba8, 2> pal{{{0, 0, 0}, kBandColour[i]}};  // index 0 unused, index 1 = the band colour
+        const std::array<Rgba8, 2> pal{{{0, 0, 0}, kBandColour[i]}};  // index 0 unused, index 1 = the band color
         bandPal[i] = renderer.uploadPalette(std::span<const Rgba8>(pal));
     }
 

@@ -109,7 +109,7 @@ the same program runs faster on a 144 Hz screen than on a 60 Hz one, and differe
 Advance it in `simTick` and it runs at the same speed everywhere, because ticks are wall-clock-paced.
 
 This applies to *all* evolving state, not just gameplay: a scroll offset, an animation counter, an
-effect's phase, a colour cycle — if it changes over time, it advances in the tick.
+effect's phase, a color cycle — if it changes over time, it advances in the tick.
 
 ```cpp
 int frame = 0;

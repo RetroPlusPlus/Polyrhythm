@@ -40,14 +40,14 @@ TEST(OrientPoint, FlipsMirrorAboutTheCellExtent) {
 }
 
 TEST(OrientPoint, RotationsPlaceArtCorners) {
-    // The art's top-left pixel centre (0.5, 0.5) of an 8×8 cell under each rotation (CW).
+    // The art's top-left pixel center (0.5, 0.5) of an 8×8 cell under each rotation (CW).
     EXPECT_EQ(orientPoint(Point{0.5f, 0.5f}, 8, 8, Rotation::Rot90, false, false), (Point{7.5f, 0.5f}));
     EXPECT_EQ(orientPoint(Point{0.5f, 0.5f}, 8, 8, Rotation::Rot180, false, false), (Point{7.5f, 7.5f}));
     EXPECT_EQ(orientPoint(Point{0.5f, 0.5f}, 8, 8, Rotation::Rot270, false, false), (Point{0.5f, 7.5f}));
 }
 
 // The correspondence proof: for every destination pixel of a cell, sourceCellTexel names the ART pixel
-// it reads — so orientPoint must map that art pixel's CENTRE back into that destination pixel, for all
+// it reads — so orientPoint must map that art pixel's CENTER back into that destination pixel, for all
 // eight orientations. Square and non-square (the Rot90/270 transpose quirk) both hold.
 TEST(OrientPoint, AgreesWithSourceCellTexelAtPixelCentresAllOrientations) {
     constexpr int w = 8, h = 4;  // non-square on purpose; the loop also runs the square case
@@ -151,7 +151,7 @@ TEST(AnchorLayer, IdentityTransformPlacesByTheOrigin) {
 }
 
 TEST(AnchorLayer, OriginFixingTransformKeepsTheMountAnchoredAtPosition) {
-    // Mount by the hinge (origin = pivot = hinge): the hinge is both placement handle and spin centre,
+    // Mount by the hinge (origin = pivot = hinge): the hinge is both placement handle and spin center,
     // so it stays at (x, y) under any origin-fixing transform.
     Sprite s{.key = "claw", .x = 40, .y = 60, .pivot = Point{2.0f, 3.0f}, .origin = Point{2.0f, 3.0f},
              .anchors = kClawAnchors};
@@ -227,19 +227,19 @@ TEST(SpriteCenter, QuadSpaceIsTheHalfExtent) {
     EXPECT_EQ((Sprite{.key = "c"}.center(Space::Quad)), (Point{4.0f, 4.0f}));  // default 8×8 cell
 }
 
-// With no transform and default placement the Layer centre equals the Quad centre shifted by position.
+// With no transform and default placement the Layer center equals the Quad center shifted by position.
 TEST(SpriteCenter, LayerSpaceIsTheQuadCentreThroughPlacement) {
     const Sprite s{.key = "a", .x = 100, .y = 40, .size = AssetDimensions{16, 16}};
     EXPECT_EQ(s.center(Space::Layer), (Point{108.0f, 48.0f}));  // pos + {8,8}, default origin {0,0}
 }
 
-// Under a transform the Layer centre resolves THROUGH transform + placement (toLayer of the Quad
-// centre) and differs from the Quad centre — the space argument is not cosmetic.
+// Under a transform the Layer center resolves THROUGH transform + placement (toLayer of the Quad
+// center) and differs from the Quad center — the space argument is not cosmetic.
 TEST(SpriteCenter, LayerSpaceResolvesThroughTheTransform) {
     Sprite s{.key = "a", .x = 30, .y = 30, .size = AssetDimensions{16, 16},
              .pivot = Point{0.0f, 0.0f}, .origin = Point{0.0f, 0.0f}};
     s.transform = Transform::scale(2.0f, 2.0f);
-    // toLayer({8,8}) = pos + (pivot − origin) + T·(centre − pivot) = (30,30) + (0,0) + 2·(8,8) = (46,46).
+    // toLayer({8,8}) = pos + (pivot − origin) + T·(center − pivot) = (30,30) + (0,0) + 2·(8,8) = (46,46).
     EXPECT_EQ(s.center(Space::Layer), (Point{46.0f, 46.0f}));
     EXPECT_EQ(s.center(Space::Layer), s.toLayer(s.center(Space::Quad)));
     EXPECT_NE(s.center(Space::Layer), s.center(Space::Quad));

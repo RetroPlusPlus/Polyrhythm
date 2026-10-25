@@ -1,4 +1,4 @@
-// Atlas structural + material transparency — device-side behaviour. Composes tiny frames offscreen on a
+// Atlas structural + material transparency — device-side behavior. Composes tiny frames offscreen on a
 // real GPU device and reads one pixel back, asserting what the two shaders discard:
 //
 //   - a sprite from a None ({}) atlas DRAWS palette index 0 (no structural hole),
@@ -80,7 +80,7 @@ protected:
         }
     }
 
-    // An 8x8 atlas cell filled with a single index — one sprite tile / one background tile of one colour.
+    // An 8x8 atlas cell filled with a single index — one sprite tile / one background tile of one color.
     static AtlasId solidCell(Renderer& r, std::uint8_t index, TransparentIndices transparent) {
         std::array<std::uint8_t, 8 * 8> px{};
         px.fill(index);
@@ -115,7 +115,7 @@ protected:
     }
 };
 
-// red at index 0, blue at index 1 (the background colour) — both opaque.
+// red at index 0, blue at index 1 (the background color) — both opaque.
 constexpr std::array<Rgba8, 2> kOpaquePal{{{220, 30, 30, 255}, {30, 30, 220, 255}}};
 // same, but index 0 is fully transparent (alpha 0) — the material hole.
 constexpr std::array<Rgba8, 2> kAlpha0AtZero{{{220, 30, 30, 0}, {30, 30, 220, 255}}};

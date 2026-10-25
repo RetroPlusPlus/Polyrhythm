@@ -58,7 +58,7 @@ constexpr int kMapW = 24, kMapH = 18;  // 8×8 backdrop tiles covering the viewp
 
 enum class Action : std::uint8_t { SwapFrameShader, Wider, Narrower, Fullscreen };
 
-// A filled disc of index 1 on an index-0 (transparent) field: |p − centre| ≤ r.
+// A filled disc of index 1 on an index-0 (transparent) field: |p − center| ≤ r.
 [[nodiscard]] std::vector<std::uint8_t> disc(int n, float r) {
     std::vector<std::uint8_t> a(static_cast<std::size_t>(n) * n, 0);
     const float c = (n - 1) * 0.5f;
@@ -70,7 +70,7 @@ enum class Action : std::uint8_t { SwapFrameShader, Wider, Narrower, Fullscreen 
     return a;
 }
 
-// A ring of index 1 on an index-0 (transparent) field: innerR ≤ |p − centre| ≤ outerR.
+// A ring of index 1 on an index-0 (transparent) field: innerR ≤ |p − center| ≤ outerR.
 [[nodiscard]] std::vector<std::uint8_t> ring(int n, float outerR, float innerR) {
     std::vector<std::uint8_t> a(static_cast<std::size_t>(n) * n, 0);
     const float c = (n - 1) * 0.5f;

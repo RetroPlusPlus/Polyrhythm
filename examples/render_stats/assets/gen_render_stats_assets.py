@@ -34,7 +34,7 @@ def _chunk(tag, body):
 
 def write_indexed(path, w, h, pixels, palette):
     """An 8-bit palette-indexed PNG. `palette` is only for previewing the file itself — at runtime the
-    engine colours these indices through a palette image."""
+    engine colors these indices through a palette image."""
     plte = b''.join(bytes(c[:3]) for c in palette)
     plte += b'\x00\x00\x00' * (256 - len(palette))
     raw = b''.join(b'\x00' + bytes(pixels[y * w:(y + 1) * w]) for y in range(h))
@@ -62,7 +62,7 @@ BAYER = [[0, 8, 2, 10], [12, 4, 14, 6], [3, 11, 1, 9], [15, 7, 13, 5]]
 
 
 def ramp(stops, n):
-    """`n` colours interpolated through a list of (r,g,b) stops."""
+    """`n` colors interpolated through a list of (r,g,b) stops."""
     out = []
     for i in range(n):
         t = i / (n - 1) * (len(stops) - 1)
@@ -74,8 +74,8 @@ def ramp(stops, n):
 
 def palette_image(name, stops, hole=True, backing=None):
     """A 16-entry palette image. Entry 0 is an alpha-0 hole when `hole`, so art can carry structural
-    transparency through the palette rather than a colour key. Pass `backing` instead to make entry 0 an
-    opaque colour — the same art then draws its own background, which is how the readout gets a panel
+    transparency through the palette rather than a color key. Pass `backing` instead to make entry 0 an
+    opaque color — the same art then draws its own background, which is how the readout gets a panel
     behind it without a second layer."""
     cols = ramp(stops, 15) if (hole or backing) else ramp(stops, 16)
     rgba = []
@@ -90,7 +90,7 @@ def palette_image(name, stops, hole=True, backing=None):
 
 
 def dither_index(v, lo, hi, x, y):
-    """Map a 0..1 value onto indices [lo,hi] with 4x4 ordered dithering between neighbouring steps."""
+    """Map a 0..1 value onto indices [lo,hi] with 4x4 ordered dithering between neighboring steps."""
     span = hi - lo
     t = max(0.0, min(1.0, v)) * span
     base = int(math.floor(t))
@@ -158,7 +158,7 @@ def lamp_cell(px):
             if d > px * 0.36:                                    # bezel
                 cell[y * px + x] = dither_index(0.55 - 0.5 * (d - px * 0.36) / (px * 0.12), 1, 5, x, y)
                 continue
-            v = 1.0 - (d / (px * 0.36)) ** 1.7                   # lens, hottest at the centre
+            v = 1.0 - (d / (px * 0.36)) ** 1.7                   # lens, hottest at the center
             v += 0.10 * (-dy / (px * 0.36))                      # a touch of top-lit glass
             cell[y * px + x] = dither_index(v, 4, 15, x, y)
     return cell
@@ -177,7 +177,7 @@ def _smooth(t):
 
 def value_noise(x, y, period, px, seed):
     """Value noise on a lattice that WRAPS at `period` cells across the tile, so a cell is seamless
-    against itself and against its neighbours — no edge shows where the deck repeats."""
+    against itself and against its neighbors — no edge shows where the deck repeats."""
     step = px / period
     fx, fy = x / step, y / step
     ix, iy = int(math.floor(fx)), int(math.floor(fy))

@@ -23,7 +23,7 @@ PathPacing PathPacing::distanceTween(const Tween<float>& distance) {
 
 namespace {
 
-// The arc-length for the Speed driver under `mode`, given the raw distance travelled at constant speed and
+// The arc-length for the Speed driver under `mode`, given the raw distance traveled at constant speed and
 // the per-tick step (so PlayForDuration can re-derive the distance at the cutoff tick). Sets `finished`.
 float speedDistance(float raw, float pxPerTick, float length, std::uint64_t elapsedTicks,
                     const TimingProfile& profile, PlaybackMode mode, bool& finished) noexcept {

@@ -81,7 +81,7 @@ constexpr int kScoreLanding = 1000;
 // The deck sections are authored as 20×18 16-BIT GRAYSCALE MAP PNGS (one pixel per 16px cell),
 // loaded through the engine's map-import pipeline (loadMapPng → IndexGrid). Ids are spread so a
 // HUMAN can read the maps in an image editor: Void is pure black (0), and every other class
-// climbs from 25% grey in even bands to pure white — id = 16383 + (class − 1) × 3072, topping
+// climbs from 25% gray in even bands to pure white — id = 16383 + (class − 1) × 3072, topping
 // out at exactly 65535. The generator (gen_vantium_assets.py) shares the class ORDER.
 enum class MapGlyph : std::uint16_t {
     Void = 0,     // hull hole — the starfield shows through
@@ -97,7 +97,7 @@ enum class MapGlyph : std::uint16_t {
     RotorAnchor, RotorFill,   // the 64×64 set-piece (4×4 cells, lethal)
     VentAnchor, VentFill,     // the 32×32 set-piece (2×2 cells, lethal)
 };
-constexpr std::uint16_t kMapFirstId    = 16383;  // class 1 — 25% grey, clearly off-black
+constexpr std::uint16_t kMapFirstId    = 16383;  // class 1 — 25% gray, clearly off-black
 constexpr std::uint16_t kMapIdStep     = 3072;   // 16383 + 16 × 3072 = 65535 exactly
 constexpr int           kMapGlyphCount = 18;
 

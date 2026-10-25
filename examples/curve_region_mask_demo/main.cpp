@@ -1,6 +1,6 @@
 // Curve-mask region demo — what this feature is, and how to SEE it.
 //
-// THE PROBLEM. An effect can be confined to a shape (a "region"): a ripple, a colour fill, or a see-through
+// THE PROBLEM. An effect can be confined to a shape (a "region"): a ripple, a color fill, or a see-through
 // hole that only happens inside the shape. For a circle or a polygon that confinement is easy. For a smooth,
 // wavy, hand-curved outline (a "cubic" / Catmull-Rom curve) it is NOT: the GPU has no quick formula for "how
 // far is this pixel from that curve?", so without help the engine falls back to tracing the curve with a few
@@ -18,7 +18,7 @@
 //   • RIGHT — confined by the old straight-line approximation. The filled edge is JAGGED / faceted.
 // The TRUE curve is drawn as a thin MAGENTA outline over BOTH. Read the demo by comparing each filled edge to
 // its magenta line: on the left the fill sits right on the magenta; on the right the fill cuts across it in
-// flat segments. Same shape, same fill colour — only how the boundary is computed differs. That difference IS
+// flat segments. Same shape, same fill color — only how the boundary is computed differs. That difference IS
 // the feature.
 //
 //   Z         — right side: toggle between coarse (obvious facets) and fine (almost smooth) approximation,
@@ -26,10 +26,10 @@
 //   X         — slowly SPIN both regions. The LEFT (masked) blob rotates yet its edge stays perfectly smooth —
 //               the one baked mask is reused under the rotation with NO re-bake (the right polygon re-facets).
 //   Enter     — turn the LEFT fill into a see-through HOLE (a teal layer shows through), proving the same
-//               baked mask also drives the curved "cut a hole in this shape" path, not just colour fills.
+//               baked mask also drives the curved "cut a hole in this shape" path, not just color fills.
 //   Backspace — fullscreen. Close to quit.
 //
-// The maths (does the baked field match the true curve?) is checked by the device-free ctest suite
+// The math (does the baked field match the true curve?) is checked by the device-free ctest suite
 // (bakeCurveMaskField / sampleCurveMaskField vs Curve::signedDistance); this window is the live on-GPU
 // sanity check.
 
@@ -77,7 +77,7 @@ constexpr int kMapW = 20, kMapH = 18;  // 20×18 tiles cover the 160×144 viewpo
     return Curve::throughPoints(std::span<const Vec2>(pts), /*closed=*/true);
 }
 
-// One centred 8×8 marker at (x, y), drawing from `atlas` through `palette`.
+// One centered 8×8 marker at (x, y), drawing from `atlas` through `palette`.
 [[nodiscard]] Sprite marker(float x, float y, AtlasId atlas, PaletteId palette) {
     Sprite s{.key = "marker"};  // placeholder key; the caller assigns a unique per-index key
     s.x       = static_cast<int>(std::lround(x)) - 4;
@@ -177,7 +177,7 @@ int main() {
     constexpr int kCoarse = 10, kFine = 48;
     bool          fine     = false;  // Z toggles the right side coarse/fine
     bool          spinning = false;  // X toggles a slow continuous spin (the mask is reused under it, no re-bake)
-    bool          seeThrough = false;  // Enter toggles the left region: colour fill <-> see-through hole
+    bool          seeThrough = false;  // Enter toggles the left region: color fill <-> see-through hole
     float         angle    = 0.0f;   // accumulated spin angle (radians); frozen when the spin is off
 
     loop.simTick([&](const InputState& in) {
@@ -256,8 +256,8 @@ int main() {
         outlines.content = SpriteContent{.sprites = std::span<const Sprite>(sprites)};
         frame.layers.push_back(std::move(outlines));
 
-        // LEFT: the exact masked boundary, a translucent colour fill (in see-through mode it is the hole
-        // above instead). RIGHT: the faceted polygon, always a colour fill.
+        // LEFT: the exact masked boundary, a translucent color fill (in see-through mode it is the hole
+        // above instead). RIGHT: the faceted polygon, always a color fill.
         const ScreenSpaceEffect fill{.kind = ScreenSpaceEffectKind::ColorFill, .fill = Rgba8{31, 219, 255}};
         frame.regions.clear();
         if (!seeThrough)

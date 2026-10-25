@@ -3,7 +3,7 @@
 Task-oriented snippets for common things you'll want to do. Each assumes you have the four core
 objects wired (see [getting-started.md](getting-started.md)) and an atlas + palette uploaded. The
 reference for every type used here is in [draw-state.md](draw-state.md),
-[tiles-and-colour.md](tiles-and-colour.md), and [input.md](input.md).
+[tiles-and-color.md](tiles-and-color.md), and [input.md](input.md).
 
 Recipes:
 
@@ -12,7 +12,7 @@ Recipes:
 - [Add a HUD that doesn't scroll](#fixed-hud)
 - [Draw and animate a sprite](#animate-a-sprite)
 - [Fade the screen / day-night tint](#screen-fade)
-- [Recolour a scene without new art](#recolour)
+- [Recolor a scene without new art](#recolor)
 - [Fill a shape with a live effect (an outline that does stuff inside)](#fill-a-shape)
 - [Load a tileset from a PNG](#load-png)
 - [Slice an atlas into addressable assets](#slice-atlas)
@@ -115,8 +115,8 @@ its layer stays solid, and it eases smoothly between ticks under the automatic i
 
 ## Fade the screen / day-night tint <a id="screen-fade"></a>
 
-Whole-frame colour is a screen-space effect: a **`ColorFill`** region (no shape → whole viewport) plus a
-blend mode, distinct from the per-pixel palette colouring. Day/night is a **Multiply** `ColorFill` (the
+Whole-frame color is a screen-space effect: a **`ColorFill`** region (no shape → whole viewport) plus a
+blend mode, distinct from the per-pixel palette coloring. Day/night is a **Multiply** `ColorFill` (the
 fill tints/darkens the whole scene); a fade or a flash is a **Normal** `ColorFill` at `alpha = strength`:
 
 ```cpp
@@ -134,15 +134,15 @@ frame.regions.push_back(Region{
 ```
 
 Multiply darkens; to brighten use Add (`scene + fill`). Confine any of these to a shape for a glow / shadow
-/ spotlight. The runnable showcase is [`examples/colour_effects_demo`](../../examples/colour_effects_demo/main.cpp). See
-[draw-state.md](draw-state.md#whole-frame-colour).
+/ spotlight. The runnable showcase is [`examples/color_effects_demo`](../../examples/color_effects_demo/main.cpp). See
+[draw-state.md](draw-state.md#whole-frame-color).
 
-## Recolour a scene without new art <a id="recolour"></a>
+## Recolor a scene without new art <a id="recolor"></a>
 
-Because colour is a palette applied at render time, you recolour by changing the palette — not the
+Because color is a palette applied at render time, you recolor by changing the palette — not the
 art. Either upload a new palette and rewrite the cells' `palette` handle to it, or point each cell at a
 different already-uploaded palette. A water-shimmer or palette-cycle is a per-frame palette swap, no new
-tiles and no shader edit. See [tiles-and-colour.md](tiles-and-colour.md#where-to-change-things).
+tiles and no shader edit. See [tiles-and-color.md](tiles-and-color.md#where-to-change-things).
 
 ## Fill a shape with a live effect (an outline that does stuff inside) <a id="fill-a-shape"></a>
 
@@ -171,25 +171,25 @@ What fills the shape is whichever effect you pick:
 | effect | the interior becomes |
 |---|---|
 | `Ripple` / `RowDisplacement` / `Swirl` | a warped copy of the scene — shimmer, heat haze, water, a whirlpool |
-| `ColorFill` | a flat colour (`.fill`), solid — or translucent via the `Region`'s `alpha` |
-| `ColorSaturation` / `Gleam` | the interior colour-graded in place — desaturated toward grey, or a luminance-keyed sheen |
+| `ColorFill` | a flat color (`.fill`), solid — or translucent via the `Region`'s `alpha` |
+| `ColorSaturation` / `Gleam` | the interior color-graded in place — desaturated toward gray, or a luminance-keyed sheen |
 | `Bloom` | the interior's bright content glowing — a blurred halo of its own light added over the scene inside the shape |
-| `Glow` | the interior radiating a colour you pick (`.fill`) — an authored aura, dark content included |
+| `Glow` | the interior radiating a color you pick (`.fill`) — an authored aura, dark content included |
 | a `Custom` shader | anything it draws — a texture, a pattern, a procedural fill (it need not sample the scene) |
 
-A flat-colour fill is the built-in **`ColorFill`** (`.kind = ScreenSpaceEffectKind::ColorFill`;
-[reference](draw-state.md#painting-a-colour-into-a-region-colorfill)) — set `.fill` to an `Rgba8` colour;
+A flat-color fill is the built-in **`ColorFill`** (`.kind = ScreenSpaceEffectKind::ColorFill`;
+[reference](draw-state.md#painting-a-color-into-a-region-colorfill)) — set `.fill` to an `Rgba8` color;
 no custom shader needed. Make it a translucent tint by giving the owning `Region` an `alpha` below 1. Give
 the region's shape new coordinates or a `shape.transform` each frame and the fill glides with it — a roaming
 spotlight or scanner sweep. A region works on a layer too (`DrawLayer::regions`), confining the fill to one
 layer.
 
-**Drawing the outline itself.** To show a *stroke* — a coloured line *along* the shape's boundary instead
+**Drawing the outline itself.** To show a *stroke* — a colored line *along* the shape's boundary instead
 of a filled interior — give the region a `shape.strokeWidth` and fill the band with `ColorFill`: a stroked
 `Region` + `ColorFill` **is** a drawn line (a ring, a border, or — with an open `fromCurve` — an arbitrary
 curved path). No walking the curve into sprites by hand. See
 [stroke / outline](draw-state.md#confining-an-effect-to-a-shape-region) and
-[`ColorFill`](draw-state.md#painting-a-colour-into-a-region-colorfill).
+[`ColorFill`](draw-state.md#painting-a-color-into-a-region-colorfill).
 
 **A fill *adds*; it does not make a layer see-through.** Inside the shape you see the scene **plus** the
 effect — the layers underneath are untouched. To instead *reveal what is below* a layer along a shape — a
@@ -210,11 +210,11 @@ See [draw-state.md](draw-state.md#confining-an-effect-to-a-shape-region) for the
 const LoadedImage img = loadPng("assets/tileset.png");
 const AtlasId atlas = renderer.uploadAtlas(img.indices.data(), img.width, img.height).atlasId;
 
-// For a transparent colour (a hole that reveals the layer beneath), name its index on upload:
+// For a transparent color (a hole that reveals the layer beneath), name its index on upload:
 const AtlasId holed = renderer.uploadAtlas(img.indices.data(), img.width, img.height, TransparentIndices::of({0})).atlasId;
 ```
 
-Author art as **indexed or grayscale** PNGs (the faithful console format); supply colour separately
+Author art as **indexed or grayscale** PNGs (the faithful console format); supply color separately
 via `uploadPalette`, or use the PNG's embedded palette (`img.palette`). Full routing + transparency
 rules in [images-and-transparency.md](images-and-transparency.md).
 
@@ -470,12 +470,12 @@ A file of any length plays this way — a long one is streamed through the chip 
 
 ## Make something glow <a id="make-something-glow"></a>
 
-`Glow` is an authored-colour aura: you choose the colour the thing radiates, which is what separates
+`Glow` is an authored-color aura: you choose the color the thing radiates, which is what separates
 it from `Bloom` (a glow of the source's *own* light). Name the kind and fill the fields it reads:
 
 ```cpp
 ship.effects = {ScreenSpaceEffect{.kind      = ScreenSpaceEffectKind::Glow,
-                                  .fill      = Rgba8{255, 66, 26, 255},  // the colour you chose
+                                  .fill      = Rgba8{255, 66, 26, 255},  // the color you chose
                                   .radius    = 5.0f,
                                   .intensity = 255}};
 ```
@@ -496,8 +496,8 @@ overlay.blend  = BlendMode::Half;       // an even mix
 ```
 
 It reads the same on a `DrawLayer`, a `Sprite`, or a `Region`. A partial-`alpha` container under a
-non-`Normal` blend composites correctly — the source colour is recovered before the operator runs, so
-a half-transparent additive layer is half as bright, not a quarter. The per-mode maths is in
+non-`Normal` blend composites correctly — the source color is recovered before the operator runs, so
+a half-transparent additive layer is half as bright, not a quarter. The per-mode math is in
 [blend-modes.md](blend-modes.md).
 
 ## Tell whether two things actually touch <a id="hit-test"></a>

@@ -22,7 +22,7 @@ engine rendering a non-game UI from the same primitives a game uses:
 
 Index legend (the shared palette's entries): 0 transparent · 1 black · 2 shadow · 3 body · 4 face ·
 5 highlight · 6 white. The embedded PLTE on the indexed files is for eyeballing them; the engine
-recolours through the palette image.
+recolors through the palette image.
 
 Engine-original art. One-time authoring tool, kept committed so the binary assets stay regenerable and
 auditable — the posture of examples/assets/gen_tilemap_demo.py (the indexed + map encoders this mirrors)
@@ -43,7 +43,7 @@ HERE = Path(__file__).resolve().parent  # engine/examples/Numberator/assets
 # Shared palette indices.
 TRANSP, BLACK, SHADOW, BODY, FACE, LITE, WHITE = range(7)
 
-# Viewer-only PLTE for the indexed files (engine recolours through numberator_palette.png).
+# Viewer-only PLTE for the indexed files (engine recolors through numberator_palette.png).
 PLTE = [(187, 187, 187), (0, 0, 0), (128, 128, 128), (187, 187, 187),
         (214, 214, 214), (236, 236, 236), (255, 255, 255)]
 
@@ -125,7 +125,7 @@ def raised(g, x, y, w, h, face):
 
 
 # ── Close-box sprite — a Platinum-proportioned 13x13 raised box (~55% of the title bar's height),
-# centred in a 16x16 cell (atlas cells are 8-aligned) on a transparent surround. The sheet loads with
+# centered in a 16x16 cell (atlas cells are 8-aligned) on a transparent surround. The sheet loads with
 # index-0 transparency, so the sprite's silhouette — the click target — is the box, not the cell.
 CLOSE_CELL = 16
 CLOSE_BOX  = 13
@@ -155,7 +155,7 @@ def build_chrome_sheet():
     # TITLE_SEP — pinstripe with a black bottom separator.
     x0, _ = tile(TITLE_SEP_T); fill(g, x0, 0, TILE, TILE, FACE)
     hline(g, x0, 2, TILE, SHADOW); hline(g, x0, 5, TILE, SHADOW); hline(g, x0, 7, TILE, BLACK)
-    # CLOSEBOX — a small raised square centred in a face tile.
+    # CLOSEBOX — a small raised square centered in a face tile.
     x0, _ = tile(CLOSEBOX_T); fill(g, x0, 0, TILE, TILE, FACE)
     raised(g, x0 + 1, 1, 6, 6, BODY)
     # DISP_FACE — white well interior.
@@ -174,7 +174,7 @@ def build_chrome_sheet():
 
 
 # ── Chrome MAP — chrome_id returns a ROLE index 0..12; the map stores map_id(role) = role*65535/12, so
-# the 13 ids spread evenly across the full 16-bit range and the map reads as distinct grey levels to the
+# the 13 ids spread evenly across the full 16-bit range and the map reads as distinct gray levels to the
 # eye (the tilemap_demo id-spreading trick — small ids would all be near-black). assets.cpp's catalog
 # mirrors ROLES exactly: each role's 16-bit id maps to a chrome tile slot + flip.
 #   ROLES (role index -> chrome tile, flip):

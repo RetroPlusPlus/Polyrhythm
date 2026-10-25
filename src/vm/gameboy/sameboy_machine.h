@@ -246,7 +246,7 @@ public:
     void setFrameSink(FrameSink sink);
 
     // Turn drawing on and off. Enabling sizes the machine's own pixel buffer to the
-    // screen, points the PPU at it, fixes the colour encoding to RGBA bytes, and reports
+    // screen, points the PPU at it, fixes the color encoding to RGBA bytes, and reports
     // each finished frame to the installed sink; disabling suppresses pixel output again.
     // Idempotent in both directions. A frame the hardware would not have redrawn is not
     // reported — the screen keeps what it is already showing.

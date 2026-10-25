@@ -17,8 +17,8 @@ std::uint32_t nextRand(std::uint32_t& s) { s = s * 1664525u + 1013904223u; retur
 BongGame::BongGame()
     : rng(static_cast<std::uint32_t>(std::chrono::steady_clock::now().time_since_epoch().count())) {}
 
-// Lay out a board: rows 0..5 colour (one hue each), row 6 silver (2 hits), row 7 colour with three
-// indestructible GOLD bricks (ends + centre) — isolated, so they never wall off the board.
+// Lay out a board: rows 0..5 color (one hue each), row 6 silver (2 hits), row 7 color with three
+// indestructible GOLD bricks (ends + center) — isolated, so they never wall off the board.
 void BongGame::buildBoard() {
     bricksLeft = 0;
     for (int r = 0; r < kBrickRows; ++r) {
@@ -48,7 +48,7 @@ void BongGame::parkBall() {
     ballVx = 0; ballVy = 0;
 }
 
-// Aim the ball UPWARD with a desired horizontal velocity plus a tiny random jitter, renormalised so
+// Aim the ball UPWARD with a desired horizontal velocity plus a tiny random jitter, renormalized so
 // |v| ≈ kBallSpeed. The jitter keeps the ball off any perfectly-periodic orbit, so it can't trap itself
 // bouncing forever in an already-cleared column — it always drifts to reach every brick.
 void BongGame::aimBallUp(float desiredVx) {
@@ -128,8 +128,8 @@ void BongGame::tick(const InputState& in) {
     if (wallHit) emit(GameEventKind::WallBounce);
     if (ballY > kViewH)           { emit(GameEventKind::BallLost); loseLife(); return; }
 
-    // Paddle: bounce up with english from where on the paddle the ball hit (centre = straight up, edges
-    // = a steep angle). Speed is renormalised so |v| stays ≈ kBallSpeed.
+    // Paddle: bounce up with english from where on the paddle the ball hit (center = straight up, edges
+    // = a steep angle). Speed is renormalized so |v| stays ≈ kBallSpeed.
     if (ballVy > 0 &&
         ballX < paddleX + kPaddleW && ballX + kBallSz > paddleX &&
         ballY + kBallSz >= kPaddleY && ballY + kBallSz <= kPaddleY + kPaddleH + 6) {
@@ -140,7 +140,7 @@ void BongGame::tick(const InputState& in) {
     }
 
     // Bricks: reflect off the nearer face (min-translation axis) and EJECT the ball out of the brick (so
-    // an indestructible gold brick can't trap it). Colour breaks in one hit; silver cracks then breaks on
+    // an indestructible gold brick can't trap it). Color breaks in one hit; silver cracks then breaks on
     // the second; gold only bounces. One brick per tick.
     for (int r = 0; r < kBrickRows && (ballVx != 0 || ballVy != 0); ++r) {
         for (int c = 0; c < kBrickCols; ++c) {

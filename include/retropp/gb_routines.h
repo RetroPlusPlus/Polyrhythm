@@ -1,6 +1,6 @@
 #pragma once
 
-// Game Boy / SameBoy routine presets — the GB-family catalogue of standard original-
+// Game Boy / SameBoy routine presets — the GB-family catalog of standard original-
 // hardware routines with a fixed I/O convention, so a consumer registers one BY MEANING with zero
 // binding boilerplate:
 //

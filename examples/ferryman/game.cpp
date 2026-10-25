@@ -32,7 +32,7 @@ float frand(std::uint32_t& s) { return static_cast<float>(nextRand(s) % 10000u) 
 
 float distTo(float ax, float ay, float bx, float by) { return std::hypot(ax - bx, ay - by); }
 
-// Centre-based AABB overlap with per-object box sizes (full widths/heights).
+// Center-based AABB overlap with per-object box sizes (full widths/heights).
 bool boxesOverlap(float ax, float ay, float aw, float ah,
                   float bx, float by, float bw, float bh) {
     return std::abs(ax - bx) < (aw + bw) / 2.0f && std::abs(ay - by) < (ah + bh) / 2.0f;
@@ -254,7 +254,7 @@ void FerrymanGame::moveInput(const InputState& in) {
     if (isletPenetration(ferryX, ny) <= isletPenetration(ferryX, ferryY)) ferryY = ny;
 }
 
-// The deepest the hull (centred at cx,cy, at the current heading) penetrates any islet it overlaps
+// The deepest the hull (centered at cx,cy, at the current heading) penetrates any islet it overlaps
 // — the minimum push-out distance, 0 when clear or merely touching. moveInput permits a step only
 // when it does not INCREASE this, so the hull can always slide or back out of an overlap.
 float FerrymanGame::isletPenetration(float cx, float cy) const {
@@ -272,7 +272,7 @@ float FerrymanGame::isletPenetration(float cx, float cy) const {
     return worst;
 }
 
-// Does the ferry's FULL hull, centred at (cx, cy), overlap any islet's solid rectangle? Land
+// Does the ferry's FULL hull, centered at (cx, cy), overlap any islet's solid rectangle? Land
 // collision uses the whole rendered footprint (not the forgiving combat box) so the visible boat
 // never climbs onto land — it only ever sails in the water.
 bool FerrymanGame::ferryBoxHitsIslet(float cx, float cy) const {
@@ -493,7 +493,7 @@ void FerrymanGame::enemyPhase() {
                     e.vx = -e.vx;
                     e.y  = kFieldTopF + 90.0f + frand(rng) * 120.0f;
                 }
-                // The 3-bolt fan at the ferry: a centre aim flanked by fixed spreads.
+                // The 3-bolt fan at the ferry: a center aim flanked by fixed spreads.
                 if (--e.fireTimer <= 0) {
                     e.fireTimer = static_cast<int>(kDreadFireEvery * fireRateMul);
                     const float d = distTo(e.x, e.y, ferryX, ferryY);

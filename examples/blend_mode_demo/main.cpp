@@ -3,10 +3,10 @@
 // HOW its pixels combine with what they sit on. It opens a window over an opaque slate-grid scene and lays
 // out one clearly distinct element per kind:
 //
-//   • LEFT HALF — a translucent HALF LAYER (DrawLayer::blend = Half): a warm colour layer covering only the
+//   • LEFT HALF — a translucent HALF LAYER (DrawLayer::blend = Half): a warm color layer covering only the
 //     left half (a finite tilemap with a hard right edge), averaged with the scene, (dst + src) / 2. The
 //     visible boundary down the middle shows the whole layer is translucent — no per-pixel alpha.
-//   • RIGHT HALF — FOUR mode circles, each a Region with the SAME grey ColorFill but a different
+//   • RIGHT HALF — FOUR mode circles, each a Region with the SAME gray ColorFill but a different
 //     Region::blend, so the only difference you see is the blend math:
 //        top-left  Add        dst + src              (brightens)
 //        top-right Subtract   dst − src              (darkens hard)

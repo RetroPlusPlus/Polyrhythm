@@ -349,6 +349,6 @@ TEST(VibrationSeam, GamepadIndexClampsAndKeyboardSlotNoOps) {
 }
 
 // The SDL shutdown-zero (the destructor issues SDL_Rumble*(0,0,0) so a held long-duration rumble never
-// outlives the loop) is a device-side behaviour on SdlPlatform — it talks straight to SDL, not through
+// outlives the loop) is a device-side behavior on SdlPlatform — it talks straight to SDL, not through
 // the base emit hook — so it is dev-verified on real hardware (the input_probe vibration mode), not
 // here. MockPlatform models no device teardown.

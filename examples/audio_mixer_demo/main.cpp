@@ -50,7 +50,7 @@ constexpr int kTile = 8;
 constexpr int kMapW = 20, kMapH = 18;
 
 // Glyph atlas indices. GBar is a fully-lit tile (a bar cell); the rest are 5×7 letters spelling the four
-// bus labels. Index 1 is the lit colour, index 0 the background — so a palette swap recolours any glyph.
+// bus labels. Index 1 is the lit color, index 0 the background — so a palette swap recolors any glyph.
 enum Glyph { GBlank, GBar, GM, GA, GS, GT, GE, GR, GU, GI, GC, GF, GX, GV, GO, GL, GCount };
 
 // A 5×7 uppercase font (7 rows, low 5 bits per row, bit 4 = leftmost column) for the letters in
@@ -75,11 +75,11 @@ constexpr std::array<std::array<std::uint8_t, 7>, GCount> kFont{{
 }};
 
 // Build an indexed atlas: one 8×8 tile per glyph, index 1 = lit. Letters sit with a 1-px left/top margin;
-// GBar is filled solid so a bar cell is a full block the palette colours (fill vs track).
+// GBar is filled solid so a bar cell is a full block the palette colors (fill vs track).
 std::vector<std::uint8_t> buildFontAtlas() {
     const int width = kTile * GCount;
     std::vector<std::uint8_t> atlas(static_cast<std::size_t>(width) * kTile, 0);
-    for (int y = 0; y < kTile; ++y) {  // GBar: a fully-lit tile the bar palettes colour
+    for (int y = 0; y < kTile; ++y) {  // GBar: a fully-lit tile the bar palettes color
         for (int x = 0; x < kTile; ++x) {
             atlas[static_cast<std::size_t>(y) * width + GBar * kTile + x] = 1;
         }
@@ -183,7 +183,7 @@ int main() {
 
     const std::vector<std::uint8_t> atlas = buildFontAtlas();
     const AtlasId atlasId = renderer.uploadAtlas(atlas.data(), kTile * GCount, kTile).atlasId;
-    // Index 1 is the drawn colour; index 0 the shared dark background. Four palettes: dim label, bright
+    // Index 1 is the drawn color; index 0 the shared dark background. Four palettes: dim label, bright
     // selected label, bright bar fill, dark bar track.
     const std::array<Rgba8, 4> dimCols{{{18, 20, 30}, {96, 110, 120}, {0, 0, 0}, {0, 0, 0}}};
     const std::array<Rgba8, 4> selCols{{{18, 20, 30}, {244, 230, 120}, {0, 0, 0}, {0, 0, 0}}};

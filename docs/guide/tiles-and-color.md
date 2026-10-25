@@ -1,6 +1,6 @@
-# Tiles & colour
+# Tiles & color
 
-The faithful 8-/16-bit colour model: art is **palette indices**, and colour comes from a **palette
+The faithful 8-/16-bit color model: art is **palette indices**, and color comes from a **palette
 chosen at render time** — never baked into the art. This page covers indexed atlases, palette upload
 and storage, and how each tile and sprite names its own sheet and palette directly. The submission
 types (`TileContent`, `Sprite`) are in [draw-state.md](draw-state.md); loading art from PNG is
@@ -13,8 +13,8 @@ types (`TileContent`, `Sprite`) are in [draw-state.md](draw-state.md); loading a
 
 ## Contents
 
-- [The colour model](#the-colour-model)
-- [`Rgba8` — a final output colour](#rgba8--a-final-output-colour)
+- [The color model](#the-color-model)
+- [`Rgba8` — a final output color](#rgba8--a-final-output-color)
 - [Uploading palettes: `uploadPalette` → `PaletteId`](#uploading-palettes-uploadpalette--paletteid)
 - [Loading a palette from an image: `loadPaletteImage` → `PaletteId`](#loading-a-palette-from-an-image-loadpaletteimage--paletteid)
 - [Changing a palette's colors: `updatePalette`](#changing-a-palettes-colors-updatepalette)
@@ -25,20 +25,20 @@ types (`TileContent`, `Sprite`) are in [draw-state.md](draw-state.md); loading a
 - [Wrap (finite vs infinite maps)](#wrap-finite-vs-infinite-maps)
 - [Where to change things](#where-to-change-things)
 
-## The colour model
+## The color model
 
 An **indexed atlas** holds one palette index per pixel (`0..N-1`), uploaded once. A **palette** maps
-each index to a final output colour. A tile or sprite names *which* sheet (`AtlasId`) and *which*
-palette (`PaletteId`) it draws from, directly. The shader applies the colour per-pixel: `index →
-named palette → output colour`.
+each index to a final output color. A tile or sprite names *which* sheet (`AtlasId`) and *which*
+palette (`PaletteId`) it draws from, directly. The shader applies the color per-pixel: `index →
+named palette → output color`.
 
-This is the faithful Game Boy / Game Boy Color model — colour is an index plus a palette selected at
+This is the faithful Game Boy / Game Boy Color model — color is an index plus a palette selected at
 render time — **not** a baked-RGBA atlas and **not** a hardware palette-RAM poke. Because the lookup
 happens per-pixel in the shader, palette swaps, day/night, and animation stay data/shader concerns,
-never a register write. The same indexed art renders in any colour scheme by naming a different
+never a register write. The same indexed art renders in any color scheme by naming a different
 palette.
 
-## `Rgba8` — a final output colour
+## `Rgba8` — a final output color
 
 ```cpp
 struct Rgba8 {
@@ -47,12 +47,12 @@ struct Rgba8 {
 static_assert(sizeof(Rgba8) == 4);
 ```
 
-The platform's output colour is `Rgba8` regardless of the source console — four named channels, opaque
-by default, 4 bytes so it uploads as a tightly-packed RGBA8 texture row. A palette's colours come from
+The platform's output color is `Rgba8` regardless of the source console — four named channels, opaque
+by default, 4 bytes so it uploads as a tightly-packed RGBA8 texture row. A palette's colors come from
 the game's assets at upload time (decoded from the console's own palette format consumer-side, or
 hand-built).
 
-For colour sources carrying more than 8 bits per channel (a 16-bit truecolour PNG) there is a
+For color sources carrying more than 8 bits per channel (a 16-bit truecolor PNG) there is a
 16-bit-per-channel sibling, `Rgba16` — the same named-channel aggregate, opaque black by default:
 
 ```cpp
@@ -64,19 +64,19 @@ static_assert(sizeof(Rgba16) == 8);
 
 The palette store keeps 16-bit channels internally, so an `Rgba8` entry widens into it losslessly:
 `widen8(std::uint8_t)` maps `0 → 0` and `255 → 65535` (× 257, not `<< 8`), and `widen(Rgba8)` widens a
-whole colour. The `span<const Rgba8>` upload overload calls `widen` for you; the `span<const Rgba16>`
-overload stores 16-bit source colours directly.
+whole color. The `span<const Rgba8>` upload overload calls `widen` for you; the `span<const Rgba16>`
+overload stores 16-bit source colors directly.
 
 ## Uploading palettes: `uploadPalette` → `PaletteId`
 
 ```cpp
-PaletteId Renderer::uploadPalette(std::span<const Rgba8>  colors);  // 8-bit colours, widened into the store
-PaletteId Renderer::uploadPalette(std::span<const Rgba16> colors);  // 16-bit colours, stored losslessly
+PaletteId Renderer::uploadPalette(std::span<const Rgba8>  colors);  // 8-bit colors, widened into the store
+PaletteId Renderer::uploadPalette(std::span<const Rgba16> colors);  // 16-bit colors, stored losslessly
 ```
 
-Upload one palette's colours once (amortized — at load time / on change). The renderer writes them
+Upload one palette's colors once (amortized — at load time / on change). The renderer writes them
 into a row of its internal 16-bit palette store and returns a `PaletteId` handle. The store keeps
-16-bit-per-channel colour, so an `Rgba8` entry widens losslessly and an `Rgba16` (16-bit source) entry
+16-bit-per-channel color, so an `Rgba8` entry widens losslessly and an `Rgba16` (16-bit source) entry
 is stored directly. The entry count is the **span length** — `uploadPalette` takes no separate count.
 `PaletteSize` is a set of readability **count mnemonics** whose enumerator value *is* the entry count
 (`static_cast<std::uint32_t>(PaletteSize::GameBoy) == 4`) — for sizing a buffer or documenting intent,
@@ -89,8 +89,8 @@ enum class PaletteSize : std::uint32_t {
 };
 ```
 
-These set only *how many* entries, not a per-console colour model. A 4-colour Game Boy palette and a
-16-colour SNES palette are the same call with a different span length.
+These set only *how many* entries, not a per-console color model. A 4-color Game Boy palette and a
+16-color SNES palette are the same call with a different span length.
 
 ## Loading a palette from an image: `loadPaletteImage` → `PaletteId`
 
@@ -101,7 +101,7 @@ PaletteId Renderer::loadPaletteImage(LiteralPath path,
                                      std::optional<AssetPolicy> policy = {});
 ```
 
-A **palette image** is a colour PNG read **one pixel per palette entry** — the colour-store sibling of
+A **palette image** is a color PNG read **one pixel per palette entry** — the color-store sibling of
 `loadAtlas` (which reads an indexed PNG into the atlas store). `loadPaletteImage` decodes the image,
 slices it one pixel at a time in `order` (the same `ReadOrder` traversal `loadAtlas` slices a sheet
 with — entry *k* is the *k*-th pixel in that order), uploads the entries, and returns their base
@@ -112,9 +112,9 @@ Palette images are **16-bit per channel with alpha**: a 16-bit PNG lands lossles
 widens, and an entry's alpha is **material transparency** — alpha 0 reads through to whatever is drawn
 behind it, a partial alpha blends. `count` caps how many entries are taken (0 = every pixel). The
 `path` is a build-managed literal; the default asset policy is **Embed** (a palette image is bespoke
-build-time colour data, like a map PNG) — see [assets-and-embedding.md](assets-and-embedding.md).
+build-time color data, like a map PNG) — see [assets-and-embedding.md](assets-and-embedding.md).
 
-There is no `loadPaletteImageFromMemory`: a palette is already buildable from colour data via
+There is no `loadPaletteImageFromMemory`: a palette is already buildable from color data via
 `uploadPalette`, so for a runtime-supplied PNG compose the public primitives —
 `uploadPalette(slicePaletteImage(loadPngFromMemory(bytes), order, count))`. The pure slicer is
 available headless:
@@ -177,7 +177,7 @@ AtlasManifest Renderer::uploadAtlas(const std::uint8_t* indices, int width, int 
 ```
 
 Upload an **indexed** atlas once — one palette index per pixel, row-major, tightly packed (not RGBA;
-colour comes from a palette at render time). The overloads take 8-, 16-, or 32-bit source indices;
+color comes from a palette at render time). The overloads take 8-, 16-, or 32-bit source indices;
 all widen into the renderer's 32-bit index store, so a tile pixel can address an arbitrarily large
 palette no matter the source width. The atlas is addressed as an 8×8-tile grid: tile `t` lives at grid
 `(t % cols, t / cols)`. Every upload returns the sheet's `AtlasManifest` and declares its **carve**:
@@ -202,7 +202,7 @@ palette** (`palette`, a `PaletteId`) — both directly, as handles:
 struct TileCell {
     AtlasId       atlas{};       // which uploaded sheet this cell draws from
     std::uint16_t tile    = 0;   // cell index within its own sheet (`atlas`), on the 8px grid
-    PaletteId     palette{};     // which uploaded palette colours it
+    PaletteId     palette{};     // which uploaded palette colors it
     bool          flipX   = false;
     bool          flipY   = false;
     Rotation      rotation = Rotation::None;  // 90° texture rotation; composes with the flips
@@ -232,14 +232,14 @@ struct SpriteContent {
 };
 ```
 
-Palettes are **arbitrary size** — there is no 256-colour cap — and an atlas pixel widens to a full
-index, so one palette can hold as many colours as you upload and a tile (or sprite) pixel can address
+Palettes are **arbitrary size** — there is no 256-color cap — and an atlas pixel widens to a full
+index, so one palette can hold as many colors as you upload and a tile (or sprite) pixel can address
 any of them. A `PaletteId`'s underlying value *is* its flat offset into the palette store, and an
 `AtlasId` names a region of the flat atlas store, so the shader reads both directly with no
 indirection — you never manage per-sheet textures.
 
-This is the mechanism that lets a small palette render a full-colour map: a single indexed tileset,
-drawn through several palettes named per cell, produces a multi-coloured scene.
+This is the mechanism that lets a small palette render a full-color map: a single indexed tileset,
+drawn through several palettes named per cell, produces a multi-colored scene.
 
 ## The `tiles()` helper — a single-combo cell run
 
@@ -249,7 +249,7 @@ you over a list of slots, so you don't hand-write the same `atlas`/`palette` on 
 ```cpp
 #include "retropp/tilemap.h"   // tiles()
 
-// Three cells, all from `fontAtlas` coloured by `textPal`, drawing slots 7, 8, 9 in order:
+// Three cells, all from `fontAtlas` colored by `textPal`, drawing slots 7, 8, 9 in order:
 std::vector<TileCell> run = tiles(fontAtlas, textPal, {7, 8, 9});
 ```
 
@@ -290,12 +290,12 @@ description is in [draw-state.md](draw-state.md#tilecontent--a-scrolling-tile-ma
 
 ## Where to change things
 
-- **Recolour a scene without new art:** rewrite the `palette` handle on the cells / sprites you want
-  recoloured — they each name their own.
+- **Recolor a scene without new art:** rewrite the `palette` handle on the cells / sprites you want
+  recolored — they each name their own.
 - **Animate color (water shimmer, palette cycling) or edit a palette live:** change the palette's
   colors in place (`updatePalette` — the same `PaletteId`) or rewrite the `palette` handle on a cell /
   sprite per frame — both are data changes, no shader edit.
 - **Whole-frame fades / day-night:** that's a `ColorFill` region + a blend mode
-  ([draw-state.md](draw-state.md#whole-frame-colour)) grading the composited frame — distinct from the
-  per-pixel palette colouring here.
+  ([draw-state.md](draw-state.md#whole-frame-color)) grading the composited frame — distinct from the
+  per-pixel palette coloring here.
 - **Swap an entire tileset:** upload a new atlas and reference its `AtlasId` from the layer.

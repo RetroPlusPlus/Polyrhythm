@@ -40,7 +40,7 @@ constexpr int kMapW = 20, kMapH = 18;
 enum class Action : std::uint8_t { NextShape, Fullscreen };
 
 // The current region for a cycle index (NextShape steps it). The points are viewport pixels; everything is
-// placed around the screen centre (80, 72) so each shape sits over the same patch.
+// placed around the screen center (80, 72) so each shape sits over the same patch.
 ShapePoints shapeForIndex(int i) {
     switch (i % 7) {
         case 0:  return ShapePoints::circle({80, 72}, 34);

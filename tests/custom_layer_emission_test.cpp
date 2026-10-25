@@ -153,7 +153,7 @@ TEST(LayerCustomWarning, ShadowsSiblingHaloOnlyForUndeclaredCustoms) {
 // ── Part 2: the Layer custom lens (device-backed) ───────────────────────────────────────────────
 
 constexpr int   kW = 32, kH = 32;
-constexpr Rgba8 kArt{150, 150, 150, 255};   // mid-bright grey: the brightpass fires and art + halo does not clip
+constexpr Rgba8 kArt{150, 150, 150, 255};   // mid-bright gray: the brightpass fires and art + halo does not clip
 constexpr int   kSpriteX = 12, kSpriteY = 12;
 
 #if defined(_WIN32) && (defined(_M_ARM64) || defined(__aarch64__))

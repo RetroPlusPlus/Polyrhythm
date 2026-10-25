@@ -1,11 +1,11 @@
 // Glow demo — a runnable host that teaches and shows off the built-in GLOW effect
-// (ScreenSpaceEffectKind::Glow): an authored-colour aura — you pick the colour a thing radiates,
-// regardless of what colour it is.
+// (ScreenSpaceEffectKind::Glow): an authored-color aura — you pick the color a thing radiates,
+// regardless of what color it is.
 //
-// WHAT IT IS. Glow is Bloom's sibling with the halo's colour under YOUR control: a scalar emission mask
+// WHAT IT IS. Glow is Bloom's sibling with the halo's color under YOUR control: a scalar emission mask
 // (the silhouette, optionally keyed by brightness) blurs outward and adds back times a chosen tint. Where
 // Bloom bleeds the art's own light — a dark shape barely blooms — Glow radiates the tint at full strength
-// from dark art too. `fill` (× `fillIntensity`) is the aura colour, `radius` the reach in the site's own
+// from dark art too. `fill` (× `fillIntensity`) is the aura color, `radius` the reach in the site's own
 // pixels, `threshold` the emission floor (0 = the whole silhouette emits, dark pixels included; higher
 // keys the emission on brightness), `intensity` the strength (0 = off, the identity default).
 //
@@ -14,7 +14,7 @@
 //
 //     Sprite s{ .key = "relic", .x = 64, .y = 56, .atlas = gem, .palette = pal };
 //     s.effects = { ScreenSpaceEffect{ .kind = ScreenSpaceEffectKind::Glow,
-//                                      .fill = Rgba8{255, 66, 26, 255},   // ember — the colour YOU chose
+//                                      .fill = Rgba8{255, 66, 26, 255},   // ember — the color YOU chose
 //                                      .radius = 5.0f, .intensity = 255 } };
 //
 // It works at EVERY effect site: per-sprite (as here — the halo radius is in the sprite's own art pixels,
@@ -22,7 +22,7 @@
 // a layer/frame Region.
 //
 // THE THREE RELICS (same dark gem art, same palette — ONLY the tint differs):
-//   • LEFT — a steady GOLD aura: dark art radiating a colour it doesn't contain.
+//   • LEFT — a steady GOLD aura: dark art radiating a color it doesn't contain.
 //   • MIDDLE — an EMBER aura whose radius breathes between 3 and 7 on the sim tick.
 //   • RIGHT — a VIOLET aura whose intensity pulses, the pick-me-up shimmer a powerup drop wants.
 //
@@ -119,7 +119,7 @@ int main() {
                                         TileCell{.atlas = bgAtlas, .tile = 0, .palette = bgPalId});
 
     // One dark art + one palette shared by all three relics — the ONLY difference is each aura's tint.
-    // The body is a deep slate a Bloom would barely lift; Glow ignores that and radiates the chosen colour.
+    // The body is a deep slate a Bloom would barely lift; Glow ignores that and radiates the chosen color.
     const auto    gem      = gemArt();
     const AtlasId gemAtlas =
         renderer.uploadAtlas(gem.data(), kGem, kGem, TransparentIndices::GameBoy).atlasId;
@@ -217,7 +217,7 @@ int main() {
                 sprites.push_back(relic("field" + std::to_string(i), x, y, tint, fieldR, 255));
             }
         } else {
-            // LEFT — steady gold: one designated-init struct, a colour the art nowhere contains.
+            // LEFT — steady gold: one designated-init struct, a color the art nowhere contains.
             sprites.push_back(relic("gold", gemX[0], gemY, kGold, 5.0f, 255));
 
             // MIDDLE — ember, the radius breathing 3..7 art px on the eased phase. The value is recomputed

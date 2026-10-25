@@ -32,7 +32,7 @@ void PolterRenderer::render(Renderer& renderer, const PolterGame& game, const Po
         stampText((kMapW - static_cast<int>(s.size())) / 2, row, s, pal);
     };
     // Stamp one 32×32 maze block: a 4×4 group of 8px tiles read from the tiles sheet. The block's
-    // top-left 8px tile comes from the manifest slot; its neighbours sit at +dx and +stride·dy on
+    // top-left 8px tile comes from the manifest slot; its neighbors sit at +dx and +stride·dy on
     // the sheet's own tile grid (kTileSheetCols8 — the sheet is 160px → 20 tile columns).
     auto stampBlock = [&](int cellC, int cellR, TileBlock block, std::size_t tilePal) {
         const std::uint16_t base = assets.blockTile(block);
@@ -121,7 +121,7 @@ void PolterRenderer::render(Renderer& renderer, const PolterGame& game, const Po
     popupSprites_.clear();
     if (game.state == GameState::Playing) {
         // Power pellets: the SAME art under the pulse clip's current palette — palette cycling via
-        // an AnimationPlayer, the engine's colour-animation idiom (the art never changes).
+        // an AnimationPlayer, the engine's color-animation idiom (the art never changes).
         const AnimationFrame& pow = feel.powerFrame();
         for (int i = 0; i < game.board.powerCount; ++i) {
             if (!game.board.powerAlive[static_cast<std::size_t>(i)]) continue;
@@ -138,7 +138,7 @@ void PolterRenderer::render(Renderer& renderer, const PolterGame& game, const Po
 
         // Ghosts. Identity keys carry the game's epoch: a board/life reset TELEPORTS the cast back
         // to the pen, and the fresh key makes each ghost mount-snap there instead of streaking
-        // across the maze. Body colour is pure palette selection — role palette normally, the one
+        // across the maze. Body color is pure palette selection — role palette normally, the one
         // frightened blue while the ball is ignited; the skirt frame comes from the shared clip.
         const Slot step = feel.ghostStep() == 0 ? S_GHOST_A : S_GHOST_B;
         for (int i = 0; i < kGhostCount; ++i) {
@@ -170,7 +170,7 @@ void PolterRenderer::render(Renderer& renderer, const PolterGame& game, const Po
 
         // The movers. The ball's key carries its serve number — every re-park is a teleport onto
         // the paddle, and the fresh key mount-snaps it there. Its palette flips fiery while
-        // ignited. The paddle squashes about its own centre on a bounce (a per-sprite transform).
+        // ignited. The paddle squashes about its own center on a bounce (a per-sprite transform).
         moverSprites_.push_back(Sprite{
             .key     = "ball_" + std::to_string(game.serveCount),
             .x       = static_cast<int>(game.ballX),
@@ -202,7 +202,7 @@ void PolterRenderer::render(Renderer& renderer, const PolterGame& game, const Po
             char buf[8];
             std::snprintf(buf, sizeof buf, "%d", p.points);
             const int   n  = static_cast<int>(std::strlen(buf));
-            const float gx = p.x - static_cast<float>(n) * kTile / 2.0f;  // centred on the ghost
+            const float gx = p.x - static_cast<float>(n) * kTile / 2.0f;  // centered on the ghost
             const float gy = p.y - 12.0f - prog * 26.0f;                  // rise
             for (int i = 0; i < n; ++i) {
                 const Transform xf = Transform::scale(scl, scl, kTile / 2.0f, kTile / 2.0f);

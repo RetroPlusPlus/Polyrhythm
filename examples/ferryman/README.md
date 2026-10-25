@@ -75,13 +75,13 @@ the event stream, and the renderer reads state without mutating it.
 
 | Technique | Where in Ferryman | Guide |
 |---|---|---|
-| Palette images | all 32 palettes are 16×1 RGBA PNGs via `loadPaletteImage` — no colour table in C++; the floating-text backgrounds are alpha-0 ENTRIES | [tiles-and-colour](../../docs/guide/tiles-and-colour.md) |
+| Palette images | all 32 palettes are 16×1 RGBA PNGs via `loadPaletteImage` — no color table in C++; the floating-text backgrounds are alpha-0 ENTRIES | [tiles-and-color](../../docs/guide/tiles-and-color.md) |
 | A bespoke title tileset | "FERRYMAN" as its own 32×32 glyph set — gold letterforms half-submerged behind a foaming waterline — riding per-sprite scale transforms | [images-and-transparency](../../docs/guide/images-and-transparency.md) |
 | Two-plane parallax | the drift and swell water layers scroll at different rates, advanced on the sim tick | [draw-state](../../docs/guide/draw-state.md) |
 | 32×32 macro-tiles | terrain tiles stamp as 4×4 groups of the engine's 8px cells (the rich-font 2×2 idiom, scaled up) | [tilemaps](../../docs/guide/tilemaps.md) |
 | Cross-state identity keys | a colonist keeps ONE key through waiting → aboard → carried-by-the-thief → stunned — the interpolator never loses the soul | [draw-state](../../docs/guide/draw-state.md) |
-| Palette animation | the whole sea's shimmer, the beacon's glow, and every enemy livery's running lights — the art holds, the colours breathe | [animation](../../docs/guide/animation.md) |
-| One art, two liveries | enemy and cargo bolts are the same sprite under magenta/gold palettes | [tiles-and-colour](../../docs/guide/tiles-and-colour.md) |
+| Palette animation | the whole sea's shimmer, the beacon's glow, and every enemy livery's running lights — the art holds, the colors breathe | [animation](../../docs/guide/animation.md) |
+| One art, two liveries | enemy and cargo bolts are the same sprite under magenta/gold palettes | [tiles-and-color](../../docs/guide/tiles-and-color.md) |
 | Add-blend regions | the abductor's tractor-beam capsule; the sanctuary glow that scales with your load | [blend-modes](../../docs/guide/blend-modes.md) |
 | A custom BELOW-scope shader | the mutant's reality-warp comet tail (`shaders/wake_warp.frag.hlsl`) — a refraction + psychedelic hue-cycle run on a content-less layer just under the mutant, traced as tapering circles down its tracked path | [rendering](../../docs/guide/rendering.md) |
 | `Curve` + `ArcLengthTable` | the abductor's constant-speed entry swoops | [curve](../../docs/guide/curve.md) |
@@ -102,7 +102,7 @@ the event stream, and the renderer reads state without mutating it.
 
   All sheet art is indexed with 16-entry palettes, and the generator ASSERTS every solid tile
   and sprite uses at least 12 distinct indices — the richness is enforced, not aspirational.
-  Recolouring anything — a livery, the sea, the text — is a palette-image edit, never an art
+  Recoloring anything — a livery, the sea, the text — is a palette-image edit, never an art
   change.
 
 ## Gotchas

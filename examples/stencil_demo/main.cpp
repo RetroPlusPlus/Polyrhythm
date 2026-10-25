@@ -80,7 +80,7 @@ enum class Action : std::uint8_t {
     return c;
 }
 
-// The base region for a cycle index, centred on the screen (80, 72); the render loop adds the drift via a
+// The base region for a cycle index, centered on the screen (80, 72); the render loop adds the drift via a
 // transform translation, so one offset moves every shape (including the curve).
 [[nodiscard]] ShapePoints shapeForIndex(int i) {
     switch (i % 7) {
@@ -126,8 +126,8 @@ int main() {
     };
     platform.actions(map);
 
-    // Rear scene: one solid 8×8 tile (palette index 1); the colour comes from the per-cell palette
-    // selection, so one tile draws a multi-colour scene.
+    // Rear scene: one solid 8×8 tile (palette index 1); the color comes from the per-cell palette
+    // selection, so one tile draws a multi-color scene.
     std::array<std::uint8_t, 64> solidArt{};
     solidArt.fill(1);
     const AtlasId rearAtlas = renderer.uploadAtlas(solidArt.data(), 8, 8).atlasId;
@@ -157,7 +157,7 @@ int main() {
                                            renderer.uploadPalette(std::span<const Rgba8>(palRose)),
                                            renderer.uploadPalette(std::span<const Rgba8>(palLime))};
 
-    // Bold diagonal colour bands → the rear scene reads as a vivid, distinct layer through any hole. Static.
+    // Bold diagonal color bands → the rear scene reads as a vivid, distinct layer through any hole. Static.
     // Each cell names the rear sheet directly; the diagonal-band index picks one of the four bright palettes.
     std::vector<TileCell> rearCells(static_cast<std::size_t>(kMapW) * kMapH);
     for (int ty = 0; ty < kMapH; ++ty) {

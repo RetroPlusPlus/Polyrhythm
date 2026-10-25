@@ -143,7 +143,7 @@ public:
     std::uint64_t callResident(std::uint32_t entry, std::span<const ResidentRegister> presets,
                                std::uint64_t maxCpuCycles) override;
     // A call into code the machine already holds, on the guest's own stack or the engine's scratch top,
-    // the file put back afterwards. A machine parked by a cycle budget is usually part-way through an
+    // the file put back afterward. A machine parked by a cycle budget is usually part-way through an
     // instruction; that instruction is finished first, before the presets go over the file, so the
     // instruction completes under the guest's own registers and the call lands at an instruction
     // boundary. The entry's top bit (snes::rtl) picks the landing a JSL pushes over the one a JSR pushes.

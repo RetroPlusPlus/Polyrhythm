@@ -14,7 +14,7 @@
 cbuffer Params : register(b1, space3) {
     float  gwarpAmp;   // displacement strength (UV units)
     float  gwarpFreq;  // wave frequency across the viewport
-    float3 gwarpTint;  // colour added after sampling (per-region — rides the gather records)
+    float3 gwarpTint;  // color added after sampling (per-region — rides the gather records)
 };
 
 float4 main(float2 uv : TEXCOORD0) : SV_Target0 {

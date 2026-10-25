@@ -29,7 +29,7 @@ const Tween<float> kGlowTween =
 // The PRESS ENTER pulse (1.5 s) — the slow attract-mode swell.
 const Tween<float> kPromptTween =
     Tween<float>::of(1.0f, 0.45f, 750ms, Easing::InOutSine).then(1.0f, 750ms, Easing::InOutSine);
-// The round card: slide in with the arcade overshoot, hold centre-stage, depart right.
+// The round card: slide in with the arcade overshoot, hold center-stage, depart right.
 const Tween<float> kBannerTween =
     Tween<float>::of(-0.35f, 0.5f, 500ms, Easing::OutBack)
         .then(0.5f, 1400ms, Easing::Linear)

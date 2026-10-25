@@ -11,7 +11,7 @@
 //   • an amber Aim pointer orbiting the dot on the right stick — the twin-stick pairing;
 //   • a throttle bar driven by the left trigger's AXIS value;
 //   • an active-device swatch — white while the keyboard/mouse last produced input, a family
-//     colour while a pad did (green Xbox, blue PlayStation, red Nintendo, orange generic) — the
+//     color while a pad did (green Xbox, blue PlayStation, red Nintendo, orange generic) — the
 //     signal a game's glyph layer reads;
 //   • a mouse marker at the viewport cursor while the pointer is over the drawn area;
 //   • a gate box plotting the left stick in throw space — a dim dot for the raw throw and a bright dot
@@ -709,7 +709,7 @@ int main(int argc, char** argv) {
         // The gate box: a square throw-space plot of the left stick. The dim dot is the raw throw (it
         // stays on the inscribed circle, corners unreachable); the bright dot is the processed value —
         // under Square it reaches the box corners, under Round it tracks the raw dot. A swatch names the
-        // current gate (grey Round, green Square, amber Scaled). Press M to cycle.
+        // current gate (gray Round, green Square, amber Scaled). Press M to cycle.
         constexpr float kGateCx = 250.0f, kGateCy = 170.0f, kGateHalf = 48.0f;
         ShapePoints gateBox = ShapePoints::rectangle(
             Point{kGateCx - kGateHalf, kGateCy - kGateHalf}, kGateHalf * 2.0f, kGateHalf * 2.0f);
