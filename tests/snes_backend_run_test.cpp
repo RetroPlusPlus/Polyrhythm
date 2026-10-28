@@ -127,7 +127,8 @@ TEST(SnesBackendRun, ResetReturnsToPowerOnAndKeepsTheSave) {
     EXPECT_EQ(backend.readSaveData(), saved);                          // the battery survived the reset
 
     SnesBackend fresh;
-    EXPECT_THROW(fresh.reset(), std::logic_error);  // reset before any loadRom
+    fresh.reset();  // a fresh machine resets onto its own empty image
+    EXPECT_EQ(SnesBackendTestAccess::state(fresh).master, 0u);
 }
 
 }  // namespace

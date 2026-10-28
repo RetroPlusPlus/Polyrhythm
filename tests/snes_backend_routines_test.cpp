@@ -215,8 +215,19 @@ TEST(SnesBackendRoutines, TheClockMovesBetweenCallsAndTheFileDoesNot) {
     EXPECT_EQ(state.cpu, file);
     EXPECT_EQ(call(backend, entry, 0x33, 0), 0x33u);  // the next call is not refused
 
+    // A fresh machine idles on its own empty image, and its clock moves from the start.
     SnesBackend empty;
-    EXPECT_THROW(empty.advanceClock(1), std::logic_error);
+    const std::uint64_t fresh = SnesBackendTestAccess::state(empty).master;
+    empty.advanceClock(10'000);
+    EXPECT_GE(SnesBackendTestAccess::state(empty).master, fresh + 10'000);
+}
+
+// A fresh machine's work RAM is reachable before anything is placed on it: the first routine may bind a
+// memory home, in the direct page or in bank $7F.
+TEST(SnesBackendRoutines, AFreshMachineReachesItsWorkRamBeforeAnyPlacement) {
+    SnesBackend backend;
+    EXPECT_TRUE(backend.regionIsAddressable(MemoryRegion{.at = 0x0000F3, .size = 3}));
+    EXPECT_TRUE(backend.regionIsAddressable(MemoryRegion{.at = 0x7FC400, .size = 1}));
 }
 
 TEST(SnesBackendRoutines, AHostedCartridgeAndARoutineImageRefuseEachOther) {

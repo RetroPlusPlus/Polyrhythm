@@ -1727,6 +1727,7 @@ if(RETROPP_BUILD_TESTS)
         tests/snes_regions_test.cpp
         tests/snes_backend_routines_test.cpp
         tests/snes_routine_embed_scan_test.cpp
+        tests/snes_routine_long_return_test.cpp
         tests/snes_backend_escape_test.cpp
         tests/snes_backend_watch_test.cpp
         tests/snes_backend_nesting_test.cpp

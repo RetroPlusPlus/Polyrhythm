@@ -49,10 +49,10 @@
 //   (no args)   the window
 //   --verify    headless: declares the six places, round-trips a palette word and the sprite's X, checks
 //               a patched step moves the sprite that far a frame, reads the pad registers with Right held
-//               and released, calls both routines for a value, calls the cartridge's own routine parked
-//               at 240 different points of its frame, and switches each escape and watch on in turn and
-//               checks what it does to the running cartridge; exits nonzero on any miss (CI runs this on
-//               every platform)
+//               and released, calls both routines for a value, places a routine an RTL leaves and calls
+//               it, calls the cartridge's own routine parked at 240 different points of its frame, and
+//               switches each escape and watch on in turn and checks what it does to the running
+//               cartridge; exits nonzero on any miss (CI runs this on every platform)
 
 #include <algorithm>
 #include <array>
@@ -350,6 +350,18 @@ int runVerify() {
         refused = true;
     }
     check(refused, "a binding for the SM83 is refused on this machine");
+
+    // A routine the game wrote for JSL, placed from its bytes as it is: the binding says it returns
+    // with RTL, and the call pushes the landing a JSL would.
+    static constexpr std::array<std::uint8_t, 2> kIncrementLong{0x1A, 0x6B};  // INC A ; RTL
+    auto incrementLong = routines.uploadRoutine<std::uint8_t(std::uint8_t)>(
+        kIncrementLong, {.inputs = {snes::A}, .output = snes::A, .isa = Isa::Wdc65816,
+                         .returns = RoutineReturn::Long});
+    check(incrementLong(41) == 42, "a routine an RTL leaves is placed as it is and answers");
+    static constexpr std::array<std::uint8_t, 1> kRtl{0x6B};  // RTL
+    auto stackAfterLong = routines.uploadRoutine<std::uint16_t()>(
+        kRtl, {.output = snes::S, .isa = Isa::Wdc65816, .returns = RoutineReturn::Long});
+    check(stackAfterLong() == 0x1FFF, "and its RTL pulls the three bytes the call pushed");
 
     // The escapes and watches, each switched on the running cartridge. A switch lands at the next step,
     // so each one is given a tick before what it does is measured. Right is still held.

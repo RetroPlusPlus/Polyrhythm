@@ -25,6 +25,7 @@
 #include "retropp/asset_registry.h"    // assetRoot — the single project-relative resource root (no routine root)
 #include "retropp/audio.h"             // kAudioSampleRate — the held rate a machine starts with
 #include "retropp/routine_registry.h"  // detail::findEmbeddedRoutine
+#include "retropp/snes.h"              // snes::rtl — the entry of a routine an RTL leaves
 #include "retropp/user_files.h"        // UserFiles — where a keyed machine's own files live
 #include "src/vm/run_governor.h"       // RunGovernor — what a running cartridge owes the wall clock
 #include "src/vm/save_writer.h"        // SaveWriter — the thread a keyed machine's bytes reach disk on
@@ -1787,9 +1788,9 @@ void Vm::registerEscapes(const EscapeMap& map) {
                 fail(key, "the function returns a value the binding gives no home — its answer "
                           "would vanish");
             }
-            if (r.declaredEntryOffset != 0 || r.declaredHardwarePacing) {
-                fail(key, "a replacement binding names no pacing and no entry offset — the guest's "
-                          "own call decides both");
+            if (r.declaredEntryOffset != 0 || r.declaredHardwarePacing || r.declaredLongReturn) {
+                fail(key, "a replacement binding names no pacing, no entry offset and no return — the "
+                          "guest's own call decides them, and the escape's address carries the return");
             }
             for (std::size_t j = 0; j < r.inputs.size() && j < r.inputWidths.size(); ++j) {
                 locationFits(key, "input " + std::to_string(j), r.inputs[j], r.inputWidths[j]);
@@ -2170,6 +2171,20 @@ void validateIsa(const RoutineBinding& binding, VMPlatform platform) {
     }
 }
 
+// A routine's return is one its ISA has. The 65816 has two; a binding that says Long for an ISA with one
+// return is refused here, so no backend is handed a return it cannot push.
+void validateReturn(const RoutineBinding& binding) {
+    if (binding.returns == RoutineReturn::Long && binding.isa != Isa::Wdc65816) {
+        throw std::invalid_argument("RoutineBinding.returns names Long, and the " +
+                                    std::string(isaName(binding.isa)) + " has one return");
+    }
+    if (binding.returns == RoutineReturn::Long && binding.throttle == Throttle::HardwareSpeed) {
+        throw std::invalid_argument(
+            "RoutineBinding.returns names Long for a Throttle::HardwareSpeed routine, which is driven "
+            "and never returns");
+    }
+}
+
 // Validate a binding location against the width the signature gives that slot. Registers must match
 // the backend's register width; an unknown register id is rejected. Memory accepts any width.
 void validateLocation(const vm::VmBackend& backend, const Location& loc, int valueWidth,
@@ -2209,6 +2224,7 @@ std::size_t Vm::registerResolved(std::span<const std::uint8_t> routineBytes,
             "multi-instance routing (anti-channel-stealing audio) is not built yet");
     }
     validateIsa(binding, impl_->platform);
+    validateReturn(binding);
 
     // Arity + width/location validation.
     if (binding.inputs.size() != inputWidths.size()) {
@@ -2243,7 +2259,10 @@ std::size_t Vm::registerResolved(std::span<const std::uint8_t> routineBytes,
     const std::uint32_t base = impl_->backend->placeRoutine(routineBytes, origin);
 
     ResolvedRoutine resolved;
-    resolved.entry = base + binding.entryOffset;
+    // The entry carries the return the way a bound address does: the top bit names a routine an RTL
+    // leaves, and the backend pushes the landing a JSL would.
+    const std::uint32_t entry = base + binding.entryOffset;
+    resolved.entry = binding.returns == RoutineReturn::Long ? snes::rtl(entry) : entry;
     resolved.inputs.assign(binding.inputs.begin(), binding.inputs.end());
     resolved.inputWidths.assign(inputWidths.begin(), inputWidths.end());
     resolved.output = binding.output;
@@ -2259,10 +2278,11 @@ std::size_t Vm::bindRoutineResolved(std::uint32_t at, const RoutineBinding& bind
     // cartridge first, and a machine running on its own thread is not one to declare against.
     impl_->requireNotRunning("bindRoutine");
 
-    if (binding.entryOffset != 0 || binding.throttle != Throttle::HostSpeed) {
+    if (binding.entryOffset != 0 || binding.throttle != Throttle::HostSpeed ||
+        binding.returns != RoutineReturn::Near) {
         throw std::invalid_argument(
-            "bindRoutine: a routine already in place names no pacing and no entry offset — the "
-            "address it is bound at is the entry, and a call is not paced");
+            "bindRoutine: a routine already in place names no pacing, no entry offset and no return — "
+            "the address it is bound at is the entry and carries the return, and a call is not paced");
     }
     validateIsa(binding, impl_->platform);
     if (binding.inputs.size() != inputWidths.size()) {

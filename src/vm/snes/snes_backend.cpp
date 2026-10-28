@@ -57,6 +57,12 @@ std::optional<snaggletooth::Joypad> decodePad(std::uint64_t word, unsigned shift
 
 }  // namespace
 
+SnesBackend::SnesBackend() { rebuildRoutineImage(); }
+
+// Whether the engine's image carries anything of the program's: a placed routine or a hosted driver.
+// Until it does, the machine is free to become a cartridge's or the audio unit alone.
+bool SnesBackend::holdsPlacements() const noexcept { return !placed_.empty() || !resident_.empty(); }
+
 void SnesBackend::emplaceMachine() {
     // The map is named outright: a game's cartridge is read by the map its header names, the engine's
     // own image by the map it was written for, and neither depends on the machine reading the header.
@@ -86,10 +92,14 @@ void SnesBackend::restoreSave(std::vector<std::uint8_t> save) {
 }
 
 void SnesBackend::hostAudioUnit() {
-    if (snes_) {
-        throw std::logic_error("hostAudioUnit: this machine already holds a cartridge or an image; the "
-                               "audio unit alone is a machine of its own");
+    if (romHosted_ || holdsPlacements()) {
+        throw std::logic_error("hostAudioUnit: this machine already holds a cartridge or a placed routine; "
+                               "the audio unit alone is a machine of its own");
     }
+    // The console the machine came up as gives way to its audio unit alone.
+    snes_.reset();
+    rom_.clear();
+    imageBuilt_ = false;
     // The unit comes up as the console's does: its upload stub in the boot window, the sound CPU in the
     // stub's ready wait with $AA and $BB posted on the ports, a kick on port 0 answered. The stub is seeded
     // into the power-on state and mapped over $FFC0, the two acts the console performs on its own unit.
@@ -149,11 +159,12 @@ void SnesBackend::loadRom(std::span<const std::uint8_t> rom) {
     if (apu_) {
         throw std::logic_error("this machine is its audio unit alone and has no cartridge slot");
     }
-    if (imageBuilt_) {
+    if (holdsPlacements()) {
         throw std::logic_error(
             "this VM already holds an image the engine wrote for its routines; a game's cartridge "
             "cannot share it");
     }
+    imageBuilt_ = false;                  // the image is the game's from here
     rom_.assign(rom.begin(), rom.end());  // kept for save reads and machine rebuilds
     region_ = regionOf(rom_);             // the cartridge's own region, from its header
     map_    = snaggletooth::detectCartridgeMap(rom_);  // the map the machine reads it by, found the same way
