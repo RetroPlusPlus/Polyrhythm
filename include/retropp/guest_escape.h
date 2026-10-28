@@ -60,6 +60,9 @@ struct NativeRoutine {
     // to write back (ignored when there is no output).
     std::function<std::uint64_t(const std::uint64_t*)> fn;
 
+    bool declaredLongReturn = false;  // carried only so registration can refuse it — the escape's
+                                      // address carries the return
+
     [[nodiscard]] explicit operator bool() const noexcept { return static_cast<bool>(fn); }
 };
 

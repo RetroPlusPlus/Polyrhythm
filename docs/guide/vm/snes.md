@@ -276,8 +276,24 @@ An escape's `.at` takes it the same way: a routine replaced at `snes::rtl(entry)
 standing in, so the caller's `JSL` gets its three bytes back.
 
 The bit rides the top of the 32-bit address, above the 24-bit bus; it names code, so with a memory the
-bus cannot name it resolves nothing. A routine the core places from source returns with `RTS`, always —
-the core places it and calls it, so the convention is the core's.
+bus cannot name it resolves nothing.
+
+A routine the engine places — `uploadRoutine`, `registerRoutine` — says its return on the binding:
+`RoutineReturn::Near`, the default, for a routine an `RTS` leaves, and `RoutineReturn::Long` for one
+an `RTL` leaves, so a routine the game wrote for `JSL` is placed from its bytes as it is:
+
+```cpp
+auto decompress = vm.uploadRoutine<void(std::uint16_t, std::uint8_t, std::uint16_t, std::uint8_t)>(
+    bytes,  // the routine, read out of the cartridge image
+    {.inputs  = {Location::memory(0x0000F3), Location::memory(0x0000F5),   // source, a long pointer
+                 Location::memory(0x0000F6), Location::memory(0x0000F8)},  // destination, a long pointer
+     .isa     = Isa::Wdc65816,
+     .returns = RoutineReturn::Long});
+```
+
+The address form and the binding form name one thing each: a bound address carries its return in
+`snes::rtl`, and a binding that also says `returns` is refused, as a binding that says `returns`
+for a routine driven at `Throttle::HardwareSpeed` is.
 
 ### The mappers
 
@@ -385,8 +401,9 @@ here is what they are on this hardware.
 
 - **A placed routine begins in a frame of the core's own:** native mode, 8-bit accumulator and index
   registers with interrupts off (`P = $34`), direct page `$0000`, data bank `$00`, the stack at `$1FFF`,
-  every other register zero, then the binding's inputs over it. It returns with `RTS` to the image's idle
-  loop, and the register file it left is what a register output reads. A routine that wants 16-bit
+  every other register zero, then the binding's inputs over it. It returns to the image's idle loop
+  with `RTS`, or with `RTL` when its binding says `RoutineReturn::Long` and the call pushed the landing
+  a `JSL` would; the register file it left is what a register output reads. A routine that wants 16-bit
   registers sets them itself (`REP #$30`) and says so to the assembler (`A16` / `X16`).
 - **A routine lands where its source says, or where it fits.** A source that says `ORG` is placed at
   that address, and the core's image grows to a second bank for one that asks for it; a source with no

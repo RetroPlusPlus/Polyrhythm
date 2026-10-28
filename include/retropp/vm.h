@@ -138,9 +138,18 @@ enum class Throttle {
     HardwareSpeed,
 };
 
-// The developer-declared I/O binding: the ONLY place registers / memory / entry offsets are named.
-// The WIDTH of each input and the output comes from the callable signature (sizeof), not from here;
-// the binding names only WHERE each value lives and HOW the routine is paced.
+// How a routine returns to its caller. Near is a routine a JSR enters and an RTS leaves, and the
+// default. Long is a routine a JSL enters and an RTL leaves; the call pushes the landing a JSL would,
+// so a routine the game wrote for JSL is placed from its bytes as it is. An ISA with one return refuses
+// Long at registration.
+enum class RoutineReturn : std::uint8_t {
+    Near,
+    Long,
+};
+
+// The developer-declared I/O binding: the ONLY place registers / memory / entry offsets / the return are
+// named. The WIDTH of each input and the output comes from the callable signature (sizeof), not from
+// here; the binding names only WHERE each value lives, HOW the routine is paced and HOW it returns.
 //   RoutineBinding{ .inputs = {gb::A, gb::B}, .output = gb::A, .throttle = Throttle::HostSpeed }
 struct RoutineBinding {
     std::vector<Location>   inputs;                  // argument i marshals to inputs[i]
@@ -150,6 +159,7 @@ struct RoutineBinding {
                                                      // routine bytes (usually 0). NOT a ROM address.
     Isa                     isa = Isa::Sm83;         // the ISA the routine is written for (verified at
                                                      // registration against the machine's own)
+    RoutineReturn           returns = RoutineReturn::Near;  // the return the routine ends with
 };
 
 // Compile-time constraint on the values a routine I/O location can hold: the unsigned-integral
@@ -181,6 +191,7 @@ struct NativeCallSig<Ret (C::*)(Args...) const> {
         out.output                 = binding.output;
         out.declaredEntryOffset    = binding.entryOffset;
         out.declaredHardwarePacing = binding.throttle != Throttle::HostSpeed;
+        out.declaredLongReturn     = binding.returns == RoutineReturn::Long;
         if constexpr (!std::is_void_v<Ret>) {
             out.outputWidth = static_cast<int>(sizeof(Ret));
         }
@@ -855,7 +866,8 @@ public:
     // more throws (multi-instance routing for anti-channel-stealing audio is not built yet). The
     // signature determines I/O widths; the binding determines I/O locations and pacing. Throws on:
     // instances > 1, an inputs/arity mismatch, a width/location mismatch, an unknown register for the
-    // backend, or an exhausted code arena.
+    // backend, a `returns` the ISA does not have or a driven routine cannot use, or an exhausted code
+    // arena.
     template <typename Sig>
     Routine<Sig> uploadRoutine(std::span<const std::uint8_t> routineBytes,
                                const RoutineBinding& binding, int instances = 1);
@@ -904,8 +916,9 @@ public:
     // return, plus one instruction fetch for the address the return lands on.
     //
     // `binding` is registerRoutine's and means the same thing — the signature carries the widths,
-    // the binding names the homes. `throttle` and `entryOffset` have no meaning for a routine that
-    // is already in place, since the address IS the entry, and a binding that sets either is refused.
+    // the binding names the homes. `throttle`, `entryOffset` and `returns` have no meaning for a
+    // routine that is already in place, since the address IS the entry and carries the return
+    // (`snes::rtl`), and a binding that sets any of them is refused.
     //
     // Bind before run(), or between steps of a machine the game drives itself: the address and the
     // binding are checked against the machine as it stands, so host the cartridge first, and binding

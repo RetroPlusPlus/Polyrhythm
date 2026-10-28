@@ -47,7 +47,11 @@ class SnesBackend final : public VmBackend,
                           private snaggletooth::InstructionWatcher,
                           private snaggletooth::AccessWatcher {
 public:
-    SnesBackend() = default;
+    // A fresh machine holds the engine's own image with nothing placed on it yet — its idle loop and
+    // header — so its work RAM, its registers and its sound chip answer from the start, as the Game
+    // Boy's do. A game's cartridge or the audio unit alone takes the machine over while nothing has been
+    // placed; the first placement makes the image the routines'.
+    SnesBackend();
 
     // A hosted cartridge returns to power-on with its save kept; a routine machine is rebuilt on the
     // image it wrote, every placed routine intact.
@@ -205,6 +209,8 @@ private:
     void rebuildRoutineImage();
     // Every run of bytes the engine's image carries: the placed routines, then the driver's images.
     [[nodiscard]] std::vector<snes_image::Placement> everything() const;
+    // Whether the engine's image carries anything of the program's: a placed routine or a hosted driver.
+    [[nodiscard]] bool holdsPlacements() const noexcept;
     // Seat the program counter of `file` on the image's idle loop, where a call lands and the machine
     // parks between calls.
     void seatOnIdleLoop(snaggletooth::Cpu65816State& file) const;
@@ -279,7 +285,7 @@ private:
     // Release the bytes `gone` covered, in the directions named, that no remaining watch still covers.
     void releaseWatchBytes(const ArmedWatch& gone, bool onRead, bool onWrite);
 
-    std::optional<snaggletooth::Snes> snes_;             // the live machine; empty until an image is held
+    std::optional<snaggletooth::Snes> snes_;             // the live machine; empty only as the audio unit alone
     std::optional<snaggletooth::Apu>  apu_;              // the audio unit alone, when the machine is that
     std::vector<std::uint8_t>         rom_;              // the held image, kept for save reads and rebuilds
     snaggletooth::Region              region_ = snaggletooth::Region::Ntsc;  // the cartridge's, from its header

@@ -109,6 +109,7 @@ struct RoutineBinding {
     Throttle                throttle = Throttle::HostSpeed;
     std::uint32_t           entryOffset = 0; // first instruction's offset WITHIN routineBytes
     Isa                     isa = Isa::Sm83; // the ISA the routine is written for, verified at registration
+    RoutineReturn           returns = RoutineReturn::Near;  // the return the routine ends with: Near (RTS) or Long (RTL)
 };
 ```
 
@@ -140,10 +141,17 @@ snes::PC` (16-bit), with `.isa = Isa::Wdc65816` on the binding
 ([snes.md](snes.md#registers)). A value's width must match its bound register (a `uint16_t` bound to
 `gb::A` throws at registration).
 
+A 65816 routine that ends in `RTL` says so on the binding — `.returns = RoutineReturn::Long` — and the
+call pushes the landing a `JSL` would, so a routine the game wrote for `JSL` is placed from its bytes
+as it is. `RoutineReturn::Near`, the default, is a routine an `RTS` leaves
+([snes.md § A routine's return](snes.md#a-routines-return-snesrtl)).
+
 Both forms validate the binding and throw (`std::invalid_argument`) on an inputs/arity mismatch, a
 width/location mismatch, an unknown register, an inaccessible address, a void signature that binds an
 output (or a value-returning one that binds none), empty routine bytes, or an `entryOffset` past the end
-of the bytes — so a malformed binding fails loudly at registration, not silently at call time.
+of the bytes, a `returns` of `RoutineReturn::Long` on an ISA with one return (the SM83) or on a
+`Throttle::HardwareSpeed` routine — so a malformed binding fails loudly at registration, not silently
+at call time.
 
 ### Authoring in assembly: register from a `.asm` file
 

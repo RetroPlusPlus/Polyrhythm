@@ -254,9 +254,9 @@ TEST(SnesBackendPlaces, OpenBusIsNotAPlace) {
         EXPECT_FALSE(backend.regionIsAddressable(MemoryRegion{.at = open, .size = 1})) << open;
         EXPECT_THROW(backend.writeMemory(open, 0, 1), std::out_of_range) << open;
     }
-    // A machine hosting nothing has no memory at all.
+    // A machine hosting nothing holds the engine's own empty image, and its work RAM answers.
     SnesBackend empty;
-    EXPECT_FALSE(empty.regionIsAddressable(snes::WorkRam));
+    EXPECT_TRUE(empty.regionIsAddressable(snes::WorkRam));
 }
 
 TEST(SnesBackendPlaces, TheMemoriesTheBusCannotNameReadWholeAndTakeAByteByName) {

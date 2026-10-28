@@ -143,7 +143,8 @@ inline constexpr Location PC = Location::reg(static_cast<std::uint16_t>(Reg::PC)
 
 // A routine a JSL enters and an RTL leaves. Wraps the entry address a bindRoutine, an escape's `.at` or
 // an Instruction::call names; a bare address is a routine a JSR enters and an RTS leaves. The engine
-// pushes the landing a JSL would and, for a replaced routine, stands an RTL at the entry.
+// pushes the landing a JSL would and, for a replaced routine, stands an RTL at the entry. A routine the
+// engine places says its return on the binding instead: `RoutineBinding::returns`.
 //
 //   auto decode = machine.bindRoutine<std::uint16_t(std::uint16_t)>(snes::rtl(0x018000),
 //                                                                  {.inputs = {snes::C}, .output = snes::C});
