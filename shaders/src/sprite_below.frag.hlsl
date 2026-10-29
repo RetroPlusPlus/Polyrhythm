@@ -170,14 +170,15 @@ float4 spriteArtSample(float2 uv, uint tile, uint atlasPalette, uint flags, uint
     uint atlasId       = atlasPalette & 0xFFFFu;
     uint paletteOffset = atlasPalette >> 16;
     uint4 region       = uAtlasRegions.Load(int3((int)atlasId, 0, 0));
-    int   storeY       = (int)region.x;
+    int   storeX       = (int)(region.x & 0xFFFFu);
+    int   storeY       = (int)(region.x >> 16);
     int   atlasCols    = (int)region.y;
     if (atlasCols == 0) return float4(0.0f, 0.0f, 0.0f, 0.0f);
 
     int  tilePx = (int)uTilePx;
     int  col    = (int)tile % atlasCols;
     int  row    = (int)tile / atlasCols;
-    int2 texel  = int2(col * tilePx + px.x, storeY + row * tilePx + px.y);
+    int2 texel  = int2(storeX + col * tilePx + px.x, storeY + row * tilePx + px.y);
     uint idx    = uAtlas.Load(int3(texel, 0));
     bool hole = (idx < 32u) ? (((region.z >> idx)         & 1u) != 0u)
               : (idx < 64u) ? (((region.w >> (idx - 32u)) & 1u) != 0u)

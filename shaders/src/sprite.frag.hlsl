@@ -33,7 +33,7 @@
 //   - s0 space2 : its sampler (linear, CLAMP) — the halo is stored per viewport pixel and filtered back up
 //   - t1 space2 : flat ATLAS STORE (R32_UINT; integer Load; all sheets stacked vertically)
 //   - t2 space2 : palette store (RGBA8; integer Load; FLAT colors wrapped W wide → texel (flat%W, flat/W))
-//   - t3 space2 : global atlas-region table (R32G32B32A32_UINT; texel x = AtlasId → (storeY, cols, transpMaskLo, transpMaskHi))
+//   - t3 space2 : global atlas-region table (R32G32B32A32_UINT; texel x = AtlasId → (place = column | row << 16, cols, transpMaskLo, transpMaskHi))
 //   - t4 space2 : per-frame sprite-effect records (R32G32B32A32_FLOAT; ten 16-byte texels per record, one record per
 //                 ROW at y = fxOffset + i; a storage TEXTURE, not a storage buffer — the buffer namespace after a
 //                 uniform collides with Metal's [[buffer]] indices when the texture and uniform counts differ)

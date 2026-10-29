@@ -68,8 +68,10 @@ public:
                               // overloads declaring the sheet's grid (tiles-and-color.md)
     AtlasManifest uploadAtlas(const LoadedImage&);             // always throws — load PNGs via loadAtlas()
     PaletteId uploadPalette(std::span<const Rgba8>  colors);   // 8-bit source, widened ×257 into the store
-    PaletteId uploadPalette(std::span<const Rgba16> colors);   // 16-bit color source, appended direct
+    PaletteId uploadPalette(std::span<const Rgba16> colors);   // 16-bit color source, written direct
     void updatePalette(PaletteId id, std::span<const Rgba8> colors);   // the same handle, new colors (also Rgba16)
+    void releaseAtlas(AtlasId id);                             // the sheet's room reclaimed, its handle retired
+    void releasePalette(PaletteId id);                         // the palette's entries free for the next that fits
     // PNG loading + slicing (loadAtlas / loadAtlasFromMemory / loadPaletteImage / loadImage) lives in
     // images-and-transparency.md and tiles-and-color.md.
 
@@ -583,13 +585,18 @@ color model and [images-and-transparency.md](images-and-transparency.md) for loa
   palette store.
 - `updatePalette(id, colors)`. The palette at `id` takes new colors and keeps its handle; the next frame
   draws them.
+- `releaseAtlas(id)` / `releasePalette(id)`. The sheet's room in the store is reclaimed and its handle
+  retired, so a cell or sprite still naming it draws nothing; the palette's entries are free for the next
+  palette that fits them. A game uploads a scene's art and releases it when the scene ends — see
+  [tiles-and-color.md](tiles-and-color.md#releasing-a-palette-or-a-sheet-releasepalette--releaseatlas).
 - `uploadImage(pixels, w, h)` → `ImageId` (and `loadImage` / `loadImageFromMemory` over a PNG). A truecolor image, one renderer-owned texture at the depth the pixels need; a raster layer names it with `RasterContent{.image = …}` and uploads nothing per frame — see [draw-state.md](draw-state.md#an-image-the-renderer-holds).
 
 Each upload writes only what it adds, and an update only the palette it changes, so uploading or editing
-color during play costs the new colors or pixels rather than everything already in the store; the store
-texture is recreated only when the content outgrows the room it has.
+color during play costs the new colors or pixels rather than everything already in the store; a store
+texture is recreated only when what is uploaded fits none of the room it has.
 
-Handles stay valid until the renderer is destroyed.
+An atlas or palette handle stays valid until it is released; an image handle until the renderer is
+destroyed.
 
 ## The renderer only uploads what changed <a id="upload-skip"></a>
 
@@ -624,8 +631,8 @@ very large cell array every frame still costs you the rebuild, whatever the rend
 ## Render statistics: `renderStats`
 
 `renderStats()` returns a by-value `RenderStats` — cumulative counters of how much work the renderer
-issued versus skipped as redundant, since construction. Read two snapshots and diff them to measure a
-window (one frame, or a run of frames):
+issued versus skipped as redundant, since construction, and the atlas store's size. Read two snapshots
+of the counters and diff them to measure a window (one frame, or a run of frames):
 
 ```cpp
 const RenderStats before = renderer.renderStats();
@@ -639,8 +646,10 @@ const auto skipped  = now.composeSkips  - before.composeSkips;   // idle screen 
 |---|---|
 | `tilemapUploads` / `tilemapSkips` | per-layer tilemap uploads issued / skipped (cell content unchanged) |
 | `spriteUploads` / `spriteSkips`   | per-layer sprite-record uploads issued / skipped (built records unchanged) |
+| `rasterUploads` / `rasterSkips`   | per-layer raster uploads issued / skipped (the raster's generation had not moved) |
 | `composePasses` / `composeSkips`  | full-frame composes run / skipped (frame bit-identical, retained output re-blitted) |
 | `presentPasses` / `presentSkips`  | `renderFrame` calls that blitted a swapchain texture / had none to blit |
+| `atlasStoreWidth` / `atlasStoreHeight` | the atlas store's texture, in texels — a size, not a counter; it holds steady while a game releases a scene's sheets as it uploads the next (see [Releasing a palette or a sheet](tiles-and-color.md#releasing-a-palette-or-a-sheet-releasepalette--releaseatlas)) |
 | `lastFrame`                       | the most recent frame's phase split (below) |
 
 Each skip counter reads against its issued counterpart — the pair is the ratio. On a still screen the

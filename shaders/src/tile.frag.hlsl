@@ -13,7 +13,7 @@
 //   - t0 space2 : flat ATLAS STORE (R32_UINT; integer Load; all sheets stacked vertically)
 //   - t1 space2 : tilemap cells (R32G32_UINT; integer Load; packTileCell two-word layout)
 //   - t2 space2 : palette store (RGBA8; integer Load; FLAT colors wrapped W wide → texel (flat%W, flat/W))
-//   - t3 space2 : global atlas-region table (R32G32B32A32_UINT; texel x = AtlasId → (storeY, cols, transpMaskLo, transpMaskHi))
+//   - t3 space2 : global atlas-region table (R32G32B32A32_UINT; texel x = AtlasId → (place = column | row << 16, cols, transpMaskLo, transpMaskHi))
 //   - b0 space3 : per-layer uniforms
 
 Texture2D<uint>   uAtlas        : register(t0, space2);
@@ -128,16 +128,18 @@ float4 main(float2 uv : TEXCOORD0) : SV_Target0 {
     else if (rotation == 2u) { pixelX = rn - pixelX; pixelY = rn - pixelY; }               // Rot180
     else if (rotation == 3u) { int rt = pixelX; pixelX = rn - pixelY;  pixelY = rt; }      // Rot270
 
-    // The cell's sheet region in the flat atlas store, looked up by its atlas handle in the global table:
-    // (storeY, cols, transpMaskLo, transpMaskHi). An unused/invalid handle reads region 0 → cols 0 →
-    // discard (nothing to draw, and never a divide-by-zero).
+    // The cell's sheet region in the atlas store, looked up by its atlas handle in the global table:
+    // (place, cols, transpMaskLo, transpMaskHi) — place is the sheet's column in its low 16 bits and its row
+    // in the high 16. An unused/invalid handle reads region 0 → cols 0 → discard (nothing to draw, and
+    // never a divide-by-zero).
     uint4 region    = uAtlasRegions.Load(int3((int)atlasId, 0, 0));
-    int   storeY    = (int)region.x;
+    int   storeX    = (int)(region.x & 0xFFFFu);
+    int   storeY    = (int)(region.x >> 16);
     int   atlasCols = (int)region.y;
     if (atlasCols == 0) discard;
     int atlasCol    = (int)tileIndex % atlasCols;
     int atlasRow    = (int)tileIndex / atlasCols;
-    int2 atlasTexel = int2(atlasCol * tilePx + pixelX, storeY + atlasRow * tilePx + pixelY);
+    int2 atlasTexel = int2(storeX + atlasCol * tilePx + pixelX, storeY + atlasRow * tilePx + pixelY);
 
     uint colorIndex = uAtlas.Load(int3(atlasTexel, 0));           // palette index 0..N-1
 

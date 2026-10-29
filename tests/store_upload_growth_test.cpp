@@ -1,6 +1,6 @@
 // Store uploads write only what they append. The palette store and the atlas store each hold everything a
-// game has uploaded, and an upload adds to the end: it writes its own colors or its own pixels into the
-// room the store texture already has, and recreates the texture only when the content outgrows it.
+// game has uploaded, and an upload adds to it: it writes its own colors or its own pixels into the room
+// the store texture already has, and recreates the texture only when the content outgrows it.
 //
 // Two halves. The device-free half pins the destination rectangles and the growth decision — a rectangle
 // with the wrong offset writes correct bytes to the wrong place and nothing fails, so the arithmetic is
@@ -32,7 +32,6 @@
 
 namespace {
 using namespace retropp;
-using retropp::detail::atlasFitsStore;
 using retropp::detail::atlasRect;
 using retropp::detail::atlasRegionTexel;
 using retropp::detail::grownCapacity;
@@ -99,27 +98,9 @@ TEST(StoreGrowth, RoomIsDoubledSoAppendsOutnumberRecreations) {
     EXPECT_EQ(grownCapacity(0), 1) << "a store always has room for something";
 }
 
-TEST(AtlasStoreGeometry, AnAtlasNoWiderThanTheStoreAndWithinItsRowsIsWrittenInPlace) {
-    EXPECT_TRUE(atlasFitsStore(/*width=*/16, /*totalHeight=*/32, /*capacityWidth=*/16,
-                               /*capacityHeight=*/32));
-    EXPECT_TRUE(atlasFitsStore(/*width=*/8, /*totalHeight=*/17, /*capacityWidth=*/16,
-                               /*capacityHeight=*/32));
-}
-
-TEST(AtlasStoreGeometry, AWiderAtlasIsNotWrittenInPlace) {
-    EXPECT_FALSE(atlasFitsStore(/*width=*/17, /*totalHeight=*/32, /*capacityWidth=*/16,
-                                /*capacityHeight=*/32))
-        << "a wider atlas changes the stride of every row";
-}
-
-TEST(AtlasStoreGeometry, AnAtlasPastTheStoresRowsIsNotWrittenInPlace) {
-    EXPECT_FALSE(atlasFitsStore(/*width=*/16, /*totalHeight=*/33, /*capacityWidth=*/16,
-                                /*capacityHeight=*/32));
-}
-
-TEST(AtlasStoreGeometry, AnAtlasOccupiesItsOwnRowsFromTheLeftEdge) {
-    EXPECT_EQ(atlasRect(/*top=*/48, /*width=*/32, /*height=*/16),
-              (StoreRect{.x = 0, .y = 48, .w = 32, .h = 16}));
+TEST(AtlasStoreGeometry, AnAtlasOccupiesItsOwnTexelsFromItsPlacement) {
+    EXPECT_EQ(atlasRect(/*x=*/8, /*y=*/48, /*width=*/32, /*height=*/16),
+              (StoreRect{.x = 8, .y = 48, .w = 32, .h = 16}));
 }
 
 TEST(AtlasStoreGeometry, AnAtlasRegionIsTheSingleTexelInItsOwnColumn) {
@@ -137,14 +118,15 @@ inline constexpr bool kDeviceOptional = true;
 inline constexpr bool kDeviceOptional = false;
 #endif
 
-// A 16×16 sheet of palette indices, distinct per `seed`, so a sheet written to the wrong rows renders as
-// another sheet's art rather than as something plausible.
+// A sheet of palette indices, distinct per `seed` and distinct from one 8×8 cell to the next, so a sheet
+// read from the wrong texels — another sheet's, or its own a cell over — renders as different art rather
+// than as something plausible.
 std::vector<std::uint8_t> sheetPixels(int width, int height, int seed) {
     std::vector<std::uint8_t> px(static_cast<std::size_t>(width) * static_cast<std::size_t>(height));
     for (int y = 0; y < height; ++y)
         for (int x = 0; x < width; ++x)
             px[static_cast<std::size_t>(y) * static_cast<std::size_t>(width) + static_cast<std::size_t>(x)] =
-                static_cast<std::uint8_t>((x + y * 3 + seed * 2) % 4);
+                static_cast<std::uint8_t>((x + y * 3 + (x / 8) * 5 + (y / 8) * 7 + seed) % 4);
     return px;
 }
 
@@ -196,7 +178,7 @@ std::vector<Rgba8> renderSheet(Renderer& r, AtlasId atlas, PaletteId palette) {
     if (px.empty()) return ::testing::AssertionFailure() << "captured nothing";
     for (const Rgba8 c : px)
         if (c.r != px[0].r || c.g != px[0].g || c.b != px[0].b) return ::testing::AssertionSuccess();
-    return ::testing::AssertionFailure() << "the capture is one flat colour — the sheet did not draw";
+    return ::testing::AssertionFailure() << "the capture is one flat color — the sheet did not draw";
 }
 
 class StoreUploadTest : public ::testing::Test {
@@ -294,9 +276,9 @@ TEST_F(StoreUploadTest, APaletteCrossingTheRowEdgeRendersAsARewrittenOneDoes) {
     EXPECT_TRUE(sameImage(fromAppend, fromRewrite));
 }
 
-// An atlas appended over its own rows renders exactly as it does after the store has been restacked and
-// every atlas written again. The second sheet is the subject: appended in the first renderer, rewritten by
-// the third upload's growth in the second.
+// A sheet written into the store's free room renders exactly as it does after the sheets have been laid out
+// afresh and every one written again. The second sheet is the subject: written in place in the first
+// renderer, written again by the third upload's growth in the second.
 TEST_F(StoreUploadTest, AnAppendedAtlasRendersAsARewrittenOneDoes) {
     const std::vector<std::uint8_t> first  = sheetPixels(16, 16, /*seed=*/1);
     const std::vector<std::uint8_t> second = sheetPixels(16, 16, /*seed=*/2);
@@ -311,7 +293,7 @@ TEST_F(StoreUploadTest, AnAppendedAtlasRendersAsARewrittenOneDoes) {
     Renderer      rewritten{device_, /*window=*/nullptr, ViewportResolution{kViewW, kViewH}};
     (void)rewritten.uploadAtlas(first.data(), 16, 16);
     const AtlasId subjectB = rewritten.uploadAtlas(second.data(), 16, 16).atlasId;
-    (void)rewritten.uploadAtlas(third.data(), 16, 16);  // past the store's rows → every atlas written again
+    (void)rewritten.uploadAtlas(third.data(), 16, 16);  // no room for it → every sheet written again
     const PaletteId paletteB = rewritten.uploadPalette(std::span<const Rgba8>(paletteColors(0)));
     const std::vector<Rgba8> fromRewrite = renderSheet(rewritten, subjectB, paletteB);
 
@@ -320,22 +302,22 @@ TEST_F(StoreUploadTest, AnAppendedAtlasRendersAsARewrittenOneDoes) {
     EXPECT_TRUE(sameImage(fromAppend, fromRewrite));
 }
 
-// The same claim where the store already holds several sheets: the sixth is appended onto the end of five
-// and must render as it does once a seventh forces every one of them to be written again.
+// The same claim where the store already holds several sheets: the eighth is written into the room left
+// beside seven and must render as it does once a ninth forces every one of them to be written again.
 TEST_F(StoreUploadTest, AnAtlasAppendedOntoSeveralRendersAsARewrittenOneDoes) {
     std::vector<std::vector<std::uint8_t>> sheets;
-    for (int i = 0; i < 7; ++i) sheets.push_back(sheetPixels(16, 16, i + 1));
+    for (int i = 0; i < 9; ++i) sheets.push_back(sheetPixels(16, 16, i + 1));
 
     Renderer appended{device_, /*window=*/nullptr, ViewportResolution{kViewW, kViewH}};
     AtlasId  subjectA{};
-    for (int i = 0; i < 6; ++i) subjectA = appended.uploadAtlas(sheets[static_cast<std::size_t>(i)].data(), 16, 16).atlasId;
+    for (int i = 0; i < 8; ++i) subjectA = appended.uploadAtlas(sheets[static_cast<std::size_t>(i)].data(), 16, 16).atlasId;
     const PaletteId          paletteA   = appended.uploadPalette(std::span<const Rgba8>(paletteColors(1)));
     const std::vector<Rgba8> fromAppend = renderSheet(appended, subjectA, paletteA);
 
     Renderer rewritten{device_, /*window=*/nullptr, ViewportResolution{kViewW, kViewH}};
     AtlasId  subjectB{};
-    for (int i = 0; i < 6; ++i) subjectB = rewritten.uploadAtlas(sheets[static_cast<std::size_t>(i)].data(), 16, 16).atlasId;
-    (void)rewritten.uploadAtlas(sheets[6].data(), 16, 16);  // past the store's rows → all written again
+    for (int i = 0; i < 8; ++i) subjectB = rewritten.uploadAtlas(sheets[static_cast<std::size_t>(i)].data(), 16, 16).atlasId;
+    (void)rewritten.uploadAtlas(sheets[8].data(), 16, 16);  // no room for it → every sheet written again
     const PaletteId          paletteB    = rewritten.uploadPalette(std::span<const Rgba8>(paletteColors(1)));
     const std::vector<Rgba8> fromRewrite = renderSheet(rewritten, subjectB, paletteB);
 
@@ -344,8 +326,8 @@ TEST_F(StoreUploadTest, AnAtlasAppendedOntoSeveralRendersAsARewrittenOneDoes) {
     EXPECT_TRUE(sameImage(fromAppend, fromRewrite));
 }
 
-// Sheets stack in upload order, so a sheet uploaded later begins where the ones before it end and cannot
-// move them. The first sheet renders the same before and after another is appended beside it.
+// A sheet the store's free room holds is written there and the ones before it stay where they are. The
+// first sheet renders the same before and after another is written beside it.
 TEST_F(StoreUploadTest, AppendingASheetLeavesTheOnesBeforeItWhereTheyAre) {
     const std::vector<std::uint8_t> first  = sheetPixels(16, 16, /*seed=*/1);
     const std::vector<std::uint8_t> second = sheetPixels(16, 16, /*seed=*/2);
@@ -362,9 +344,9 @@ TEST_F(StoreUploadTest, AppendingASheetLeavesTheOnesBeforeItWhereTheyAre) {
     EXPECT_TRUE(sameImage(before, after));
 }
 
-// A wider sheet restacks the store — every row's stride changes and the whole store is written again —
-// and the sheets already in it come back reading exactly as they did.
-TEST_F(StoreUploadTest, AWiderSheetRestacksTheStoreWithoutDisturbingWhatIsInIt) {
+// A sheet the store's free room does not hold lays the sheets out afresh — a new texture, every sheet
+// written again — and the sheets already in it come back reading exactly as they did.
+TEST_F(StoreUploadTest, ASheetWithNoRoomLaysTheStoreOutAfreshWithoutDisturbingWhatIsInIt) {
     const std::vector<std::uint8_t> first  = sheetPixels(16, 16, /*seed=*/1);
     const std::vector<std::uint8_t> second = sheetPixels(16, 16, /*seed=*/2);
     const std::vector<std::uint8_t> wider  = sheetPixels(32, 16, /*seed=*/4);

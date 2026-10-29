@@ -132,10 +132,10 @@ Its bindings:
 
 | Resource | Register | Kind | Notes |
 |---|---|---|---|
-| flat atlas store | `t0, space2` | read-only storage texture | `R32_UINT`, integer `Load`; every uploaded sheet stacked in one store |
+| flat atlas store | `t0, space2` | read-only storage texture | `R32_UINT`, integer `Load`; every uploaded sheet laid out on shelves in one store |
 | tilemap cells | `t1, space2` | read-only storage texture | `R32G32_UINT`, integer `Load`; the `packTileCell` two-word layout |
 | palette store | `t2, space2` | read-only storage texture | a UNORM color texture `Load`ed as `float4`; FLAT colors wrapped W wide → texel `(flat%W, flat/W)` |
-| atlas-region table | `t3, space2` | read-only storage texture | `R32G32B32A32_UINT`, one texel per `AtlasId` → `(storeY, cols, transpMaskLo, transpMaskHi)` |
+| atlas-region table | `t3, space2` | read-only storage texture | `R32G32B32A32_UINT`, one texel per `AtlasId` → `(place, cols, transpMaskLo, transpMaskHi)`; `place` carries the sheet's column in its low 16 bits and its row in the high 16 |
 | `TileUniforms` | `b0, space3` | uniform buffer | scroll, sizes, alpha, palette-store width, plus the inverse transform rows + a control word |
 
 `num_samplers = 0`, `num_storage_textures = 4` for the tile fragment shader; they bind in one
@@ -176,7 +176,7 @@ store. All integer `Load`, no sampler.
 | sprite records | `t0, space0` | read-only storage buffer (vertex) | `StructuredBuffer<GpuSprite>`; one 64-byte record per sprite, indexed by `SV_InstanceID` |
 | flat atlas store | `t0, space2` | read-only storage texture (fragment) | `R32_UINT`, integer `Load`; one palette index per pixel |
 | palette store | `t1, space2` | read-only storage texture (fragment) | a UNORM color texture `Load`ed as `float4`; FLAT colors wrapped W wide → texel `(flat%W, flat/W)` |
-| atlas-region table | `t2, space2` | read-only storage texture (fragment) | `R32G32B32A32_UINT`, one texel per `AtlasId` → `(storeY, cols, transpMaskLo, transpMaskHi)` |
+| atlas-region table | `t2, space2` | read-only storage texture (fragment) | `R32G32B32A32_UINT`, one texel per `AtlasId` → `(place, cols, transpMaskLo, transpMaskHi)`; `place` carries the sheet's column in its low 16 bits and its row in the high 16 |
 | `SpriteFragUniforms` | `b0, space3` | uniform buffer (fragment) | tile px + layer alpha + palette-store width; 16 bytes |
 
 Vertex stage: `num_storage_buffers = 1`, `num_uniform_buffers = 0`. Fragment stage: `num_samplers = 0`,

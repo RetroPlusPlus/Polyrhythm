@@ -1791,6 +1791,8 @@ if(RETROPP_BUILD_TESTS)
         tests/frame_fingerprint_test.cpp
         tests/compose_skip_test.cpp
         tests/store_upload_growth_test.cpp
+        tests/atlas_pack_test.cpp
+        tests/atlas_release_test.cpp
         tests/palette_update_test.cpp
         tests/sprite_instancing_test.cpp
         tests/color_parity_layer_test.cpp
@@ -2611,6 +2613,19 @@ if(RETROPP_BUILD_EXAMPLES)
     add_test(NAME ImageLayerExample.Verify
              COMMAND retropp-image_layer-demo --verify)
     set_tests_properties(ImageLayerExample.Verify PROPERTIES SKIP_RETURN_CODE 77)
+
+    # ── Atlas-release demo — four scenes of four sheets each, shown as a 2×2 of tile layers; SPACE goes to
+    # the next scene, releasing the last scene's sheets and uploading its own, and H holds them instead, so
+    # the status line shows the store's size standing still under release and growing under hold. CI runs
+    # its --verify on every platform: headless on a GPU device with no window, it requires the store's size
+    # to hold through the scenes under release and to grow under hold, a released sheet to draw nothing, a
+    # handle minted again to draw its new sheet, ten thousand uploads and releases of one sheet to leave the
+    # store its size, and a sheet taller than the store can be to throw. On Windows on ARM, whose runner has
+    # no GPU device, it exits 77 and the case counts as skipped.
+    retropp_add_example(atlas_release)
+    add_test(NAME AtlasReleaseExample.Verify
+             COMMAND retropp-atlas_release-demo --verify)
+    set_tests_properties(AtlasReleaseExample.Verify PROPERTIES SKIP_RETURN_CODE 77)
 
     # ── Cracked-wall demo — a brick wall over a drifting background, colored through three 16-bit RGBA
     # palette images (loadPaletteImage). The holes are the palette entries' own alpha: an alpha-0 entry

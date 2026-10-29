@@ -4,8 +4,9 @@
 
 // Where appended store content lands, and how much room a store texture is given.
 //
-// The renderer's palette and atlas stores each hold everything a game has uploaded so far, so an upload
-// appends to the end, a palette's colors change over its own entries, and each writes only its own run.
+// The renderer's palette and atlas stores each hold everything a game has uploaded so far: a palette's colors
+// append to the end or take a released extent, a palette's colors change over its own entries, a sheet lands
+// where the shelves put it, and each writes only its own run.
 // These decide the destination rectangle for that write, and how large a store texture is allocated when
 // it has to be recreated. Engine-internal, and pure: a wrong rectangle writes correct bytes to the wrong
 // place without failing, so the arithmetic is decided in one place and exercised on its own.
@@ -77,23 +78,15 @@ inline constexpr int kPaletteStoreWidth = 16384;
     return where;
 }
 
-// The rows an atlas of `width` × `height` occupies once appended at row `top`: an atlas is written
-// left-aligned over its own rows, and every texel a shader resolves for that sheet is inside them.
-[[nodiscard]] constexpr StoreRect atlasRect(int top, int width, int height) noexcept {
-    return StoreRect{.x = 0, .y = top, .w = width, .h = height};
+// The texels a sheet of `width` × `height` occupies from its placement at (`x`, `y`): every texel a shader
+// resolves for that sheet is inside them.
+[[nodiscard]] constexpr StoreRect atlasRect(int x, int y, int width, int height) noexcept {
+    return StoreRect{.x = x, .y = y, .w = width, .h = height};
 }
 
 // The one texel atlas `index` occupies in the region table, which is a single row of texels.
 [[nodiscard]] constexpr StoreRect atlasRegionTexel(int index) noexcept {
     return StoreRect{.x = index, .y = 0, .w = 1, .h = 1};
-}
-
-// Whether an atlas of `width`, stacked to bring the store's used height to `totalHeight`, fits the
-// texture already allocated. A wider atlas changes the stride of every row, so it is written by
-// recreating the store rather than by appending.
-[[nodiscard]] constexpr bool atlasFitsStore(int width, int totalHeight, int capacityWidth,
-                                            int capacityHeight) noexcept {
-    return width <= capacityWidth && totalHeight <= capacityHeight;
 }
 
 // The room to allocate for a store that has to hold `needed`: twice that, so a run of appends recreates
