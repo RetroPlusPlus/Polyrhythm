@@ -2431,14 +2431,16 @@ void Renderer::releaseAtlases() {
     atlasStore_  = nullptr;
     if (atlasRegionStore_) SDL_ReleaseGPUTexture(device_, atlasRegionStore_);
     atlasRegionStore_ = nullptr;
-    atlasStoreW_ = 0;
-    atlasStoreH_ = 0;
     atlasCapW_   = 0;
     atlasCapH_   = 0;
     atlasRegionCap_ = 0;
     pendingAtlasWrites_.clear();
     pendingRegionWrites_.clear();
+    atlasShelves_ = detail::AtlasShelves{};
+    freeAtlasIds_.clear();
     atlases_.clear();
+    renderStats_.atlasStoreWidth  = atlasCapW_;
+    renderStats_.atlasStoreHeight = atlasCapH_;
 }
 
 void Renderer::releaseTilemaps() {
@@ -2899,46 +2901,72 @@ SDL_GPUGraphicsPipeline* Renderer::buildSpriteBelowStagePipeline(const ShaderVar
 AtlasId Renderer::uploadAtlas32(const std::uint32_t* indices, int width, int height, TransparentIndices transparent) {
     if (width <= 0 || height <= 0) fail("uploadAtlas: non-positive dimensions");
 
-    // Append this atlas to the flat atlas store (mirroring uploadPalette). The store stacks
-    // every atlas vertically so a SINGLE map layer can mix tiles from several sheets — TileCell::
-    // atlasSelect picks the region. Keep a CPU mirror of each atlas's pixels so the store can be
-    // rewritten when a wider atlas re-lays it out.
+    // Append this atlas to the atlas store (mirroring uploadPalette). The store lays every sheet out on
+    // shelves so a SINGLE map layer can mix tiles from several sheets — TileCell::atlasSelect picks the
+    // region. Keep a CPU mirror of each atlas's pixels so the store can be rewritten when the sheets are
+    // laid out afresh.
     AtlasEntry entry;
     entry.data.assign(indices, indices + static_cast<std::size_t>(width) * static_cast<std::size_t>(height));
     entry.width       = width;
     entry.height      = height;
     entry.transparent = transparent;
-    atlases_.push_back(std::move(entry));
-    const AtlasId id = static_cast<AtlasId>(atlases_.size() - 1);
-
-    appendAtlasToStore(id);
+    const bool reminted = !freeAtlasIds_.empty();
+    // The region table addresses at most kAtlasStoreSide sheets, so the one past that is refused before
+    // anything is minted, placed or written.
+    if (!reminted && atlases_.size() >= static_cast<std::size_t>(detail::kAtlasStoreSide)) {
+        throw std::runtime_error("uploadAtlas: the store holds at most " +
+                                 std::to_string(detail::kAtlasStoreSide) + " sheets at once");
+    }
+    AtlasId    id;
+    if (reminted) {
+        id = freeAtlasIds_.back();
+        freeAtlasIds_.pop_back();
+        atlases_[static_cast<std::size_t>(id)] = std::move(entry);  // the entry released keeps its index
+    } else {
+        atlases_.push_back(std::move(entry));
+        id = static_cast<AtlasId>(atlases_.size() - 1);
+    }
+    try {
+        appendAtlasToStore(id);
+    } catch (...) {
+        // Nothing minted: a handle taken from the free list goes back on it, and a new one is not kept.
+        if (reminted) {
+            AtlasEntry& a = atlases_[static_cast<std::size_t>(id)];
+            a          = AtlasEntry{};
+            a.released = true;
+            freeAtlasIds_.push_back(id);
+        } else {
+            atlases_.pop_back();
+        }
+        throw;
+    }
     return id;
 }
 
 Renderer::AtlasRegionWords Renderer::atlasRegionWords(const AtlasEntry& atlas) {
     return AtlasRegionWords{
-        .storeY        = static_cast<std::uint32_t>(atlas.storeY),
+        .place         = static_cast<std::uint32_t>(atlas.storeX) | (static_cast<std::uint32_t>(atlas.storeY) << 16),
         .cols          = static_cast<std::uint32_t>(atlas.width / kTilePx),
         .transparentLo = static_cast<std::uint32_t>(atlas.transparent.mask & 0xFFFFFFFFu),
         .transparentHi = static_cast<std::uint32_t>(atlas.transparent.mask >> 32)};
 }
 
 void Renderer::appendAtlasToStore(AtlasId id) {
-    AtlasEntry& a       = atlases_[static_cast<std::size_t>(id)];
-    const int   top     = atlasStoreH_;       // the rows the atlases before it occupy
-    const int   stacked = top + a.height;
-    // An atlas wider than the store changes the stride of every row, and one past the allocated height
-    // has nowhere to go: both restack the store. Anything else is written over its own rows.
-    if (!atlasStore_ || !detail::atlasFitsStore(a.width, stacked, atlasCapW_, atlasCapH_)) {
+    AtlasEntry& a = atlases_[static_cast<std::size_t>(id)];
+    // A sheet the shelves hold is written over its own texels; one they do not is answered by laying every
+    // sheet out afresh.
+    const std::optional<detail::AtlasPlacement> at =
+        atlasStore_ ? atlasShelves_.place(a.width, a.height) : std::nullopt;
+    if (!at) {
         rebuildAtlasStore();
         return;
     }
-    a.storeY     = top;
-    atlasStoreH_ = stacked;
+    a.storeX = at->x;
+    a.storeY = at->y;
 
     pendingAtlasWrites_.push_back(id);
 
-    // Stacking a sheet leaves every earlier sheet where it was, so each texel already in the table still
+    // Placing a sheet leaves every earlier sheet where it was, so each texel already in the table still
     // describes its atlas and only the new one is written.
     const int index = static_cast<int>(id);
     if (atlasRegionStore_ && index < atlasRegionCap_)
@@ -2967,7 +2995,7 @@ void Renderer::flushStoreWrites(SDL_GPUCommandBuffer* cmd, SDL_GPUCopyPass*& cop
     for (const AtlasId id : pendingAtlasWrites_) {
         const AtlasEntry& a = atlases_[static_cast<std::size_t>(id)];
         scratch.transfers.push_back(uploadStoreRect(
-            device_, copy, atlasStore_, detail::atlasRect(a.storeY, a.width, a.height), a.data.data(),
+            device_, copy, atlasStore_, detail::atlasRect(a.storeX, a.storeY, a.width, a.height), a.data.data(),
             sizeof(std::uint32_t), "atlas append upload failed"));
     }
     for (const int index : pendingRegionWrites_) {
@@ -2984,23 +3012,68 @@ void Renderer::flushStoreWrites(SDL_GPUCommandBuffer* cmd, SDL_GPUCopyPass*& cop
 }
 
 void Renderer::rebuildAtlasStore() {
-    ++storeGeneration_;  // a new store texture the compose binds — force the next frame to recompose
-    pendingAtlasWrites_.clear();  // every atlas is written below
     if (atlases_.empty()) return;
 
-    // Stack vertically: store width = the widest atlas, height = Σ heights; assign each atlas its top row.
-    int W = 0, H = 0;
-    for (AtlasEntry& a : atlases_) {
-        W = std::max(W, a.width);
-        a.storeY = H;
-        H += a.height;
+    // Every live sheet, laid out afresh: at the store's current size when that holds them — which reclaims
+    // the room released sheets held — else at the next size up, until one holds them or no size does.
+    std::vector<detail::AtlasSheetSize> sizes(atlases_.size());
+    for (std::size_t i = 0; i < atlases_.size(); ++i)
+        if (!atlases_[i].released)
+            sizes[i] = detail::AtlasSheetSize{.width = atlases_[i].width, .height = atlases_[i].height};
+    int widest = 0, tallest = 0;
+    for (const detail::AtlasSheetSize& s : sizes) {
+        widest  = std::max(widest, s.width);
+        tallest = std::max(tallest, s.height);
     }
-    atlasStoreW_ = W;
-    atlasStoreH_ = H;
-    // Allocate rows past the ones the atlases occupy, so the sheets uploaded next are written over their
-    // own rows instead of bringing every atlas back through here.
-    atlasCapW_ = W;
-    atlasCapH_ = detail::grownCapacity(H);
+    detail::AtlasStoreSize size = atlasStore_ ? detail::AtlasStoreSize{.width = atlasCapW_, .height = atlasCapH_}
+                                              : detail::firstAtlasStore(widest, tallest);
+    bool grew = !atlasStore_;  // a first store is sized the way a grown one is
+    std::optional<std::vector<detail::AtlasPlacement>> placed;
+    for (;;) {
+        placed = detail::packAtlasSheets(sizes, size);
+        if (placed) break;
+        const std::optional<detail::AtlasStoreSize> next = detail::grownAtlasStore(size);
+        if (!next) {
+            // A packing refusal, not a GPU failure: thrown as it is, with no SDL error behind it.
+            throw std::runtime_error(
+                "uploadAtlas: the sheets do not fit the atlas store at its largest size (" +
+                std::to_string(detail::kAtlasStoreSide) + "×" + std::to_string(detail::kAtlasStoreSide) +
+                "); the widest is " + std::to_string(widest) + " and the tallest " + std::to_string(tallest));
+        }
+        size = *next;
+        grew = true;
+    }
+    // A store that grows is one step larger than its sheets need, so the sheets uploaded next are written in
+    // place and the store is not laid out again at every upload; a repack at the current size keeps the
+    // size. The shelves at a larger size hold whatever the smaller held, so this pack succeeds.
+    if (grew) {
+        if (const std::optional<detail::AtlasStoreSize> roomy = detail::grownAtlasStore(size)) {
+            size   = *roomy;
+            placed = detail::packAtlasSheets(sizes, size);
+        }
+    }
+
+    ++storeGeneration_;  // a new layout the compose binds — force the next frame to recompose
+    pendingAtlasWrites_.clear();  // every atlas is written below
+    for (std::size_t i = 0; i < atlases_.size(); ++i) {
+        atlases_[i].storeX = (*placed)[i].x;
+        atlases_[i].storeY = (*placed)[i].y;
+    }
+    // The shelves take the layout the pack made — every live sheet placed again in the pack's own order,
+    // tallest first and input order on a tie — so the next sheet appends where the pack left off.
+    atlasShelves_ = detail::AtlasShelves(size.width, size.height);
+    std::vector<std::size_t> order;
+    for (std::size_t i = 0; i < atlases_.size(); ++i)
+        if (!atlases_[i].released) order.push_back(i);
+    std::stable_sort(order.begin(), order.end(), [&](std::size_t a, std::size_t b) {
+        return atlases_[a].height > atlases_[b].height;
+    });
+    for (const std::size_t i : order) (void)atlasShelves_.place(atlases_[i].width, atlases_[i].height);
+
+    const int W = size.width;
+    const int H = size.height;
+    atlasCapW_  = W;
+    atlasCapH_  = H;
 
     if (atlasStore_) SDL_ReleaseGPUTexture(device_, atlasStore_);
     SDL_GPUTextureCreateInfo texInfo{};
@@ -3015,13 +3088,15 @@ void Renderer::rebuildAtlasStore() {
     atlasStore_ = SDL_CreateGPUTexture(device_, &texInfo);
     if (!atlasStore_) fail("SDL_CreateGPUTexture (atlas store) failed");
 
-    // Build a W×H buffer: each atlas copied left-aligned into its rows, the rest zero (index 0).
+    // Build a W×H buffer: each live atlas copied at its placement, the rest zero (index 0).
     std::vector<std::uint32_t> upload(static_cast<std::size_t>(W) * static_cast<std::size_t>(H), 0u);
     for (const AtlasEntry& a : atlases_) {
+        if (a.released) continue;
         for (int y = 0; y < a.height; ++y) {
             std::copy_n(a.data.data() + static_cast<std::size_t>(y) * static_cast<std::size_t>(a.width),
                         static_cast<std::size_t>(a.width),
-                        upload.data() + static_cast<std::size_t>(a.storeY + y) * static_cast<std::size_t>(W));
+                        upload.data() + static_cast<std::size_t>(a.storeY + y) * static_cast<std::size_t>(W) +
+                            static_cast<std::size_t>(a.storeX));
         }
     }
 
@@ -3056,11 +3131,14 @@ void Renderer::rebuildAtlasStore() {
     SDL_ReleaseGPUTransferBuffer(device_, transfer);
 
     rebuildAtlasRegions();
+    renderStats_.atlasStoreWidth  = atlasCapW_;
+    renderStats_.atlasStoreHeight = atlasCapH_;
 }
 
-// Global atlas-region table: one R32G32B32A32_UINT texel per AtlasId = (storeY, cols,
-// transparentMaskLo, transparentMaskHi). Both frag stages Load it by a cell's / sprite's atlas handle to
-// resolve that sheet's placement (storeY) and stride (cols) in the flat store, and to test structural
+// Global atlas-region table: one R32G32B32A32_UINT texel per AtlasId = (place, cols, transparentMaskLo,
+// transparentMaskHi) — `place` is the sheet's column in its low 16 bits and its row in the high 16. Both
+// frag stages Load it by a cell's / sprite's atlas handle to resolve that sheet's placement (place) and
+// stride (cols) in the store, and to test structural
 // transparency: the sheet's transparent-index set is a 64-bit bitmask split across .z (indices 0–31) and
 // .w (indices 32–63), bit i set => index i is a hole. The empty set (None) is mask 0 → both words 0 →
 // nothing discarded. The table is allocated with texels past the atlases that have one, so the sheets
@@ -3070,7 +3148,7 @@ void Renderer::rebuildAtlasRegions() {
     pendingRegionWrites_.clear();  // every texel is written below
     const int n = static_cast<int>(atlases_.size());
     if (n == 0) return;
-    const int capacity = detail::grownCapacity(n);
+    const int capacity = std::min(detail::grownCapacity(n), detail::kAtlasStoreSide);
 
     static_assert(sizeof(AtlasRegionWords) == 4 * sizeof(std::uint32_t),
                   "the region table's texel is four R32_UINT words, copied as they are laid out");
@@ -3101,6 +3179,51 @@ void Renderer::rebuildAtlasRegions() {
     SDL_EndGPUCopyPass(copy);
     SDL_SubmitGPUCommandBuffer(cmd);
     SDL_ReleaseGPUTransferBuffer(device_, transfer);
+}
+
+Renderer::AtlasEntry& Renderer::atlasToRelease(AtlasId id) {
+    const std::size_t index = static_cast<std::size_t>(id);
+    if (index >= atlases_.size() || atlases_[index].released) {
+        throw std::invalid_argument("releaseAtlas: no uploaded sheet has this AtlasId");
+    }
+    return atlases_[index];
+}
+
+void Renderer::releaseAtlas(AtlasId id) {
+    AtlasEntry& a = atlasToRelease(id);  // refused before anything is changed
+    // Its room is free for the next sheet that fits it, so a sheet uploaded and released over and over lands
+    // in the same texels and the store is not laid out again.
+    atlasShelves_.release(detail::AtlasPlacement{.x = a.storeX, .y = a.storeY}, a.width, a.height);
+    a          = AtlasEntry{};
+    a.released = true;
+    freeAtlasIds_.push_back(id);
+    // A write of the sheet still waiting for the next frame has nothing to write now.
+    pendingAtlasWrites_.erase(std::remove(pendingAtlasWrites_.begin(), pendingAtlasWrites_.end(), id),
+                              pendingAtlasWrites_.end());
+    // Its row of the table becomes the row of nothing: no tile columns, which both frag stages discard on.
+    const int index = static_cast<int>(id);
+    if (atlasRegionStore_ && index < atlasRegionCap_)
+        pendingRegionWrites_.push_back(index);
+    else
+        rebuildAtlasRegions();
+    ++storeGeneration_;  // a settled frame naming the sheet draws nothing there now — force a recompose
+}
+
+void Renderer::releasePalette(PaletteId id) {
+    const std::size_t first = static_cast<std::size_t>(id);
+    const auto        at    = std::lower_bound(
+        paletteExtents_.begin(), paletteExtents_.end(), first,
+        [](const PaletteExtent& e, std::size_t f) { return e.first < f; });
+    if (at == paletteExtents_.end() || at->first != first) {
+        throw std::invalid_argument("releasePalette: no uploaded palette begins at this PaletteId");
+    }
+    const PaletteExtent freed = *at;
+    paletteExtents_.erase(at);
+    if (freed.first + freed.count == paletteData_.size()) {
+        paletteData_.resize(freed.first);  // the last extent: the mirror ends where it begins
+        return;
+    }
+    freePaletteExtents_.push_back(freed);
 }
 
 CurveMaskId Renderer::bakeCurveMask(const Curve& boundary, float padding, int maxResolution) {
@@ -3413,22 +3536,53 @@ ImageId Renderer::loadImageFromMemory(std::span<const std::uint8_t> bytes) {
     return uploadDecodedImage(loadPngFromMemory(bytes));
 }
 
+std::size_t Renderer::paletteHome(std::size_t count) {
+    for (auto it = freePaletteExtents_.begin(); it != freePaletteExtents_.end(); ++it) {
+        if (it->count < count) continue;
+        const std::size_t first = it->first;
+        if (it->count == count) {
+            freePaletteExtents_.erase(it);
+        } else {
+            it->first += count;
+            it->count -= count;
+        }
+        const auto at = std::lower_bound(
+            paletteExtents_.begin(), paletteExtents_.end(), first,
+            [](const PaletteExtent& e, std::size_t f) { return e.first < f; });
+        paletteExtents_.insert(at, PaletteExtent{.first = first, .count = count});
+        return first;
+    }
+    const std::size_t first = paletteData_.size();
+    paletteData_.resize(first + count);
+    paletteExtents_.push_back(PaletteExtent{.first = first, .count = count});
+    return first;
+}
+
 PaletteId Renderer::uploadPalette(std::span<const Rgba8> colors) {
     // The store keeps 16-bit channels; an 8-bit entry widens losslessly (×257) on the way in.
-    const std::size_t first = paletteData_.size();
-    paletteData_.reserve(first + colors.size());
-    for (const Rgba8 c : colors) paletteData_.push_back(widen(c));
+    if (colors.empty()) {
+        // Occupies nothing and is not recorded; the store exists after it, as after any upload.
+        writePaletteColors(paletteData_.size(), 0);
+        return static_cast<PaletteId>(paletteData_.size());
+    }
+    const std::size_t first = paletteHome(colors.size());
+    std::transform(colors.begin(), colors.end(),
+                   paletteData_.begin() + static_cast<std::ptrdiff_t>(first),
+                   [](const Rgba8 c) { return widen(c); });
     writePaletteColors(first, colors.size());
-    if (!colors.empty()) paletteExtents_.push_back(PaletteExtent{.first = first, .count = colors.size()});
     return static_cast<PaletteId>(first);
 }
 
 PaletteId Renderer::uploadPalette(std::span<const Rgba16> colors) {
-    // A 16-bit color source appends direct — no widening.
-    const std::size_t first = paletteData_.size();
-    paletteData_.insert(paletteData_.end(), colors.begin(), colors.end());
+    // A 16-bit color source is written direct — no widening.
+    if (colors.empty()) {
+        // Occupies nothing and is not recorded; the store exists after it, as after any upload.
+        writePaletteColors(paletteData_.size(), 0);
+        return static_cast<PaletteId>(paletteData_.size());
+    }
+    const std::size_t first = paletteHome(colors.size());
+    std::copy(colors.begin(), colors.end(), paletteData_.begin() + static_cast<std::ptrdiff_t>(first));
     writePaletteColors(first, colors.size());
-    if (!colors.empty()) paletteExtents_.push_back(PaletteExtent{.first = first, .count = colors.size()});
     return static_cast<PaletteId>(first);
 }
 

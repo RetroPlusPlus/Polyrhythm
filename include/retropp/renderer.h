@@ -17,6 +17,7 @@
 
 #include "retropp/atlas_manifest.h"  // AtlasManifest (loadAtlas's return type; re-exported here)
 #include "retropp/asset_policy.h"  // AssetPolicy (loadAtlas's optional embed/load override)
+#include "retropp/atlas_pack.h"  // detail::AtlasShelves (where the next sheet lands in the store)
 #include "retropp/draw_state.h"
 #include "retropp/image.h"        // AssetSlot, ContentKind, ReadOrder, sliceLayout
 #include "retropp/interpolation.h"  // Interpolator (the per-id retained mirror)
@@ -102,8 +103,9 @@ public:
     // pixel, stored as R32_UINT so a pixel can address an arbitrary palette — NOT RGBA; color comes
     // from a palette at render time. 8-bit and 16-bit source indices are widened into the 32-bit
     // texel; a 32-bit source uploads directly. The renderer owns the GPU texture; the handle stays
-    // valid until the renderer is destroyed (no eviction here). Throws std::runtime_error on a GPU
-    // failure.
+    // valid until releaseAtlas retires it or the renderer is destroyed. Throws std::runtime_error on a GPU
+    // failure, on a sheet the store cannot hold at its largest size (16384 × 16384), and on a 16385th
+    // sheet held at once, with nothing minted.
     //
     // Every upload declares the sheet's CARVE — the meaning slot resolution (atlasSlot, an
     // AnimationFrame's tile()/size()) reads the sheet through. The three-argument form carves Single:
@@ -179,14 +181,22 @@ public:
                                       int count = 0, TransparentIndices transparent = TransparentIndices::None,
                                       int framesPerAnimation = 0);
 
+    // Release an uploaded sheet. Its room in the store is reclaimed, its handle is retired, and a cell or
+    // sprite that still names it draws nothing — what a handle nobody minted draws. The next upload may take
+    // the retired handle, so a game that uploads what a scene needs and releases it when the scene ends holds
+    // the scene's sheets and no more. Throws std::invalid_argument when `id` names no uploaded sheet, a
+    // released one included.
+    void releaseAtlas(AtlasId id);
+
     // Upload one palette's colors once (amortized — on change), returning the handle the draw
     // state's palette set references. ARBITRARY entry count — no cap: the colors are
-    // appended to a flat, contiguous renderer-owned palette store (the returned PaletteId IS this
-    // palette's flat offset into it), and the store texture grows to fit. Valid until the renderer
-    // is destroyed (no eviction). Throws std::runtime_error on a GPU failure.
+    // written to a flat, contiguous renderer-owned palette store — into the entries a released palette
+    // held when they fit, else at its end (the returned PaletteId IS this palette's flat offset into it),
+    // and the store texture grows to fit. Valid until releasePalette frees it or the renderer is destroyed.
+    // Throws std::runtime_error on a GPU failure.
     //
     // The store keeps 16-bit-per-channel color. The Rgba8 overload widens each entry losslessly
-    // (×257, so 255 → 65535); the Rgba16 overload (for a 16-bit color source) appends direct. Both
+    // (×257, so 255 → 65535); the Rgba16 overload (for a 16-bit color source) is written direct. Both
     // produce identical output for an 8-bit palette — the shader samples the UNORM store as float4
     // either way.
     PaletteId uploadPalette(std::span<const Rgba8> colors);
@@ -205,6 +215,12 @@ public:
     // a time, is this call once per change.
     void updatePalette(PaletteId id, std::span<const Rgba8> colors);
     void updatePalette(PaletteId id, std::span<const Rgba16> colors);
+
+    // Release an uploaded palette. Its entries are free for a palette uploaded later that fits them, so a
+    // game that uploads a scene's palettes and releases them when the scene ends does not grow the store.
+    // The colors stay as they were, so a cell or sprite that still names the handle draws whatever is written
+    // there next. Throws std::invalid_argument when `id` is not the first entry of an uploaded palette.
+    void releasePalette(PaletteId id);
 
     // Load a color PNG as a palette: decode it, slice it one-pixel-per-entry in `order`, and upload the
     // entries to the palette store — the color-store sibling of loadAtlas (which uploads to the atlas
@@ -435,6 +451,11 @@ public:
             bool   composeSkipped = false;  // the retained output was re-blitted instead of recomposed
         };
         PhaseTimings lastFrame{};
+
+        // The atlas store's texture, in texels. A game that uploads a scene's sheets and releases them when
+        // the scene ends reads a size that holds steady from one scene to the next.
+        int atlasStoreWidth  = 0;
+        int atlasStoreHeight = 0;
     };
 
     // A snapshot of the diagnostic surface, by value.
@@ -442,16 +463,18 @@ public:
 
 private:
     // An uploaded indexed atlas: not its own texture — every atlas lives as a region of the single
-    // flat atlas store (atlasStore_), exactly as every palette lives in the flat palette store.
-    // `data` is the CPU mirror of this atlas's R32_UINT pixels (kept so the store can be rewritten when
-    // a wider atlas re-lays it out, mirroring paletteData_); `width`/`height` are its
-    // pixel dimensions (tile-grid addressing); `transparent` its structural transparent-index set
-    // ({} = none); `storeY` its top row in the vertically-stacked store. AtlasId = index.
-    // One atlas's row of the region table: where its rows start in the store, how many tile columns it
-    // has, and its transparent-index set as a 64-bit mask split across two words (bit i set => index i is
-    // a hole). Four R32_UINT words, which is the texel both frag stages Load by atlas handle.
+    // atlas store (atlasStore_), laid out on shelves, exactly as every palette lives in the flat palette
+    // store. `data` is the CPU mirror of this atlas's R32_UINT pixels (kept so the store can be rewritten
+    // when the sheets are laid out afresh, mirroring paletteData_); `width`/`height` are its pixel
+    // dimensions (tile-grid addressing); `transparent` its structural transparent-index set ({} = none);
+    // `storeY` its top row and `storeX` its left column in the store. AtlasId = index. A released entry
+    // keeps its index with nothing in it, so the handle can be minted again.
+    // One atlas's row of the region table: where it sits in the store (its column in the low 16 bits of
+    // `place`, its row in the high 16), how many tile columns it has, and its transparent-index set as a
+    // 64-bit mask split across two words (bit i set => index i is a hole). Four R32_UINT words, which is
+    // the texel both frag stages Load by atlas handle.
     struct AtlasRegionWords {
-        std::uint32_t storeY        = 0;
+        std::uint32_t place         = 0;
         std::uint32_t cols          = 0;
         std::uint32_t transparentLo = 0;
         std::uint32_t transparentHi = 0;
@@ -469,6 +492,8 @@ private:
         ContentKind        slotKind  = ContentKind::Single;
         ReadOrder          slotOrder{};
         int                slotCount = 0;
+        int                storeX    = 0;
+        bool               released  = false;
     };
     // A baked curve signed-distance mask: its own R16_FLOAT texture (sampled, bilinear) plus the shape-local
     // bake box the shader maps fragments into. CurveMaskId is 1-based (0 = none); curveMasks_[id − 1] is this.
@@ -568,18 +593,18 @@ private:
                                 ReadOrder order, int count, int framesPerAnimation);
 
     // Write the atlas `id` just appended to atlases_ into the store, and give it its row in the region
-    // table. An atlas that fits the room the store texture already has is written over its own rows, and
-    // its row of the table travels in the same submission; a wider one, or one past the allocated height,
-    // goes through rebuildAtlasStore.
+    // table. A sheet the shelves hold is written over its own texels, and its row of the table travels in
+    // the same submission; one they do not goes through rebuildAtlasStore.
     void appendAtlasToStore(AtlasId id);
 
     // The region-table row describing one atlas.
     static AtlasRegionWords atlasRegionWords(const AtlasEntry& atlas);
 
-    // Recreate atlasStore_ from the atlases_ CPU mirrors: stack them vertically (width = widest,
-    // height = Σ heights), assign each entry's storeY, upload every atlas, and rebuild the region table
-    // beside it. The store texture is allocated with room past that height, so the atlases uploaded next
-    // are appended rather than restacked.
+    // Lay every live sheet out afresh — at the store's current size when that holds them, else at the next
+    // size up until one does or the cap is reached, and one size larger again when it grows, so the sheets
+    // uploaded next have room — assign each entry's placement, upload every live atlas, and rebuild the
+    // region table beside it. Throws std::runtime_error, with every entry as it was, when no
+    // size up to the cap holds them.
     void rebuildAtlasStore();
 
     // Send every store write an upload has recorded through `copy`, opening it on `cmd` if it is not open
@@ -588,6 +613,9 @@ private:
 
     // Recreate atlasRegionStore_ with a texel per atlas, allocated with room past the current count.
     void rebuildAtlasRegions();
+
+    // The entry `id` names, for a release: std::invalid_argument when no uploaded sheet has that handle.
+    [[nodiscard]] AtlasEntry& atlasToRelease(AtlasId id);
 
     // Write the `count` colors at flat offset `first` of the mirror into the palette store: one upload
     // of those colors, or two when the run crosses a row edge. A run past the allocated rows, or one
@@ -818,17 +846,14 @@ private:
     SDL_GPUTexture*          paletteStore_ = nullptr;  // R16G16B16A16_UNORM store; PaletteId = flat color offset
     int                      paletteStoreRows_ = 0;    // rows the store texture holds; the entries fill as many
                                                        // as they need and an upload appends into the rest
-    SDL_GPUTexture*          atlasStore_   = nullptr;  // R32_UINT flat atlas store: all atlases
-                                                       // stacked vertically; width = max atlas width,
-                                                       // height = Σ heights; AtlasId → AtlasEntry::storeY
-    int                      atlasStoreW_  = 0;         // widest atlas (px); 0 = no atlas uploaded
-    int                      atlasStoreH_  = 0;         // rows the atlases occupy (px)
-    int                      atlasCapW_    = 0;         // store texture width (px) — an atlas wider than this
-                                                        // restacks the store
-    int                      atlasCapH_    = 0;         // store texture height (px); the atlases occupy
-                                                        // atlasStoreH_ of them and an upload appends into the rest
+    SDL_GPUTexture*          atlasStore_   = nullptr;  // R32_UINT atlas store: every live atlas laid out
+                                                       // on shelves; AtlasId → AtlasEntry::storeX / storeY
+    int                      atlasCapW_    = 0;         // store texture width (px)
+    int                      atlasCapH_    = 0;         // store texture height (px)
+    detail::AtlasShelves     atlasShelves_;             // where the next sheet lands in the store texture
     SDL_GPUTexture*          atlasRegionStore_ = nullptr; // R32G32B32A32_UINT, one texel per AtlasId =
-                                                          // (storeY, cols, transpMaskLo, transpMaskHi); the
+                                                          // (place, cols, transpMaskLo, transpMaskHi) — place
+                                                          // is the column | row << 16; the
                                                           // transparent-index set is a 64-bit bitmask split
                                                           // across .z (0–31) and .w (32–63). The global region
                                                           // table both frag stages index by a cell's / sprite's
@@ -847,6 +872,7 @@ private:
     std::vector<PendingColors> pendingPaletteWrites_;
     std::vector<AtlasId>       pendingAtlasWrites_;
     std::vector<int>           pendingRegionWrites_;
+    std::vector<AtlasId>       freeAtlasIds_;             // retired handles, minted again last-in first-out
     std::vector<AtlasEntry>  atlases_;                 // indexed by AtlasId (region within atlasStore_)
     static const Renderer*   instance_;                // the one renderer (instance()), set at
                                                        // construction; the sprite shape query reads its atlases_
@@ -891,18 +917,25 @@ private:
     std::uint64_t              spriteFxHash_ = 0;
     int                        spriteFxHashRows_ = 0;
     std::vector<Rgba16>      paletteData_;             // CPU mirror of the store; flat, contiguous 16-bit palette colors (PaletteId = flat offset)
-    // The entries each uploaded palette occupies, in upload order. A later upload begins where the one
-    // before it ends, so `first` ascends and a PaletteId finds its palette by binary search. An upload of
-    // no colors occupies nothing and is not recorded.
+    // The entries each uploaded palette occupies, in `first` order, so a PaletteId finds its palette by
+    // binary search. An upload of no colors occupies nothing and is not recorded.
     struct PaletteExtent {
         std::size_t first = 0;
         std::size_t count = 0;
     };
     std::vector<PaletteExtent> paletteExtents_;
+    // The extents released palettes held, free for a later palette that fits one; taken first fit, the
+    // remainder staying free.
+    std::vector<PaletteExtent> freePaletteExtents_;
 
     // The palette `id` names, checked against the `count` colors an update brings: std::invalid_argument
     // when no uploaded palette begins at `id`, or when `count` is not that palette's entry count.
     [[nodiscard]] const PaletteExtent& paletteToUpdate(PaletteId id, std::size_t count) const;
+
+    // Where the next `count` colors land: the first free extent that holds them, split so the remainder
+    // stays free, else the end of the mirror (grown to hold them). The extent is recorded in `first` order
+    // so a PaletteId still finds its palette by binary search.
+    [[nodiscard]] std::size_t paletteHome(std::size_t count);
     SDL_GPUTexture*          rowDataStore_ = nullptr;  // per-frame RGBA32F data store: every effect's
                                                        // paramTable stacked vertically (width 1, one Vec4
                                                        // per row); a Custom effect Loads its rows from it.

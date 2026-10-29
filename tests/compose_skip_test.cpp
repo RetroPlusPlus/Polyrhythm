@@ -177,9 +177,9 @@ TEST_F(ComposeSkipTest, ContentMutationRecomposes) {
     EXPECT_EQ(r.renderStats().composeSkips, 2u);
 }
 
-// An upload appended into a store's spare room leaves every texel the retained output was composed from
+// An upload written into a store's free room leaves every texel the retained output was composed from
 // exactly as it was, so an identical frame that does not reference the new content keeps skipping. Both
-// stores are appended to here: a palette, and an atlas no wider than the store already is.
+// stores are written in place here: a palette, and an atlas the store's free room holds.
 TEST_F(ComposeSkipTest, AppendedUploadKeepsSkipping) {
     Renderer r{device_, /*window=*/nullptr, ViewportResolution{kW, kH}};
     r.automaticInterpolation(false);
@@ -198,7 +198,7 @@ TEST_F(ComposeSkipTest, AppendedUploadKeepsSkipping) {
     EXPECT_EQ(r.renderStats().composePasses, 1u) << "an appended palette leaves the composed image alone";
     EXPECT_EQ(r.renderStats().composeSkips, 2u);
 
-    std::array<std::uint8_t, 16 * 16> second{};  // same width as the store — appended over its own rows
+    std::array<std::uint8_t, 16 * 16> second{};  // fits the store's free room — written in place
     (void)r.uploadAtlas(second.data(), 16, 16);
     r.renderFrame(frame);
     EXPECT_EQ(r.renderStats().composePasses, 1u) << "an appended atlas leaves the composed image alone";
@@ -207,7 +207,7 @@ TEST_F(ComposeSkipTest, AppendedUploadKeepsSkipping) {
 
 // An upload that recreates a store texture bumps the store generation, forcing a recompose even though the
 // fingerprint matches — the compose binds a different texture than the retained output was drawn from. An
-// atlas wider than the store is that upload: every row's stride changes, so the store is written afresh.
+// atlas the store's free room does not hold is that upload: the sheets are laid out afresh in a new texture.
 TEST_F(ComposeSkipTest, AGrownStoreForcesRecompose) {
     Renderer r{device_, /*window=*/nullptr, ViewportResolution{kW, kH}};
     r.automaticInterpolation(false);
@@ -221,7 +221,7 @@ TEST_F(ComposeSkipTest, AGrownStoreForcesRecompose) {
     ASSERT_EQ(r.renderStats().composeSkips, 1u);
 
     std::array<std::uint8_t, 32 * 16> wider{};
-    (void)r.uploadAtlas(wider.data(), 32, 16);  // wider than the store → a new store texture
+    (void)r.uploadAtlas(wider.data(), 32, 16);  // no room for it → a new store texture
 
     r.renderFrame(frame);   // identical frame, but the store it binds is a different texture → recompose
     EXPECT_EQ(r.renderStats().composePasses, 2u);
