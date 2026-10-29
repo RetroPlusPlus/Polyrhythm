@@ -18,8 +18,8 @@ types (`TileContent`, `Sprite`) are in [draw-state.md](draw-state.md); loading a
 - [Uploading palettes: `uploadPalette` → `PaletteId`](#uploading-palettes-uploadpalette--paletteid)
 - [Loading a palette from an image: `loadPaletteImage` → `PaletteId`](#loading-a-palette-from-an-image-loadpaletteimage--paletteid)
 - [Changing a palette's colors: `updatePalette`](#changing-a-palettes-colors-updatepalette)
-- [Releasing a palette or a sheet: `releasePalette` / `releaseAtlas`](#releasing-a-palette-or-a-sheet-releasepalette--releaseatlas)
 - [Uploading art: `uploadAtlas` → the sheet](#uploading-art-uploadatlas--the-sheet)
+- [Releasing a palette or a sheet: `releasePalette` / `releaseAtlas`](#releasing-a-palette-or-a-sheet-releasepalette--releaseatlas)
 - [Each tile / sprite names its own sheet + palette](#each-tile--sprite-names-its-own-sheet--palette)
 - [The `tiles()` helper — a single-combo cell run](#the-tiles-helper--a-single-combo-cell-run)
 - [Flip and rotate](#flip-and-rotate)
@@ -163,26 +163,6 @@ count.
 four-color palette beside the same colors as swatches; keys step a color's red, green and blue, and the
 picture takes each step on the next frame under the same handle.
 
-## Releasing a palette or a sheet: `releasePalette` / `releaseAtlas`
-
-```cpp
-void Renderer::releasePalette(PaletteId id);
-void Renderer::releaseAtlas(AtlasId id);
-```
-
-A palette or a sheet holds its room in the renderer's store until it is released. A game uploads what a
-scene needs and releases it when the scene ends, the way a 16-bit game treats its video memory, and the
-store holds the scene's art and no more. A released sheet's handle is retired: a cell or sprite that
-still names it draws nothing, and the next upload may take the handle for a new sheet. A released
-palette's entries are taken by the next palette that fits them, and a cell still naming the old handle
-draws whatever is written there. Both throw `std::invalid_argument` on a handle that names nothing
-uploaded.
-
-The sheet store is one texture, at most 16384 × 16384 texels, and it grows as sheets are uploaded; a
-sheet it cannot hold at that size throws `std::runtime_error` from `uploadAtlas` with nothing minted,
-and so does a 16385th sheet held at once. `renderStats().atlasStoreWidth` / `atlasStoreHeight` read its
-size.
-
 ## Uploading art: `uploadAtlas` → the sheet
 
 ```cpp
@@ -214,6 +194,26 @@ the sheet's structural transparent-index set (default `None` = nothing discarded
 building the index array by hand, use `loadAtlas` (same page) — handing a decoded image straight to
 `uploadAtlas` throws, so PNGs always go through `loadAtlas`. A sheet holds its room until `releaseAtlas`
 retires it.
+
+## Releasing a palette or a sheet: `releasePalette` / `releaseAtlas`
+
+```cpp
+void Renderer::releasePalette(PaletteId id);
+void Renderer::releaseAtlas(AtlasId id);
+```
+
+A palette or a sheet holds its room in the renderer's store until it is released. A game uploads what a
+scene needs and releases it when the scene ends, the way a 16-bit game treats its video memory, and the
+store holds the scene's art and no more. A released sheet's handle is retired: a cell or sprite that
+still names it draws nothing, and the next upload may take the handle for a new sheet. A released
+palette's entries are taken by the next palette that fits them, and a cell still naming the old handle
+draws whatever is written there. Both throw `std::invalid_argument` on a handle that names nothing
+uploaded.
+
+The sheet store is one texture, at most 16384 × 16384 texels, and it grows as sheets are uploaded; a
+sheet it cannot hold at that size throws `std::runtime_error` from `uploadAtlas` with nothing minted,
+and so does a 16385th sheet held at once. `renderStats().atlasStoreWidth` / `atlasStoreHeight` read its
+size.
 
 ## Each tile / sprite names its own sheet + palette
 
