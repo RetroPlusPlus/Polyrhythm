@@ -1799,6 +1799,7 @@ if(RETROPP_BUILD_TESTS)
         tests/sprite_blend_test.cpp
         tests/half_subtract_blend_test.cpp
         tests/blend_empty_destination_test.cpp
+        tests/accumulator_identity_test.cpp
         tests/sprite_effects_test.cpp
         tests/sprite_effects_custom_test.cpp
         tests/sprite_effects_below_test.cpp
