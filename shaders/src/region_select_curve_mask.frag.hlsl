@@ -32,7 +32,7 @@ cbuffer CurveMaskUniforms : register(b0, space3) {
     float4 uSnap;     // x = snap (1 = viewport grid, crisp); yzw pad                             — register 5
 };
 
-#include "blend_ops.hlsli"  // blendOp — the separable BlendMode operator, mirror of retropp::blendChannel
+#include "blend_ops.hlsli"  // blendCombine — the BlendMode combine, mirror of retropp::applyBlendMode
 
 float4 main(float2 uv : TEXCOORD0) : SV_Target0 {
     float4 eff = EffTexture.Sample(EffSampler, uv);
@@ -57,15 +57,13 @@ float4 main(float2 uv : TEXCOORD0) : SV_Target0 {
     bool inside = sd <= 0.0;
     if (uInvRow0.w > 0.5) inside = !inside;  // region invert: confine to the OUTSIDE of the shape
 
-    // The region's blend mode grades how the effect result combines over the scene, before the alpha mix.
-    // Normal (0) keeps the plain alpha-over the gate always ran. Mirror of applyBlendMode.
+    // The region's blend mode grades how the effect result combines over what the gate reads, before the
+    // alpha mix. Normal (0) takes the effect result as it is. Any other mode reads its destination and keeps
+    // its coverage (blendCombine), so over a layer's transparent pixel it leaves the pixel transparent.
     uint   mode   = (uint)(uMisc.w + 0.5);
     float4 graded = eff;
     if (mode != 0u) {
-        float  sa  = eff.a;
-        float3 rgb = saturate((1.0 - sa) * src.rgb + sa * blendOp(mode, src.rgb, eff.rgb));
-        float  a   = saturate(sa + src.a * (1.0 - sa));
-        graded = float4(rgb, a);
+        graded = blendCombine(mode, src, eff.rgb, eff.a);
     }
     return inside ? lerp(src, graded, uInvRow2.w) : src;  // uInvRow2.w = the region's alpha (its effects' opacity)
 }

@@ -6042,6 +6042,16 @@ SDL_GPUTexture* Renderer::composeViewport(SDL_GPUCommandBuffer* cmd, const Frame
         std::swap(target_, layerScratch_);
     };
 
+    // Hand the accumulator to the scratch texture a pass wrote. A pass cannot write the texture it reads, so a
+    // composite over the accumulator lands in a free scratch member and the two members trade textures: the
+    // accumulator role follows the image, the scratch role takes the old accumulator, and every member still
+    // names a texture of its own. A no-op for a texture that is none of the three (the accumulator itself).
+    auto adoptAccumulator = [&](SDL_GPUTexture* r) {
+        if (r == post0_)             std::swap(target_, post0_);
+        else if (r == post1_)        std::swap(target_, post1_);
+        else if (r == layerScratch_) std::swap(target_, layerScratch_);
+    };
+
     // Apply an isolated layer's confined-step chain on its own premultiplied scratch (starting at
     // `startTex`, where renderLayerIsolated left the layer content — layerScratch_ for the usual layer, a
     // ping-pong spare when a mixed-blend sprite layer's run composite finished there): each step replaces
@@ -6122,7 +6132,7 @@ SDL_GPUTexture* Renderer::composeViewport(SDL_GPUCommandBuffer* cmd, const Frame
             // `cur` holds the layer's finished isolated image; composite it onto the accumulator with the mode.
             SDL_GPUTexture* dest = other(cur, target_);  // a free scratch (target_ is not in the pool)
             runBlendComposite(dest, target_, cur, layerBlend, SDL_GPU_LOADOP_DONT_CARE);
-            std::swap(target_, dest);
+            adoptAccumulator(dest);
         } else if (lastIsAdditiveRun) {
             // Normal layer whose LAST step is a additive batched run: nothing composited `cur` to target_, so do
             // it now. The isolated content is PREMULTIPLIED, so this must be the premultiplied-over composite
@@ -6162,14 +6172,6 @@ SDL_GPUTexture* Renderer::composeViewport(SDL_GPUCommandBuffer* cmd, const Frame
         SDL_GPURenderPass* p = SDL_BeginGPURenderPass(cmd, &t, 1, nullptr);
         SDL_EndGPURenderPass(p);
         targetInitialized = true;
-    };
-    // Adopt the texture a sprite-emission composite left the accumulator in. A composite cannot write the
-    // texture it reads, so each bucket's halo lands in a free scratch and the accumulator's identity follows
-    // it there. A no-op when the layer ran no bucket (the returned texture is still target_).
-    auto adoptEmissionResult = [&](SDL_GPUTexture* r) {
-        if (r == post0_)             std::swap(target_, post0_);
-        else if (r == post1_)        std::swap(target_, post1_);
-        else if (r == layerScratch_) std::swap(target_, layerScratch_);
     };
     // Below-scope sprites: render this layer's Below runs into layerScratch_ (transparent-cleared) reading the
     // accumulator (the scene beneath, bound as SourceTexture) and writing the effect-graded scene masked by
@@ -6633,17 +6635,15 @@ SDL_GPUTexture* Renderer::composeViewport(SDL_GPUCommandBuffer* cmd, const Frame
                     // accumulator directly (the container is the scene beneath + earlier-z runs of this layer).
                     closeBatch();
                     ensureTargetInitialized();
-                    SDL_GPUTexture* r = compositeSpriteRuns(idx, target_, post0_, post1_, SDL_GPU_LOADOP_LOAD);
-                    if (r == post0_) std::swap(target_, post0_);
-                    else if (r == post1_) std::swap(target_, post1_);
-                    adoptEmissionResult(applySpriteEmission(idx, target_, post0_, post1_, layerScratch_));
+                    adoptAccumulator(compositeSpriteRuns(idx, target_, post0_, post1_, SDL_GPU_LOADOP_LOAD));
+                    adoptAccumulator(applySpriteEmission(idx, target_, post0_, post1_, layerScratch_));
                 } else if (!spriteEmissionRuns[idx].empty()) {
                     // A glowing layer draws its art into the batch as ever, then closes it so the halo can
                     // composite over the accumulator (a composite reads target_, which an open pass owns).
                     if (!batch) openBatch();
                     drawLayer(batch, idx);
                     closeBatch();
-                    adoptEmissionResult(applySpriteEmission(idx, target_, post0_, post1_, layerScratch_));
+                    adoptAccumulator(applySpriteEmission(idx, target_, post0_, post1_, layerScratch_));
                 } else {
                     if (!batch) openBatch();
                     drawLayer(batch, idx);
@@ -6654,7 +6654,7 @@ SDL_GPUTexture* Renderer::composeViewport(SDL_GPUCommandBuffer* cmd, const Frame
                 SDL_GPUTexture* iso = renderLayerIsolated(idx);  // layerScratch_ or (mixed sprite) a spare
                 SDL_GPUTexture* out = (iso == post0_) ? post1_ : post0_;  // a free spare ≠ iso and ≠ target_
                 runBlendComposite(out, target_, iso, layer.blend, SDL_GPU_LOADOP_DONT_CARE);
-                if (out == post0_) std::swap(target_, post0_); else std::swap(target_, post1_);
+                adoptAccumulator(out);
             }
             continue;
         }
@@ -6678,17 +6678,15 @@ SDL_GPUTexture* Renderer::composeViewport(SDL_GPUCommandBuffer* cmd, const Frame
             // the accumulator (the container the Below-scope steps then adjust).
             closeBatch();
             ensureTargetInitialized();
-            SDL_GPUTexture* r = compositeSpriteRuns(idx, target_, post0_, post1_, SDL_GPU_LOADOP_LOAD);
-            if (r == post0_) std::swap(target_, post0_);
-            else if (r == post1_) std::swap(target_, post1_);
-            adoptEmissionResult(applySpriteEmission(idx, target_, post0_, post1_, layerScratch_));
+            adoptAccumulator(compositeSpriteRuns(idx, target_, post0_, post1_, SDL_GPU_LOADOP_LOAD));
+            adoptAccumulator(applySpriteEmission(idx, target_, post0_, post1_, layerScratch_));
         } else {
             // No Layer-scope step: composite the layer's own content straight into the accumulator (the
             // batched faithful draw); the Below-scope steps below then adjust the whole accumulator.
             if (!batch) openBatch();
             drawLayer(batch, idx);
             closeBatch();
-            adoptEmissionResult(applySpriteEmission(idx, target_, post0_, post1_, layerScratch_));
+            adoptAccumulator(applySpriteEmission(idx, target_, post0_, post1_, layerScratch_));
         }
 
         // Below-scope phase: each step (or run) adjusts the whole accumulator at this z (this layer's content

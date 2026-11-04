@@ -2,8 +2,9 @@
 // DrawLayer's region, graded at each ScreenSpaceEffectScope over transparent-holed content. This is
 // the color-modifier idiom — Multiply tint / day-night, Add / Screen glow, Normal flash-fade, a
 // Multiply that BRIGHTENS via fillIntensity > 1 — verified end-to-end on the layer path a sprite's
-// effect surface routes through: Layer scope grades a layer's own art in place (holes stay
-// transparent), Below scope grades the accumulated image beneath (reaching through the holes).
+// effect surface routes through: Layer scope grades a layer's own art in place (a mode that reads its
+// destination leaves the holes see-through; a Normal fill paints them), Below scope grades the
+// accumulated image beneath (reaching through the holes).
 //
 // What lives elsewhere (this file adds only the missing cells):
 //   - The CPU mirror — applyBlendMode / blendChannel / Normal==alpha-over / source-alpha weighting /
@@ -21,7 +22,9 @@
 // mirror's destination is the 8-bit-CAPTURED baseline, so it carries one extra quantization step versus
 // the renderer's float16 scene, on top of the per-pass rounding the arithmetic composites already incur
 // (golden_readback_test.cpp holds its same-pipeline goldens to one step). The holes semantics need no
-// tolerance at all — they are differential (Layer leaves a hole byte-identical to no effect; Below does not).
+// tolerance at all — they are differential: under a mode that reads its destination, Layer leaves a hole
+// byte-identical to no effect and Below does not (each mode, the gather and the curve gates in
+// blend_empty_destination_test.cpp); a Normal fill paints the hole at either scope (below).
 //
 // Device-backed like golden_readback_test.cpp: a compose-only, windowless Renderer on a real GPU device
 // (a software rasterizer in CI). Each device-backed test file bootstraps its own device; the fixture
@@ -367,7 +370,8 @@ TEST_F(ColorParityLayer, LayerScopeMultiplyBrighten) {
 //
 // A destination-reading blend mode is a different question and belongs to the blend: Multiply composes
 // the fill over whatever its scope reads, so Layer and Below differ there by the blend's definition,
-// not the fill's.
+// not the fill's — at Layer scope a hole has nothing to grade and stays see-through, at Below scope the
+// scene beneath is graded through it (blend_empty_destination_test.cpp).
 
 TEST_F(ColorParityLayer, AFillRendersTheSameAtEveryScope) {
     Renderer r{device_, nullptr, ViewportResolution{kW, kH}};

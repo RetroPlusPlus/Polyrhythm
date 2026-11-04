@@ -22,4 +22,19 @@ float3 blendOp(uint mode, float3 d, float3 s) {
     return s;                                            // Normal
 }
 
+// Combine a straight source color `src` of alpha `sa` over a PREMULTIPLIED destination `dst` under `mode`, and
+// return the result premultiplied (mirror of retropp::applyBlendMode). Normal is the alpha-over: it paints
+// wherever the source has coverage. Every other mode reads its destination, so it grades the destination's
+// straight color and keeps the destination's coverage — a transparent destination stays transparent. Over an
+// opaque destination (the accumulator, the frame, a Below grade) premultiplied and straight coincide and the
+// result is the plain separable blend.
+float4 blendCombine(uint mode, float4 dst, float3 src, float sa) {
+    if (mode == 0u) {
+        return float4(saturate((1.0 - sa) * dst.rgb + sa * src), saturate(sa + dst.a * (1.0 - sa)));
+    }
+    float3 d      = dst.a > 0.0 ? dst.rgb / dst.a : float3(0.0, 0.0, 0.0);
+    float3 graded = saturate((1.0 - sa) * d + sa * blendOp(mode, d, src));
+    return float4(graded * dst.a, dst.a);
+}
+
 #endif  // RETROPP_COMMON_BLEND_OPS_HLSLI

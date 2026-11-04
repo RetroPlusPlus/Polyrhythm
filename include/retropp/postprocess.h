@@ -790,11 +790,16 @@ struct EmissionChainPlan {
 // postEffects) combines its color SOURCE `src` over what it composites onto, `dst`, under a BlendMode.
 // The separable blend operator B(dst, src) is applied per channel, source-alpha-weighted:
 //   out.rgb = (1 - src.a)·dst.rgb + src.a·B(dst.rgb, src.rgb)   (clamped to [0,1])
-//   out.a   = src.a + dst.a·(1 - src.a)                         (standard over alpha; mode-independent)
-// Normal (B = src) reduces to the standard alpha-over, so a Normal container's output is the alpha-over
-// it always was. The region-select gate and the blend composite shader reproduce this exactly — it is
-// the single authority both mirror. Colors are straight (non-premultiplied) [0,1] floats. Genuinely
-// constexpr (pure arithmetic) → static_assert-testable, the applyColorFill / applyBlendMode discipline.
+//   out.a   = src.a + dst.a·(1 - src.a)                         (Normal: the standard over alpha)
+//   out.a   = dst.a                                             (every other mode)
+// Normal (B = src) is the standard alpha-over: it paints wherever its source has coverage. Every other mode
+// reads its destination, so it grades the color of what is there and keeps the destination's coverage — over
+// a transparent pixel there is nothing to grade and the pixel stays transparent. Over an opaque destination
+// the two alpha lines agree. The region gates, the ColorFill gather and the blend composite shader reproduce
+// this exactly through blendCombine (shaders/common/blend_ops.hlsli), and the sprite fragment through its own
+// applyBlendMode (shaders/common/sprite_blend.hlsli) — this is the single authority they mirror. Colors are
+// straight (non-premultiplied) [0,1] floats. Genuinely constexpr (pure arithmetic) → static_assert-testable,
+// the applyColorFill / applyBlendMode discipline.
 
 // The separable blend operator B(d, s) for one channel, per mode (rgb only; alpha composites separately).
 // The result is clamped by applyBlendMode, not here.
@@ -811,15 +816,15 @@ struct EmissionChainPlan {
     }
 }
 
-// Combine source `src` over `dst` under `mode`: the separable blend, source-alpha-weighted, with the
-// standard over alpha. Normal reduces to plain alpha-over. The exact math the gate + blend shaders mirror.
+// Combine source `src` over `dst` under `mode`: the separable blend, source-alpha-weighted. Normal is plain
+// alpha-over; every other mode keeps the destination's alpha. The exact math the gate + blend shaders mirror.
 [[nodiscard]] constexpr Vec4 applyBlendMode(Vec4 dst, Vec4 src, BlendMode mode) noexcept {
     const float sa = src.w;
     return Vec4{
         std::clamp((1.0f - sa) * dst.x + sa * blendChannel(mode, dst.x, src.x), 0.0f, 1.0f),
         std::clamp((1.0f - sa) * dst.y + sa * blendChannel(mode, dst.y, src.y), 0.0f, 1.0f),
         std::clamp((1.0f - sa) * dst.z + sa * blendChannel(mode, dst.z, src.z), 0.0f, 1.0f),
-        std::clamp(sa + dst.w * (1.0f - sa), 0.0f, 1.0f)};
+        mode == BlendMode::Normal ? std::clamp(sa + dst.w * (1.0f - sa), 0.0f, 1.0f) : dst.w};
 }
 
 // The standard alpha-over, the reference Normal reduces to: applyBlendMode(dst, src, Normal) == alphaOver.
@@ -855,6 +860,16 @@ static_assert(applyBlendMode(Vec4{0.25f, 0, 0, 1}, Vec4{0.5f, 0, 0, 1}, BlendMod
 // Add clamps at the top of the range (0.8 + 0.5 = 1.3 → 1).
 static_assert(applyBlendMode(Vec4{0.8f, 0, 0, 1}, Vec4{0.5f, 0, 0, 1}, BlendMode::Add).x == 1.0f,
               "Add clamps to 1");
+// A mode that reads its destination keeps the destination's coverage: over nothing it leaves nothing, over a
+// half-covered pixel it leaves half coverage. Normal paints over nothing at its own alpha.
+static_assert(applyBlendMode(Vec4{0.5f, 0, 0, 0}, Vec4{0.5f, 0, 0, 1}, BlendMode::Multiply).w == 0.0f,
+              "Multiply over a transparent pixel leaves it transparent");
+static_assert(applyBlendMode(Vec4{0.5f, 0, 0, 0}, Vec4{0.5f, 0, 0, 1}, BlendMode::Add).w == 0.0f,
+              "Add over a transparent pixel leaves it transparent");
+static_assert(applyBlendMode(Vec4{0.5f, 0, 0, 0.5f}, Vec4{0.5f, 0, 0, 1}, BlendMode::Screen).w == 0.5f,
+              "Screen keeps a half-covered pixel's coverage");
+static_assert(applyBlendMode(Vec4{0, 0, 0, 0}, Vec4{0.5f, 0, 0, 0.25f}, BlendMode::Normal).w == 0.25f,
+              "Normal paints over a transparent pixel at its own alpha");
 
 // ── Per-layer dispatch (the renderer's composite-loop branch, mirrored) ─────────────────
 

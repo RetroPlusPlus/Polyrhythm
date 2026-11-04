@@ -1798,6 +1798,8 @@ if(RETROPP_BUILD_TESTS)
         tests/color_parity_layer_test.cpp
         tests/sprite_blend_test.cpp
         tests/half_subtract_blend_test.cpp
+        tests/blend_empty_destination_test.cpp
+        tests/accumulator_identity_test.cpp
         tests/sprite_effects_test.cpp
         tests/sprite_effects_custom_test.cpp
         tests/sprite_effects_below_test.cpp
@@ -2556,11 +2558,16 @@ if(RETROPP_BUILD_EXAMPLES)
     retropp_add_example(color_effects_demo)
 
     # ── Color-parity demo — the effect SCOPE distinction: one holed lattice over a scene, the same
-    # ColorFill grade confined to the left half at Layer scope (holes stay clear) and the right half at
-    # Below scope (the tint reaches through the holes), cycling blend modes. The layer-path precedent for a
-    # per-sprite effect. Static; A cycles the mode. Dev-run only; the live SdlPlatform/Renderer + per-layer
-    # ColorFill scope path is the CI compile signal (the per-layer scope matrix is color_parity_layer_test).
+    # ColorFill grade confined to the left half at Layer scope (a mode that reads its destination leaves the
+    # holes clear) and the right half at Below scope (the tint reaches through the holes), cycling blend
+    # modes. The layer-path precedent for a per-sprite effect. Static; A cycles the mode. CI runs its --verify
+    # on every platform: headless on a GPU device with no window, it draws the demo's own frame at every mode
+    # and checks the holes against the frame without the grade and every graded pixel against the CPU
+    # mirror. On Windows on ARM, whose runner has no GPU device, it exits 77 and the case counts as skipped.
     retropp_add_example(color_parity_demo)
+    add_test(NAME ColorParityExample.Verify
+             COMMAND retropp-color_parity_demo-demo --verify)
+    set_tests_properties(ColorParityExample.Verify PROPERTIES SKIP_RETURN_CODE 77)
 
     # ── Sprite-blend demo — per-sprite Sprite::blend: a hero disc drifts across a scene carrying a Multiply
     # shadow decal and an Add flare, and a probe disc cycles every blend mode over the same background. CI
