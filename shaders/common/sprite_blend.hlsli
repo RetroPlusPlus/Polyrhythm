@@ -21,14 +21,16 @@ float blendChannel(uint mode, float d, float s) {
     return s;  // Normal
 }
 
-// Combine src over dst under `mode`, source-alpha-weighted, standard over alpha. Mirrors applyBlendMode.
+// Combine straight src over straight dst under `mode`, source-alpha-weighted. Normal takes the standard over
+// alpha; every other mode keeps the destination's alpha, so a region graded over partly transparent art leaves
+// the art's coverage as it is. Mirrors applyBlendMode.
 float4 applyBlendMode(float4 dst, float4 src, uint mode) {
     float sa = src.w;
     float3 b = float3(blendChannel(mode, dst.x, src.x),
                       blendChannel(mode, dst.y, src.y),
                       blendChannel(mode, dst.z, src.z));
     float3 rgb = saturate((1.0f - sa) * dst.xyz + sa * b);
-    float a = saturate(sa + dst.w * (1.0f - sa));
+    float a = mode == 0u ? saturate(sa + dst.w * (1.0f - sa)) : dst.w;
     return float4(rgb, a);
 }
 

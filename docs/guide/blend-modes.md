@@ -53,13 +53,17 @@ The full combine, source-alpha-weighted and clamped, is:
 
 ```
 out.rgb = clamp( (1 − src.a)·dst.rgb + src.a·B(dst.rgb, src.rgb) )
-out.a   = clamp( src.a + dst.a·(1 − src.a) )          // standard over alpha, mode-independent
+out.a   = clamp( src.a + dst.a·(1 − src.a) )          // Normal: the standard over alpha
+out.a   = dst.a                                        // every other mode: the destination's coverage
 ```
 
-`Normal` reduces to standard alpha-over, so a container left at the default is unchanged. A non-`Normal`
-container combines from its own isolated render (a `Sprite`, an effected or blended `DrawLayer`); that render
-arrives premultiplied, and the composite un-premultiplies it before evaluating `B`, so `src.rgb` above is the
-container's straight color and `src.a` weights it exactly once — the fill's intended strength at any `alpha`.
+`Normal` reduces to standard alpha-over, so a container left at the default is unchanged, and it paints
+wherever its source has coverage. Every other mode reads its destination: it grades the color of what is
+there and keeps that pixel's coverage, so over a transparent pixel it leaves the pixel transparent — a shadow
+needs a surface. Over an opaque destination the two alpha lines agree. A non-`Normal` container combines from
+its own isolated render (a `Sprite`, an effected or blended `DrawLayer`); that render arrives premultiplied,
+and the composite un-premultiplies it before evaluating `B`, so `src.rgb` above is the container's straight
+color and `src.a` weights it exactly once — the fill's intended strength at any `alpha`.
 
 ## Where blend lives
 
@@ -92,9 +96,10 @@ tint, a flash, a fade.
 Where that grade lands is the effect's `scope` (`ScreenSpaceEffectScope`, on a per-layer effect):
 
 - **`Layer`** — the grade combines over the layer's **own content**, in place. A hole in that layer is a
-  destination of nothing, so the grade lands there against an empty pixel rather than against the scene
-  beneath. Tint one plane (a sprite flashes, a single layer goes to dusk) without touching the rest of
-  the scene.
+  destination of nothing: a mode that reads its destination has nothing to grade there and leaves the hole
+  see-through, so the scene beneath shows through it as it would without the grade, while a `Normal` fill
+  paints into it. Tint one plane (a sprite flashes, a single layer goes to dusk) without touching the rest
+  of the scene.
 - **`Below`** — the grade combines over the **accumulated image** at the layer's z: this layer's content and
   everything beneath it, coherently, including *through* the layer's holes. A wash that sits over the world (a
   whole-scene day/night, a screen flash) while layers above the grade's z ride over it untouched.
@@ -116,7 +121,10 @@ pixels (`Layer`) or the composited scene (`Below`). So the same fill and mode gi
 | `Half` | `(1−a)·dst + a·((dst+f)/2)` — a halved wash |
 | `HalfSubtract` | `(1−a)·dst + a·clamp((dst−f)/2)` — a halved dimming |
 
-A transparent pixel under a `Layer` grade is left transparent (there is no own-content there to grade).
+A transparent pixel under a `Layer` grade is left transparent by every mode in this table but `Normal` (there
+is no own-content there to grade); a `Normal` fill paints it, at the region's `alpha`. A partly transparent
+pixel keeps its own coverage under those modes and has its color graded. So a `Multiply` region drawn wider
+than the sprite it shades darkens the sprite and leaves the scene around it exactly as it was.
 
 ## Per-sprite blend
 
@@ -488,18 +496,20 @@ Vec4 shadow = applyBlendMode(scene, Vec4{0.5f, 0.5f, 0.5f, 1.0f}, BlendMode::Mul
 - A container left at `BlendMode::Normal` (the default everywhere) renders exactly as it did without the
   mode — the plain alpha-over path.
 - Operators clamp to `[0, 1]`: `Add` saturates at white, `Subtract` floors at black.
-- Alpha composites with the standard over rule regardless of mode — the blend grades color, not coverage.
-  A partially transparent source contributes proportionally (a hole in a blended layer reveals what is
-  beneath).
+- The blend grades color, not coverage. `Normal` composites alpha with the standard over rule; every other
+  mode keeps the destination's alpha, so it never makes a transparent pixel opaque. A partially transparent
+  source contributes proportionally (a hole in a blended layer reveals what is beneath).
 - Blend never appears on `ScreenSpaceEffect`. To grade an effect, set the blend on the `Region` that owns
   it.
 
 ## Where to change
 
 - The modes and their math: `BlendMode` in `draw_state.h`; the operator and combine in
-  `retropp::applyBlendMode` / `retropp::blendChannel` (`postprocess.h`). The shaders
-  (`blend.frag.hlsl`, `region_select.frag.hlsl`, `region_select_curve.frag.hlsl`) mirror that math —
-  change the CPU helper and the shaders together.
+  `retropp::applyBlendMode` / `retropp::blendChannel` (`postprocess.h`). The shaders mirror that math through
+  one function, `blendCombine` in `shaders/common/blend_ops.hlsli`, which `blend.frag.hlsl`, the three
+  region gates (`region_select.frag.hlsl`, `region_select_curve.frag.hlsl`,
+  `region_select_curve_mask.frag.hlsl`) and `colorfill_gather.frag.hlsl` call — change the CPU helper and
+  `blendCombine` together.
 - The **per-sprite** blend + effect/region run lives in `sprite.frag.hlsl` (the sprite's own blend and its
   inline `effects`/`regions` evaluation); the **Below-scope** lens (scene-reading, coverage-masked) lives in
   `sprite_below.frag.hlsl`. The CPU mirror of the sprite path is `retropp::evalSpriteFxRecords` /

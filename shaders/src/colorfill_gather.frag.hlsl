@@ -62,7 +62,7 @@ cbuffer RetroppGatherInfo : register(b1, space3) {
     uint uGatherPad2;
 };
 
-#include "blend_ops.hlsli"  // blendOp — the separable BlendMode operator, mirror of retropp::blendChannel
+#include "blend_ops.hlsli"  // blendCombine — the BlendMode combine, mirror of retropp::applyBlendMode
 
 // One float4 record slot by index — byte-addressed (idx * 16), NOT a StructuredBuffer index: SDL's
 // D3D12 backend leaves StructureByteStride 0, which AMD uses to index a StructuredBuffer, collapsing
@@ -172,14 +172,12 @@ float4 main(float2 uv : TEXCOORD0) : SV_Target0 {
         float4 fillA = loadRec(base + 1u);
         float4 eff = float4(quantizeF16(float4(fillA.rgb, 0.0)).rgb, 1.0);
 
-        // region_select.frag: the blend grade over the scene, then the region-alpha mix.
+        // region_select.frag: the blend grade over what the gate reads, then the region-alpha mix. A mode
+        // other than Normal keeps the running value's coverage, so a transparent pixel stays transparent.
         uint   mode   = (uint)(inv2.w + 0.5);
         float4 graded = eff;
         if (mode != 0u) {
-            float  sa  = eff.a;
-            float3 rgb = saturate((1.0 - sa) * acc.rgb + sa * blendOp(mode, acc.rgb, eff.rgb));
-            float  a   = saturate(sa + acc.a * (1.0 - sa));
-            graded = float4(rgb, a);
+            graded = blendCombine(mode, acc, eff.rgb, eff.a);
         }
         acc = lerp(acc, graded, fillA.w);
         composited = true;

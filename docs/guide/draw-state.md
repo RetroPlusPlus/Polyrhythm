@@ -673,9 +673,13 @@ picks which scene that is:
 - **`Layer` scope (`DrawLayer::regions`)** composes over **that layer's own content** — flat-shading a
   sprite, re-tinting a band of tiles.
 
-Under `Normal` at full alpha the result is the color itself at either attachment point. A mode that
-reads its destination — `Multiply`, `Add`, `Screen`, `Subtract`, `Half`, `HalfSubtract` — differs between
-them, because the destination differs.
+Under `Normal` at full alpha the result is the color itself at either attachment point, and at `Layer`
+scope it fills the layer's see-through pixels too, so a layer that draws nothing still shows the fill. A
+mode that reads its destination — `Multiply`, `Add`, `Screen`, `Subtract`, `Half`, `HalfSubtract` — grades
+what is there, so it differs between them, because the destination differs. At `Layer` scope it grades the
+layer's own pixels and leaves a see-through pixel see-through: a `Multiply` box drawn wider than a sprite
+shades the sprite and leaves the scene around it untouched. At `Below` scope the destination is the
+composited scene, so the same grade reaches through the layer's holes.
 
 `color_fill_demo` draws a solid fill, a stroked ring, a curved drawn line, and a translucent tint — all one
 built-in, each confined by a `Region`.
