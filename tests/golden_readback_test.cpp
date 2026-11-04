@@ -2625,3 +2625,82 @@ TEST_F(GoldenReadback, SpriteRegionBloom) {
 }
 
 }  // namespace
+
+namespace golden_scenes {
+
+// Sprites carrying their own whole-silhouette Bloom / Glow, over a backdrop that is pale across the top
+// half and near-black across the bottom. A translucent Multiply layer (alpha 0.5) holds two Bloom sprites
+// 4 px apart in the top half, whose halos meet between them; the layer renders on its own and then
+// multiplies onto the pale backdrop, so the halo's coverage shows in the result. A Normal layer above it
+// holds a Glow sprite with an ember tint and a Bloom sprite hanging 2 px off the viewport's right edge,
+// both drawing straight onto the scene. Every halo has radius 6 and full intensity. The caller owns the
+// vectors the layers' spans point into, so they must outlive the frame.
+retropp::FrameDrawState spriteHaloScene(retropp::Renderer& r, std::vector<retropp::TileCell>& cells,
+                                        std::vector<retropp::Sprite>& translucent,
+                                        std::vector<retropp::Sprite>& opaque) {
+    using namespace retropp;
+    std::array<std::uint8_t, 8 * 8> solidIdx{};
+    const AtlasId solidAtlas = r.uploadAtlas(solidIdx.data(), 8, 8).atlasId;
+    const std::array<Rgba8, 1> darkPal{{{.r = 8, .g = 10, .b = 14, .a = 255}}};
+    const PaletteId darkPalId = r.uploadPalette(std::span<const Rgba8>(darkPal));
+    const std::array<Rgba8, 1> palePal{{{.r = 230, .g = 230, .b = 240, .a = 255}}};
+    const PaletteId palePalId = r.uploadPalette(std::span<const Rgba8>(palePal));
+    const std::array<Rgba8, 1> brightPal{{{.r = 255, .g = 240, .b = 200, .a = 255}}};
+    const PaletteId brightPalId = r.uploadPalette(std::span<const Rgba8>(brightPal));
+    const std::array<Rgba8, 1> bluePal{{{.r = 8, .g = 12, .b = 96, .a = 255}}};
+    const PaletteId bluePalId = r.uploadPalette(std::span<const Rgba8>(bluePal));
+    constexpr Rgba8 kEmber{.r = 255, .g = 66, .b = 26, .a = 255};
+
+    const ScreenSpaceEffect bloom{.kind = ScreenSpaceEffectKind::Bloom, .radius = 6.0f, .intensity = 255};
+    const ScreenSpaceEffect glow{.kind      = ScreenSpaceEffectKind::Glow,
+                                 .fill      = kEmber,
+                                 .radius    = 6.0f,
+                                 .threshold = 0,
+                                 .intensity = 255};
+    auto solid = [&](const char* key, int x, int y, PaletteId palette, const ScreenSpaceEffect& effect) {
+        Sprite s{.key = key, .x = x, .y = y, .atlas = solidAtlas, .tile = 0, .palette = palette};
+        s.size    = AssetDimensions{8, 8};
+        s.effects = {effect};
+        return s;
+    };
+
+    FrameDrawState frame;
+    cells.assign(8 * 8, TileCell{.atlas = solidAtlas, .tile = 0, .palette = darkPalId});
+    for (std::size_t i = 0; i < 8 * 4; ++i) cells[i].palette = palePalId;
+    DrawLayer bg{.key = "dark_bg"};
+    bg.z       = 0;
+    bg.size    = PixelSize{kW, kH};
+    bg.content = TileContent{.widthInTiles = 8, .heightInTiles = 8, .cells = std::span<const TileCell>(cells)};
+    frame.layers.push_back(bg);
+
+    translucent = {solid("pair_left", 8, 8, brightPalId, bloom), solid("pair_right", 20, 8, brightPalId, bloom)};
+    DrawLayer pair{.key = "halo_pair"};
+    pair.z       = 10;
+    pair.size    = PixelSize{kW, kH};
+    pair.alpha   = 0.5f;
+    pair.blend   = BlendMode::Multiply;
+    pair.content = SpriteContent{.sprites = std::span<const Sprite>(translucent)};
+    frame.layers.push_back(pair);
+
+    opaque = {solid("ember", 24, 36, bluePalId, glow), solid("edge", 58, 50, brightPalId, bloom)};
+    DrawLayer lit{.key = "halo_lit"};
+    lit.z       = 20;
+    lit.size    = PixelSize{kW, kH};
+    lit.content = SpriteContent{.sprites = std::span<const Sprite>(opaque)};
+    frame.layers.push_back(lit);
+    return frame;
+}
+
+}  // namespace golden_scenes
+
+namespace {
+
+TEST_F(GoldenReadback, SpriteHalo) {
+    Renderer r{device_, nullptr, ViewportResolution{kW, kH}};
+    std::vector<TileCell> cells;
+    std::vector<Sprite>   translucent, opaque;
+    const FrameDrawState  frame = golden_scenes::spriteHaloScene(r, cells, translucent, opaque);
+    runScene("sprite_halo", Tol::Exact, frame, r);
+}
+
+}  // namespace
