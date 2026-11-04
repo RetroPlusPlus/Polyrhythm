@@ -2404,6 +2404,113 @@ groupSpriteEmissionBuckets(std::span<const SpriteEmissionStep> steps) {
     return buckets;
 }
 
+// ── A sprite's own halo as a field ──────────────────────────────────────────────────────────
+//
+// A whole-silhouette Bloom / Glow radiates past the sprite's quad, so the field that holds it is the quad
+// grown by the spread on every side; what the blur spills into that band is the halo. Sprites in one
+// (kind, reach) bucket whose grown footprints overlap light common pixels, so they share one field: their
+// emission sums in the rect and blurs once, and the composite's coverage rule is applied once per pixel.
+
+// One field's worth of whole-silhouette emission: the members' footprints' union, and the bucket's reach.
+struct SpriteHaloCluster {
+    bool                     glow      = false;
+    float                    blurReach = 0.0f;   // VIEWPORT px — the reach the chain plan resolves its kernel from
+    PixelBox                 box{};              // the members' footprints' union, VIEWPORT px, before growth
+    std::vector<std::size_t> members;            // indices into the emission-step sequence, in submission order
+    [[nodiscard]] bool operator==(const SpriteHaloCluster&) const noexcept = default;
+};
+
+// Group a layer's emission steps by (kind, reach), then join the members of a bucket whose footprints grown
+// by emissionMargin(emissionAtlasSpread(reach)) overlap, transitively. `footprints` is parallel to `steps`
+// (retropp::spriteFootprint of the step's instance). A step with an empty footprint joins no cluster.
+// Clusters come out in first-appearance order of their lowest member; members in submission order.
+[[nodiscard]] inline std::vector<SpriteHaloCluster>
+clusterSpriteHaloEmission(std::span<const SpriteEmissionStep> steps, std::span<const PixelBox> footprints) {
+    std::vector<SpriteHaloCluster> clusters;
+    for (const SpriteEmissionBucket& bucket : groupSpriteEmissionBuckets(steps)) {
+        const int m = emissionMargin(emissionAtlasSpread(bucket.reach));
+
+        // The bucket's members that have a footprint, each its own set until an overlap joins two.
+        std::vector<std::size_t> live;
+        for (std::size_t member : bucket.members)
+            if (member < footprints.size() && !footprints[member].empty()) live.push_back(member);
+        std::vector<std::size_t> parent(live.size());
+        for (std::size_t i = 0; i < parent.size(); ++i) parent[i] = i;
+        auto root = [&parent](std::size_t i) {
+            while (parent[i] != i) i = parent[i] = parent[parent[i]];
+            return i;
+        };
+        for (std::size_t i = 0; i < live.size(); ++i) {
+            const PixelBox& a = footprints[live[i]];
+            for (std::size_t j = i + 1; j < live.size(); ++j) {
+                const PixelBox& b = footprints[live[j]];
+                const bool overlap = a.x - m < b.x + b.w + m && b.x - m < a.x + a.w + m &&
+                                     a.y - m < b.y + b.h + m && b.y - m < a.y + a.h + m;
+                if (!overlap) continue;
+                const std::size_t ra = root(i), rb = root(j);
+                if (ra != rb) parent[std::max(ra, rb)] = std::min(ra, rb);
+            }
+        }
+
+        // One cluster per set, in the order of each set's lowest member; members in submission order.
+        std::vector<std::size_t> clusterOf(live.size(), live.size());
+        const std::size_t        first = clusters.size();
+        for (std::size_t i = 0; i < live.size(); ++i) {
+            const std::size_t r = root(i);
+            if (clusterOf[r] == live.size()) {
+                clusterOf[r] = clusters.size() - first;
+                clusters.push_back(SpriteHaloCluster{.glow = bucket.glow, .blurReach = bucket.reach});
+            }
+            SpriteHaloCluster& c   = clusters[first + clusterOf[r]];
+            const PixelBox&    box = footprints[live[i]];
+            if (c.members.empty()) {
+                c.box = box;
+            } else {
+                const int x0 = std::min(c.box.x, box.x), y0 = std::min(c.box.y, box.y);
+                const int x1 = std::max(c.box.x + c.box.w, box.x + box.w);
+                const int y1 = std::max(c.box.y + c.box.h, box.y + box.h);
+                c.box = PixelBox{.x = x0, .y = y0, .w = x1 - x0, .h = y1 - y0};
+            }
+            c.members.push_back(live[i]);
+        }
+    }
+    std::stable_sort(clusters.begin(), clusters.end(),
+                     [](const SpriteHaloCluster& a, const SpriteHaloCluster& b) {
+                         return a.members.front() < b.members.front();
+                     });
+    return clusters;
+}
+
+// The demand a cluster makes of the atlas: its box grown by ceil(spread) on every side, at the spread.
+[[nodiscard]] inline EmissionDemand spriteHaloDemand(const SpriteHaloCluster& c) noexcept {
+    const float spread = emissionAtlasSpread(c.blurReach);
+    const int   g      = static_cast<int>(std::ceil(spread));
+    return EmissionDemand{.x     = c.box.x - g,
+                          .y     = c.box.y - g,
+                          .w     = c.box.w + 2 * g,
+                          .h     = c.box.h + 2 * g,
+                          .reach = spread};
+}
+
+// One cluster's composite instance (32 bytes — mirrors halo_composite.vert's record): the inner box in
+// COMPOSE uv, and the field's rect-table row with the kind's alpha rule.
+struct GpuHaloComposite {
+    float uvBox[4];      // u0, v0, u1, v1 — the demand's quad on the compose grid, normalized
+    float rowGlow[4];    // (row, glow ? 1 : 0, 0, 0)
+};
+static_assert(sizeof(GpuHaloComposite) == 32, "GpuHaloComposite must match halo_composite.vert's 32-byte record");
+
+[[nodiscard]] inline GpuHaloComposite haloCompositeRecord(const EmissionDemand& d, int row, bool glow,
+                                                         int composeScale, int composeW, int composeH) noexcept {
+    const float s = static_cast<float>(composeScale);
+    const float W = static_cast<float>(composeW);
+    const float H = static_cast<float>(composeH);
+    return GpuHaloComposite{
+        .uvBox   = {static_cast<float>(d.x) * s / W, static_cast<float>(d.y) * s / H,
+                    static_cast<float>(d.x + d.w) * s / W, static_cast<float>(d.y + d.h) * s / H},
+        .rowGlow = {static_cast<float>(row), glow ? 1.0f : 0.0f, 0.0f, 0.0f}};
+}
+
 // ── Below-scope sprite effects — the scene-facing path ──────────────────────────────────────
 //
 // A Below-scope chain effect (scope == Below) does not transform the sprite's OWN pixels — it distorts /

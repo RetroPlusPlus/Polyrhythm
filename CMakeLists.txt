@@ -1681,6 +1681,7 @@ if(RETROPP_BUILD_TESTS)
         tests/sprite_region_emission_test.cpp
         tests/sprite_region_field_demand_test.cpp
         tests/sprite_emission_atlas_placement_test.cpp
+        tests/sprite_halo_field_test.cpp
         tests/sprite_below_emission_test.cpp
         tests/swirl_effect_test.cpp
         tests/blend_mode_test.cpp
