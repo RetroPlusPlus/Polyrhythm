@@ -1132,8 +1132,8 @@ struct SpriteInflation {
 // moves along a chord of at most min(|turn in radians|, 2) * radius on both axes (the chord 2R*sin(t/2)
 // never exceeds either tR or 2R). makeGpuSprite grows the sprite's render footprint by
 // this so a displaced crest is never clipped at the static quad; {0,0} for a sprite with no displacing
-// effect. A Bloom / Glow halo is outside this bound: it rasterizes into the shared emission buffer and
-// spreads there, so the art footprint is the whole footprint.
+// effect. A Bloom / Glow halo is outside this bound: it rasterizes into a field on the layer's emission atlas
+// and spreads there, so the art footprint is the whole footprint.
 struct SpriteDisplaceBound {
     float u = 0.0f;
     float v = 0.0f;
@@ -1246,7 +1246,7 @@ struct SpriteDisplaceBound {
     // displaced crest is never clipped at the static quad. A displacing sprite renders through the analytic
     // branch regardless of transform: only that branch reconstructs the true quad coordinate (via the
     // inverse map) across the inflated footprint. A Bloom / Glow halo is outside this bound: it rasterizes
-    // into the shared emission buffer and spreads there.
+    // into a field on the layer's emission atlas and spreads there.
     const detail::SpriteDisplaceBound db = detail::spriteDisplaceBound(s);
     const float dispEu = s.size.width  > 0 ? db.u / static_cast<float>(s.size.width)  : 0.0f;
     const float dispEv = s.size.height > 0 ? db.v / static_cast<float>(s.size.height) : 0.0f;

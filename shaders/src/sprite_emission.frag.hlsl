@@ -1,10 +1,10 @@
 // Sprite emission fragment — the raster stage of a sprite's Layer-scope Bloom / Glow.
 //
 // A glowing sprite draws TWICE: once through sprite.frag for its art, and once through this shader for the
-// light it radiates. This pass writes only the EMISSION — the halo's source field — into the shared
-// emission buffer, additively, so every sprite in the same (kind, reach) bucket accumulates into one image
-// that is blurred once and composited once. That is what makes the cost of a field of glowing sprites the
-// cost of its distinct reaches rather than of its sprite count.
+// light it radiates. This pass writes only the EMISSION — the halo's source — into the sprite's field on the
+// layer's emission atlas, additively, so sprites whose halos meet sum into one field that is blurred once and
+// composited once. The field is sized to the sprites' footprints plus their reach, so a halo costs what its
+// field's pixels cost, whatever the layer's size.
 //
 // The sprite's own chain runs here up to the emission step, which is named by bits 8..15 of the record's
 // flags word (retropp::kSpriteEmissionIndexShift; the renderer ORs it into the emission copy of the art
@@ -15,15 +15,16 @@
 //   Glow:   m = c.a · survive(lum(c), threshold);  e = (tint · m · intensity, m · intensity)
 //
 // mirroring retropp::emissionExtractBloom / emissionExtractGlow with the sprite's art as the source. The
-// result scales by the layer alpha and the per-sprite alpha, so a fading sprite's halo fades with it.
+// result scales by the layer alpha and the per-sprite alpha (the record's alpha lane carries their product),
+// so a fading sprite's halo fades with it.
 //
 // A Custom chain step is a no-op here — a game shader has no emission variant, so the emission sees the
 // color as it stood before that step (the renderer warns). Region steps never precede a chain step in the
 // record slice, and are skipped defensively.
 //
 // The displacement pre-pass, the art read, and the transparent-field semantics are the art shader's, quoted
-// verbatim: the halo radiates from wherever the art actually landed. There is no footprint inflation — this
-// pass covers the art's own quad and the blur that follows spreads the light in buffer space.
+// verbatim: the halo radiates from wherever the art actually landed. This pass covers the art's own quad,
+// placed in its field, and the blur that follows spreads the light into the band around it.
 //
 // SDL_GPU HLSL conventions match sprite.frag exactly (t0..t3 space2 storage textures, b0 space3 uniform),
 // so the two share one vertex stage and one set of bindings.

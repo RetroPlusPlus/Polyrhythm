@@ -188,8 +188,8 @@ EvaluationGrid Renderer::evaluationGrid() const noexcept;
 `Viewport` (the default) evaluates every analytic render path on the viewport grid — transformed tile
 layers, the effect regions (select / stencil, in polygon / analytic-curve / baked-mask form), the
 sampling effects (`RowDisplacement` / `Ripple` / `Swirl`), **geometrically-transformed sprites** (`Sprite::transform`
-/ `DrawLayer::transform`), **a `Bloom` or `Glow` halo read from a field** — a region `Bloom`'s, and a Below
-lens's (the field is held per viewport pixel and read back through the grid, so the glow quantizes to whole
+/ `DrawLayer::transform`), **a `Bloom` or `Glow` halo read from a field** — a region `Bloom`'s, a Below
+lens's, and a sprite's own whole-silhouette halo (the field is held per viewport pixel and read back through the grid, so the glow quantizes to whole
 viewport pixels along with the content it grades), and
 **custom shader stages** (automatically — see
 [Custom shader stages](#custom-shader-stages-register-a-shader-by-path)). The image is then
@@ -337,16 +337,18 @@ normally buys, and a confined halo does not have it.
 
 **What a halo costs.** `Bloom` and `Glow` are the only built-ins that read a neighborhood, and both
 realize as a fixed chain of cheap passes rather than one expensive gather: the emission is extracted (or,
-on sprites, rasterized) into a scratch buffer, reduced when the radius is wide, blurred separately on each
-axis, and added back. The consequence is that **radius is nearly free** — a reach of 20 costs about what a
+on sprites, rasterized) into a field, reduced when the radius is wide, blurred separately on each axis, and
+added back. The consequence is that **radius is nearly free** — a reach of 20 costs about what a
 reach of 2 does. Author the radius the scene wants.
 
 On sprites the blur work tracks the **distinct reaches** a layer authors rather than its sprite count: every
 halo at one radius blurs together in a single pass, however many sprites or lenses carry it and however far
 apart they sit. Two radii cost two passes.
 
-Each halo on a sprite occupies a field sized to that sprite's own drawn footprint, packed with the layer's
-others into a shared atlas, so a halo costs the area it covers rather than a screenful. Every site runs the
+Each halo on a sprite occupies a field sized to that sprite's own drawn footprint — grown by the reach for a
+whole-silhouette `Bloom` / `Glow`, whose light spills past the quad, and shared by the sprites of one kind and
+radius whose halos meet — packed with the layer's others into a shared atlas, so a halo costs the area it
+covers rather than a screenful. Every site runs the
 chain — frame, layer, region, sprite chain, sprite `Below` lens, and both `Layer`- and `Below`-scope sprite
 regions; none gathers.
 

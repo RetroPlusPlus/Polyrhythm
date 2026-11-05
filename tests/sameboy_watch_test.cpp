@@ -33,6 +33,7 @@ using retropp::vm::VmTestAccess;
 
 constexpr std::uint16_t kLoop  = 0x0150;
 constexpr std::uint32_t kCell  = 0xC0A2;
+constexpr std::uint32_t kCellMirror = 0xC0A3;  // the cell's copy, written right after it
 constexpr std::uint32_t kPair  = 0xC300;
 constexpr std::uint16_t kBgp   = 0xFF47;  // a register the boot seeding writes through the bus
 
@@ -67,6 +68,31 @@ std::vector<std::uint8_t> makeCellRom() {
     rom[0x0156] = 0xC0;
     rom[0x0157] = 0x18;
     rom[0x0158] = 0xF7;
+    return rom;
+}
+
+// The cell loop, storing each new value twice: to the cell, then to the mirror beside it. A watch on the cell
+// alone decides the first store and leaves the second, so the mirror shows what the cartridge tried to store.
+//
+//   0x0150:  ld a,[$C0A2]
+//   0x0153:  inc a
+//   0x0154:  ld [$C0A2],a
+//   0x0157:  ld [$C0A3],a
+//   0x015A:  jr -12           (back to 0x0150)
+std::vector<std::uint8_t> makeMirroredCellRom() {
+    std::vector<std::uint8_t> rom = romShell();
+    rom[0x0150] = 0xFA;
+    rom[0x0151] = 0xA2;
+    rom[0x0152] = 0xC0;
+    rom[0x0153] = 0x3C;
+    rom[0x0154] = 0xEA;
+    rom[0x0155] = 0xA2;
+    rom[0x0156] = 0xC0;
+    rom[0x0157] = 0xEA;
+    rom[0x0158] = 0xA3;
+    rom[0x0159] = 0xC0;
+    rom[0x015A] = 0x18;
+    rom[0x015B] = 0xF4;
     return rom;
 }
 
@@ -411,7 +437,7 @@ TEST(SameBoyWatches, AWatchFiresFromInsideAnotherWatchsHandlerOnTheGuestsOwnStor
 
 TEST(SameBoyWatches, AWatchSwitchedOffOnTheRunningCartridgeStopsDecidingIt) {
     Vm machine{VMPlatform::GameBoyColor};
-    machine.hostRom(makeCellRom());
+    machine.hostRom(makeMirroredCellRom());
 
     int fired = 0;
     machine.registerWatches(retropp::watches(
@@ -431,8 +457,15 @@ TEST(SameBoyWatches, AWatchSwitchedOffOnTheRunningCartridgeStopsDecidingIt) {
     VmTestAccess::stepOnce(machine);
     machine.stop();
 
-    EXPECT_EQ(fired, afterFirst);                     // it decided nothing more
-    EXPECT_NE(machine.read(one(kCell)).at(0), 0);     // and the guest's own stores landed again
+    EXPECT_EQ(fired, afterFirst);  // it decided nothing more
+    // And the guest's own stores landed again. Power-on work RAM is PRNG-seeded and a step's loop count is not
+    // fixed, so no value of the cell says so on its own; its distance from the mirror does. With the stores
+    // vetoed the cell never moves and the mirror holds one more than it (cell − mirror = 255); with them
+    // landing the two are equal, or the mirror is one behind when the step ended between the two stores.
+    const auto cell   = machine.read(one(kCell)).at(0);
+    const auto mirror = machine.read(one(kCellMirror)).at(0);
+    const auto apart  = static_cast<std::uint8_t>(cell - mirror);
+    EXPECT_TRUE(apart == 0 || apart == 1) << "cell " << int{cell} << ", mirror " << int{mirror};
 }
 
 // ── The machine running on a thread of its own ──────────────────────────────────────────────────

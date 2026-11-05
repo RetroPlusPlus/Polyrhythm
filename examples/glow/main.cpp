@@ -26,9 +26,9 @@
 //   • MIDDLE — an EMBER aura whose radius breathes between 3 and 7 on the sim tick.
 //   • RIGHT — a VIOLET aura whose intensity pulses, the pick-me-up shimmer a powerup drop wants.
 //
-// F swaps in a drifting FIELD of glowing relics. Glowing sprites that share a radius are rasterized into
-// one shared emission buffer, blurred once and composited once, so the field costs what a single relic
-// costs — spend the glow where the scene wants it, not where the frame budget allows. The field MOVES, so
+// F swaps in a drifting FIELD of glowing relics. Glowing sprites that share a radius and whose halos can
+// meet rasterize into one emission field, blurred once and composited once, and a field costs what its
+// pixels cost — spend the glow where the scene wants it, not where the frame budget allows. The field MOVES, so
 // the cadence is visible: smooth drift is a healthy frame budget, stutter is a blown one. Up / Down change
 // the relic count (10..400) and Right / Left the shared aura reach (3..48) — drive both up and watch what
 // the cost does.
@@ -200,10 +200,10 @@ int main() {
         };
 
         if (field) {
-            // A drifting field, all at one reach. They share a reach, so they share an emission buffer:
-            // one raster pass, one blur, one composite for the whole field however many there are.
-            // Nothing here is a batching API — authoring N glowing sprites the ordinary way is what gets
-            // the shared pass. Each relic keeps a STABLE key across frames, which is what lets the engine
+            // A drifting field, all at one reach. They share a reach, and where their halos meet they
+            // share an emission field: one raster, one blur, one composite for everything in it. Nothing
+            // here is a batching API — authoring N glowing sprites the ordinary way is what gets the shared
+            // field. Each relic keeps a STABLE key across frames, which is what lets the engine
             // interpolate its motion between sim ticks; keying by loop index would cross-fade unrelated
             // sprites into each other.
             for (int i = 0; i < count; ++i) {
@@ -242,7 +242,7 @@ int main() {
                 "ember, RIGHT a pulsing violet. The colour is AUTHORED (the tint field), not the art's — "
                 "that is the difference from Bloom. One built-in: ScreenSpaceEffectKind::Glow.\n");
     std::printf("[demo] Space = whole-silhouette vs brightness-keyed emission, F = the moving field "
-                "(one shared emission buffer), Up/Down = relic count, Right/Left = aura reach, "
+                "(halos that meet share a field), Up/Down = relic count, Right/Left = aura reach, "
                 "Backspace = fullscreen. Close to quit.\n");
     WindowedHost host{loop, platform};
     host.run();
