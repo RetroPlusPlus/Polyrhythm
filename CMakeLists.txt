@@ -1746,6 +1746,7 @@ if(RETROPP_BUILD_TESTS)
         tests/snes_no_refusal_test.cpp
         tests/net_socket_test.cpp
         tests/net_tls_test.cpp
+        tests/net_tls_trust_roots_test.cpp
         tests/vm_frame_sink_test.cpp
         tests/vm_audio_switch_test.cpp
         tests/vm_video_weave_test.cpp

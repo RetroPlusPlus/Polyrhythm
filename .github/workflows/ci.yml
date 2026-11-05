@@ -75,7 +75,7 @@ jobs:
           export SDL_VIDEODRIVER=offscreen   # headless: SDL video init succeeds so the GPU device (lavapipe) is reachable
           if [ "${{ github.event.inputs.capture_goldens }}" = "true" ]; then export RETROPP_CAPTURE_GOLDEN=1; fi
           mkdir -p "$GITHUB_WORKSPACE/ci-output"
-          ctest --test-dir /tmp/retropp-engine-ci-build -E HoldsHardwareCadenceLive --output-on-failure \
+          ctest --test-dir /tmp/retropp-engine-ci-build -E 'HoldsHardwareCadenceLive|NetTlsTrustRoots' --output-on-failure \
             2>&1 | tee "$GITHUB_WORKSPACE/ci-output/linux-test-results.txt"
 
       # The rom-run example runs OUTSIDE the sweep so its measurements land in this log on every
@@ -85,6 +85,16 @@ jobs:
         run: |
           set -o pipefail
           ctest --test-dir /tmp/retropp-engine-ci-build -R HoldsHardwareCadenceLive --extra-verbose \
+            2>&1 | tee -a "$GITHUB_WORKSPACE/ci-output/linux-test-results.txt"
+
+      # The TLS client against the system's own trust roots: real hosts on the public internet, so it runs
+      # outside the sweep and reports whether or not the steps before it passed — a network outage reds this
+      # step with the status it met, never the regression suite.
+      - name: TLS — the client trusts the system's roots and refuses what it must
+        if: ${{ !cancelled() }}
+        run: |
+          set -o pipefail
+          ctest --test-dir /tmp/retropp-engine-ci-build -R NetTlsTrustRoots --extra-verbose \
             2>&1 | tee -a "$GITHUB_WORKSPACE/ci-output/linux-test-results.txt"
 
       - name: ccache stats
@@ -145,7 +155,7 @@ jobs:
           set -o pipefail   # without this, tee's exit code masks ctest failures
           if [ "${{ github.event.inputs.capture_goldens }}" = "true" ]; then export RETROPP_CAPTURE_GOLDEN=1; fi
           mkdir -p "$GITHUB_WORKSPACE/ci-output"
-          ctest --test-dir /tmp/retropp-engine-ci-build -E HoldsHardwareCadenceLive --output-on-failure \
+          ctest --test-dir /tmp/retropp-engine-ci-build -E 'HoldsHardwareCadenceLive|NetTlsTrustRoots' --output-on-failure \
             2>&1 | tee "$GITHUB_WORKSPACE/ci-output/macos-test-results.txt"
 
       # See the linux job's twin step: the example's measurements always land in this log, and the
@@ -154,6 +164,16 @@ jobs:
         run: |
           set -o pipefail
           ctest --test-dir /tmp/retropp-engine-ci-build -R HoldsHardwareCadenceLive --extra-verbose \
+            2>&1 | tee -a "$GITHUB_WORKSPACE/ci-output/macos-test-results.txt"
+
+      # The TLS client against the system's own trust roots: real hosts on the public internet, so it runs
+      # outside the sweep and reports whether or not the steps before it passed — a network outage reds this
+      # step with the status it met, never the regression suite.
+      - name: TLS — the client trusts the system's roots and refuses what it must
+        if: ${{ !cancelled() }}
+        run: |
+          set -o pipefail
+          ctest --test-dir /tmp/retropp-engine-ci-build -R NetTlsTrustRoots --extra-verbose \
             2>&1 | tee -a "$GITHUB_WORKSPACE/ci-output/macos-test-results.txt"
 
       - name: ccache stats
@@ -248,7 +268,7 @@ jobs:
             Remove-Item -Force -ErrorAction SilentlyContinue
           if ("${{ github.event.inputs.capture_goldens }}" -eq "true") { $env:RETROPP_CAPTURE_GOLDEN = "1" }
           $results = "C:\ci-output\windows-test-results-${{ github.run_id }}-${{ github.run_attempt }}.txt"
-          cmd /c "ctest --test-dir C:\retropp-engine-ci-build -C Release -E HoldsHardwareCadenceLive --output-on-failure 2>&1" |
+          cmd /c "ctest --test-dir C:\retropp-engine-ci-build -C Release -E HoldsHardwareCadenceLive^|NetTlsTrustRoots --output-on-failure 2>&1" |
             Tee-Object -FilePath $results
           # PowerShell equivalent of `set -o pipefail` — Tee-Object does not update
           # $LASTEXITCODE; the cmd /c exit code is captured after the pipeline.
@@ -262,6 +282,18 @@ jobs:
         run: |
           $results = "C:\ci-output\windows-test-results-${{ github.run_id }}-${{ github.run_attempt }}.txt"
           cmd /c "ctest --test-dir C:\retropp-engine-ci-build -C Release -R HoldsHardwareCadenceLive --extra-verbose 2>&1" |
+            Tee-Object -FilePath $results -Append
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      # The TLS client against the system's own trust roots: real hosts on the public internet, so it runs
+      # outside the sweep and reports whether or not the steps before it passed — a network outage reds this
+      # step with the status it met, never the regression suite.
+      - name: TLS — the client trusts the system's roots and refuses what it must
+        if: ${{ !cancelled() }}
+        shell: powershell
+        run: |
+          $results = "C:\ci-output\windows-test-results-${{ github.run_id }}-${{ github.run_attempt }}.txt"
+          cmd /c "ctest --test-dir C:\retropp-engine-ci-build -C Release -R NetTlsTrustRoots --extra-verbose 2>&1" |
             Tee-Object -FilePath $results -Append
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
@@ -323,7 +355,7 @@ jobs:
           export SDL_VIDEODRIVER=offscreen   # headless: SDL video init succeeds so the GPU device (lavapipe) is reachable
           if [ "${{ github.event.inputs.capture_goldens }}" = "true" ]; then export RETROPP_CAPTURE_GOLDEN=1; fi
           mkdir -p "$GITHUB_WORKSPACE/ci-output"
-          ctest --test-dir /tmp/retropp-engine-ci-build -E HoldsHardwareCadenceLive --output-on-failure \
+          ctest --test-dir /tmp/retropp-engine-ci-build -E 'HoldsHardwareCadenceLive|NetTlsTrustRoots' --output-on-failure \
             2>&1 | tee "$GITHUB_WORKSPACE/ci-output/linux-arm64-test-results.txt"
 
       # See the linux-x64 job's twin step: the example's measurements always land in this log, and
@@ -332,6 +364,16 @@ jobs:
         run: |
           set -o pipefail
           ctest --test-dir /tmp/retropp-engine-ci-build -R HoldsHardwareCadenceLive --extra-verbose \
+            2>&1 | tee -a "$GITHUB_WORKSPACE/ci-output/linux-arm64-test-results.txt"
+
+      # The TLS client against the system's own trust roots: real hosts on the public internet, so it runs
+      # outside the sweep and reports whether or not the steps before it passed — a network outage reds this
+      # step with the status it met, never the regression suite.
+      - name: TLS — the client trusts the system's roots and refuses what it must
+        if: ${{ !cancelled() }}
+        run: |
+          set -o pipefail
+          ctest --test-dir /tmp/retropp-engine-ci-build -R NetTlsTrustRoots --extra-verbose \
             2>&1 | tee -a "$GITHUB_WORKSPACE/ci-output/linux-arm64-test-results.txt"
 
       - name: ccache stats
@@ -423,7 +465,7 @@ jobs:
             Remove-Item -Force -ErrorAction SilentlyContinue
           if ("${{ github.event.inputs.capture_goldens }}" -eq "true") { $env:RETROPP_CAPTURE_GOLDEN = "1" }
           $results = "C:\ci-output\windows-arm64-test-results-${{ github.run_id }}-${{ github.run_attempt }}.txt"
-          cmd /c "ctest --test-dir C:\retropp-engine-ci-build -C Release -E HoldsHardwareCadenceLive --output-on-failure 2>&1" |
+          cmd /c "ctest --test-dir C:\retropp-engine-ci-build -C Release -E HoldsHardwareCadenceLive^|NetTlsTrustRoots --output-on-failure 2>&1" |
             Tee-Object -FilePath $results
           # PowerShell pipefail equivalent — see windows-x64 Test step above.
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -435,6 +477,18 @@ jobs:
         run: |
           $results = "C:\ci-output\windows-arm64-test-results-${{ github.run_id }}-${{ github.run_attempt }}.txt"
           cmd /c "ctest --test-dir C:\retropp-engine-ci-build -C Release -R HoldsHardwareCadenceLive --extra-verbose 2>&1" |
+            Tee-Object -FilePath $results -Append
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      # The TLS client against the system's own trust roots: real hosts on the public internet, so it runs
+      # outside the sweep and reports whether or not the steps before it passed — a network outage reds this
+      # step with the status it met, never the regression suite.
+      - name: TLS — the client trusts the system's roots and refuses what it must
+        if: ${{ !cancelled() }}
+        shell: powershell
+        run: |
+          $results = "C:\ci-output\windows-arm64-test-results-${{ github.run_id }}-${{ github.run_attempt }}.txt"
+          cmd /c "ctest --test-dir C:\retropp-engine-ci-build -C Release -R NetTlsTrustRoots --extra-verbose 2>&1" |
             Tee-Object -FilePath $results -Append
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
