@@ -1335,6 +1335,7 @@ set(RETROPP_SHADER_STEMS blit.vert blit.frag tile.vert tile.frag sprite.vert spr
                        colorfill_gather.frag gleam.frag saturation.frag swirl.frag
                        emission_extract.frag emission_extract_rect.vert emission_extract_rect.frag
                        emission_blur.frag emission_composite.frag
+                       halo_composite.vert halo_composite.frag
                        region_select.frag
                        region_select_curve.frag region_select_curve_mask.frag region_stencil.frag
                        region_stencil_curve.frag region_stencil_curve_mask.frag blend.frag)
@@ -1682,6 +1683,7 @@ if(RETROPP_BUILD_TESTS)
         tests/sprite_region_field_demand_test.cpp
         tests/sprite_emission_atlas_placement_test.cpp
         tests/sprite_halo_field_test.cpp
+        tests/sprite_halo_device_test.cpp
         tests/sprite_below_emission_test.cpp
         tests/swirl_effect_test.cpp
         tests/blend_mode_test.cpp

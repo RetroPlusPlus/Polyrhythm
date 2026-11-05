@@ -232,8 +232,8 @@ TEST(GlowSpriteEmission, AnAuraDoesNotInflateTheArtFootprint) {
     s.size = AssetDimensions{16, 16};
     s.effects = {ScreenSpaceEffect{.kind = ScreenSpaceEffectKind::Glow, .radius = 4.0f, .intensity = 255}};
     const GpuSprite g = makeGpuSprite(s, 160, 144, 0.0f, 0.0f);
-    // The halo rasters into the emission buffer and spreads there, so the art keeps its own footprint —
-    // the cheap plain path, byte-identical to the same sprite carrying no glow.
+    // The halo rasters into a field on the layer's emission atlas and spreads there, so the art keeps its own
+    // footprint — the cheap plain path, byte-identical to the same sprite carrying no glow.
     Sprite plain{.key = "plain", .x = 10, .y = 10};
     plain.size = AssetDimensions{16, 16};
     const GpuSprite gp = makeGpuSprite(plain, 160, 144, 0.0f, 0.0f);

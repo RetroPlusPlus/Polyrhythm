@@ -20,9 +20,9 @@
 // the displacement bound (retropp::makeGpuSprite) so a displaced crest is never clipped at the static quad.
 //
 // A Bloom or Glow CHAIN effect is not evaluated here at all: the sprite rasterizes its emission through the
-// sprite-emission pipeline into the shared emission buffer, which is blurred and composited over the layer
-// once per (kind, reach) bucket. Such a step passes through this chain untouched, and steps after it grade
-// the art alone. A Bloom inside a REGION does resolve here — it is a graded source under the region's blend
+// sprite-emission pipeline into a field on the layer's emission atlas, which is blurred once per reach and
+// composited over the layer across the field's pixels. Such a step passes through this chain untouched, and
+// steps after it grade the art alone. A Bloom inside a REGION does resolve here — it is a graded source under the region's blend
 // and alpha, not an additive halo — but it READS its halo from a field of that sprite's own light the
 // renderer prepares before this pass. No neighborhood is summed anywhere in this shader.
 //

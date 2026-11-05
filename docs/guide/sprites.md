@@ -357,11 +357,13 @@ Sprite-specific semantics of the shared grammar:
 - **Displacing kinds are in the sprite's own art px.** `RowDisplacement` / `Ripple` / `Swirl` re-read the art at a
   displaced within-sprite position (`amplitude` / `center` in art pixels, not viewport pixels); out-of-art
   reads are transparent (the default `Blank` edge) or clamp to the art border (`Stretch`).
-- **`Bloom` and `Glow` radiate through a shared emission buffer.** A glowing sprite's halo is not gathered
-  per pixel: the sprite rasterizes its *emission* — the light it contributes — into a buffer shared by
-  every glowing sprite on the layer, which is blurred once and composited once **per (kind, radius)**. So
-  a field of fifty relics at one radius costs what one relic costs, and a wide halo costs barely more than
-  a narrow one. Three consequences worth knowing:
+- **`Bloom` and `Glow` radiate through emission fields.** A glowing sprite's halo is not gathered per
+  pixel: the sprite rasterizes its *emission* — the light it contributes — into a field on the layer's
+  emission atlas sized to its footprint plus its reach, the field is blurred once per `radius`, and the halo
+  is composited over the layer's art across the field's pixels alone. Sprites of one kind and radius whose
+  halos can meet share one field, so their light sums before it blurs. Fifty relics at one radius cost what
+  their fields' pixels cost, and a wide halo costs barely more than a narrow one. Three consequences worth
+  knowing:
   - The `radius` is authored in the sprite's own art pixels and blurs in viewport pixels, so a transformed
     sprite's halo scales with it (through the placement's linear scale — one isotropic factor, even under a
     non-uniform or perspective transform).

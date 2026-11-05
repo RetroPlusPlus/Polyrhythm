@@ -1961,10 +1961,10 @@ struct CurveStencilParams {
 // ── Sprite emission — the Layer-scope Bloom / Glow raster ───────────────────────────────────
 //
 // A glowing sprite does not gather its own neighborhood. It rasterizes its EMISSION — the light it
-// contributes to the halo — into the shared emission buffer, which is blurred once and composited once for
-// every sprite sharing the reach. The cost of a field of glowing sprites is therefore the cost of the
-// distinct reaches it authors, not the count of sprites: fifty boulders at one radius cost the same four
-// passes as one, and the reach itself costs taps along two axes rather than over an area.
+// contributes to the halo — into a field on the layer's emission atlas sized to its footprint plus its reach;
+// the field is blurred once per reach and the halo composited over the layer across the field's pixels.
+// Sprites of one kind and reach whose halos can meet share a field, so their light sums before it blurs. A
+// halo costs what its field's pixels cost, and the reach costs taps along two axes rather than over an area.
 //
 // The sprite's own chain still runs during the raster, up to the glow step: color steps BEFORE it feed the
 // emission (a ColorFill recolors what radiates), and the step itself resolves the emission from the running
@@ -2376,9 +2376,9 @@ inline constexpr float kEmissionSampleSteps = 256.0f;
 }
 
 // A group of emission steps sharing the only two things downstream of the raster can see: the kind (which
-// alpha rule composites the halo) and the reach (what the blur does). One bucket rasters its members
-// together, blurs once and composites once. Unlike the blend / pipeline runs, a bucket needs no contiguity —
-// the emission field is an additive sum, so two steps sharing kind and reach coalesce however they were
+// alpha rule composites the halo) and the reach (what the blur does). A bucket is the set its fields'
+// clusters are drawn from (clusterSpriteHaloEmission, below). Unlike the blend / pipeline runs, a bucket needs
+// no contiguity — emission is an additive sum, so two steps sharing kind and reach coalesce however they were
 // ordered.
 struct SpriteEmissionBucket {
     bool                     glow    = false;
