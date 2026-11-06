@@ -209,6 +209,11 @@ foreach(_f IN LISTS RETROPP_SB_CORE)
 endforeach()
 
 add_library(retropp-sameboy STATIC ${_retropp_sb_sources})
+# The engine's own C file beside the core's: it reads and writes the core's sound output stage, whose
+# fields the core's header names for C alone and lays out by the definitions below. Built here so it
+# is built with them.
+target_sources(retropp-sameboy PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/vm/gameboy/sameboy_state_extras.c")
 set_target_properties(retropp-sameboy PROPERTIES C_STANDARD 11 C_EXTENSIONS ON)
 # Core/ is PUBLIC so the internal src/vm/ backend (linking retropp-sameboy through
 # the engine) resolves gb.h; SYSTEM so it never faces the engine warning bar. The
@@ -1717,6 +1722,7 @@ if(RETROPP_BUILD_TESTS)
         tests/escape_table_threads_test.cpp
         tests/guest_watch_test.cpp
         tests/sameboy_watch_test.cpp
+        tests/sameboy_state_test.cpp
         tests/raster_content_test.cpp
         tests/image_layer_test.cpp
         tests/guest_input_test.cpp
@@ -1726,6 +1732,7 @@ if(RETROPP_BUILD_TESTS)
         tests/snes_backend_frame_test.cpp
         tests/snes_backend_input_test.cpp
         tests/snes_backend_save_test.cpp
+        tests/snes_state_test.cpp
         tests/snes_backend_places_test.cpp
         tests/snes_regions_test.cpp
         tests/snes_backend_routines_test.cpp

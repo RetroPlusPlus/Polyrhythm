@@ -60,6 +60,32 @@ public:
         offset_ = up_;
     }
 
+    // Where the converter stands: the frames it holds and the next output's position among them. Put
+    // back into a converter of the same two rates, the frames that follow are the ones it would have
+    // produced.
+    struct State {
+        std::array<std::int16_t, 2 * kTapsPerPhase> left{};
+        std::array<std::int16_t, 2 * kTapsPerPhase> right{};
+        std::uint32_t                               head   = 0;
+        std::uint32_t                               offset = 0;
+    };
+
+    [[nodiscard]] State state() const noexcept {
+        return State{.left   = left_,
+                     .right  = right_,
+                     .head   = static_cast<std::uint32_t>(head_),
+                     .offset = offset_};
+    }
+
+    // A position this converter could not have reached — the newest frame past the history, an
+    // output due before the newest input — is taken as the start.
+    void restore(const State& held) noexcept {
+        left_   = held.left;
+        right_  = held.right;
+        head_   = held.head < static_cast<std::uint32_t>(kTapsPerPhase) ? held.head : 0;
+        offset_ = held.offset >= up_ ? held.offset : up_;
+    }
+
     // Feed one input frame; `emit(left, right)` is called for each output frame it completes: none,
     // one or several, as the ratio dictates.
     template <class Emit>

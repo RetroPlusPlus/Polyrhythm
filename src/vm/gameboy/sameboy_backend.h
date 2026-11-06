@@ -99,6 +99,14 @@ public:
     void writeSaveData(std::span<const std::uint8_t> bytes) override;
     [[nodiscard]] bool takeSaveDataChanged() override;
 
+    // State: the core's own save state and its sound output stage, with the two counts this backend
+    // carries between runs. A frame the machine is part-way through drawing is finished first — a
+    // cartridge by running on, an engine-built image by idling on the landing — and those cycles
+    // come back out of the budgets that follow.
+    [[nodiscard]] bool keepsState() const override { return true; }
+    [[nodiscard]] std::vector<std::uint8_t> readState() override;
+    bool writeState(std::span<const std::uint8_t> bytes) override;
+
 private:
     // One watched address: the encoded form the host armed — reported back verbatim when it fires,
     // so the host matches it to its declaration without decoding anything — beside the decoded pair
@@ -160,10 +168,25 @@ private:
     // routine's final RET pops it and the run stops. Shared by beginCall and the resident call path.
     void plantSentinel(std::uint16_t stackTop);
 
+    // Idle the machine for `cycles` on the landing's self-loop, the register file put back afterward.
+    void idleFor(std::uint64_t cycles);
+
+    // What is left of a budget once the ticks readState ran ahead have been taken out of it.
+    [[nodiscard]] std::uint64_t lessFrameDebt(std::uint64_t ticks8MHz);
+
+    // The byte a replacing escape stands its return on, in the memory that holds it.
+    [[nodiscard]] std::uint8_t& escapeByte(const ArmedEscape& escape);
+
+    // Whether that byte is one a state carries: any byte outside the cartridge image.
+    [[nodiscard]] static bool inStateMemory(const ArmedEscape& escape) noexcept {
+        return !escape.banked && escape.addr16 > 0x7FFF;
+    }
+
     SameBoyMachine machine_;
     std::uint16_t  nextOffset_;       // next free byte in the code arena
     Registers      pending_{};        // register file accumulated between beginCall and run
     std::uint64_t  audioOvershoot8MHz_ = 0;  // ticks a runForCycles overshot its budget, paid back next
+    std::uint64_t  frameDebt8MHz_ = 0;       // ticks readState ran to finish a frame, owed back by the budgets that follow
     std::uint16_t  residentStackTop_ = 0xDFFC;  // scratch stack top for resident entry calls
     bool           residentConfigured_ = false; // configureResidentImage has run
     bool           romHosted_ = false;          // loadRom has run: the game owns this cartridge
