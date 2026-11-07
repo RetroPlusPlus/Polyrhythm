@@ -383,7 +383,8 @@ A driver with no state is `DriverId<NoSlots>` — pass no slots batch.
 - **Two forms, mirroring audio registration.** `uploadDriver(binding, verbs, slots)` takes ready image bytes
   for every image; `registerDriver(binding, verbs, slots)` takes a `HostedDriverBinding`, whose images are
   named one at a time — each either a literal path under the Embed / LoadFromPath policy, or inline bytes.
-  An `.asm` image is assembled in the binding's `isa`; another extension is raw bytes.
+  An `.asm` image is assembled in the binding's `isa`, and names its base with `ORG` when a label in it
+  is an address — the window address for a banked image; another extension is raw bytes.
 - **An image can be written for another processor than the binding's.** `DriverImagePath::isa` is
   optional: unset, the image is in the binding's `isa`; named, the build bakes it with that instruction
   set's assembler. An SNES driver is the case — 65816 code, and the SPC700 program it uploads to the

@@ -15,6 +15,7 @@
 #include <cstring>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -33,7 +34,7 @@ namespace {
 // by setting PC directly, so the rest of low ROM stays boot-overlaid and unusable; this gap is the
 // arena.
 constexpr std::size_t   kRomSize     = 0x8000;  // 32 KiB ROM-only image (smallest GB cartridge)
-constexpr std::uint16_t kRoutineBase = 0x0160;  // routines are placed from here, growing upward
+constexpr std::uint16_t kRoutineBase = 0x0160;  // the arena's first address
 constexpr std::uint16_t kArenaEnd    = 0x0200;  // first address the CGB boot ROM overlays
 constexpr std::uint16_t kStackTop    = 0xDFFC;  // SP scratch top (high WRAM); landing planted here
 
@@ -43,6 +44,16 @@ constexpr std::uint16_t kWramBase = 0xC000;
 constexpr std::uint16_t kOamBase  = 0xFE00;
 constexpr std::uint16_t kIoBase   = 0xFF00;
 constexpr std::uint16_t kHramBase = 0xFF80;
+
+// An address as a refusal names it: `0x01A0`.
+std::string hex16(std::uint32_t value) {
+    constexpr std::string_view kDigits = "0123456789ABCDEF";
+    std::string                out     = "0x0000";
+    for (int i = 0; i < 4; ++i) {
+        out[static_cast<std::size_t>(5 - i)] = kDigits[(value >> (i * 4)) & 0xF];
+    }
+    return out;
+}
 
 // ── Run-to-return landing ───────────────────────────────────────────────────────────────────────
 // The landing is a stop condition, not part of any program: control reaches it only because the
@@ -151,7 +162,7 @@ std::uint64_t readRegisterField(const Registers& regs, gb::Reg reg) {
 }  // namespace
 
 SameBoyBackend::SameBoyBackend(ConsoleModel model)
-    : machine_(model), nextOffset_(kRoutineBase) {
+    : machine_(model) {
     // A blank cartridge image: header bytes for ROM-ONLY / 32 KiB / no-RAM.
     std::vector<std::uint8_t> rom(kRomSize, 0x00);
     rom[0x0147] = 0x00;  // cartridge type: ROM ONLY (no MBC)
@@ -210,29 +221,68 @@ std::uint64_t SameBoyBackend::lessFrameDebt(std::uint64_t ticks8MHz) {
     return ticks8MHz - paid;
 }
 
+std::optional<std::uint16_t> SameBoyBackend::firstGap(const std::vector<PlacedRoutine>& placed,
+                                                      std::size_t size) {
+    std::vector<PlacedRoutine> byAddress = placed;
+    std::sort(byAddress.begin(), byAddress.end(),
+              [](const PlacedRoutine& a, const PlacedRoutine& b) { return a.base < b.base; });
+    std::size_t candidate = kRoutineBase;
+    for (const PlacedRoutine& routine : byAddress) {
+        if (candidate + size <= routine.base) {
+            break;
+        }
+        candidate = static_cast<std::size_t>(routine.base) + routine.size;
+    }
+    if (candidate + size > kArenaEnd) {
+        return std::nullopt;
+    }
+    return static_cast<std::uint16_t>(candidate);
+}
+
+std::uint16_t SameBoyBackend::endOfPlaced() const {
+    std::uint16_t end = kRoutineBase;
+    for (const PlacedRoutine& routine : placed_) {
+        end = std::max(end, static_cast<std::uint16_t>(routine.base + routine.size));
+    }
+    return end;
+}
+
 std::uint32_t SameBoyBackend::placeRoutine(std::span<const std::uint8_t> bytes,
                                            std::optional<std::uint32_t> origin) {
-    if (origin) {
-        throw std::invalid_argument(
-            "this core places a routine where its arena has room, not at an address");
-    }
     if (romHosted_) {
         throw std::logic_error(
             "this VM hosts a game's own cartridge, which has no arena to place a routine into; call "
             "the hosted image's existing entries instead of injecting new code");
     }
-    const std::size_t end = static_cast<std::size_t>(nextOffset_) + bytes.size();
-    if (end > kArenaEnd) {
-        throw std::runtime_error(
-            "Game Boy routine arena exhausted (the boot-safe window 0x0160-0x01FF holds the "
-            "registered routines; this one does not fit)");
+    std::uint16_t base = 0;
+    if (origin) {
+        if (*origin < kRoutineBase || static_cast<std::size_t>(*origin) + bytes.size() > kArenaEnd) {
+            throw std::invalid_argument("a routine assembled for " + hex16(*origin) +
+                                        " cannot be placed: the arena is 0x0160-0x01FF");
+        }
+        const std::size_t begin = *origin;
+        const std::size_t end   = begin + bytes.size();
+        for (const PlacedRoutine& routine : placed_) {
+            if (begin < static_cast<std::size_t>(routine.base) + routine.size && routine.base < end) {
+                throw std::invalid_argument("a routine at " + hex16(*origin) +
+                                            " would overlap the routine placed at " + hex16(routine.base));
+            }
+        }
+        base = static_cast<std::uint16_t>(*origin);
+    } else {
+        const std::optional<std::uint16_t> gap = firstGap(placed_, bytes.size());
+        if (!gap) {
+            throw std::runtime_error(
+                "Game Boy routine arena exhausted (the boot-safe window 0x0160-0x01FF holds the "
+                "registered routines; this one does not fit)");
+        }
+        base = *gap;
     }
     std::span<std::uint8_t> rom = machine_.memory(GbHardwareMemory::Rom);
-    const std::uint16_t base = nextOffset_;
     for (std::size_t i = 0; i < bytes.size(); ++i) {
         rom[static_cast<std::size_t>(base) + i] = bytes[i];
     }
-    nextOffset_ = static_cast<std::uint16_t>(base + bytes.size());
+    placed_.push_back(PlacedRoutine{.base = base, .size = static_cast<std::uint16_t>(bytes.size())});
     return base;
 }
 
@@ -340,9 +390,16 @@ void SameBoyBackend::bootHostedRom() {
 }
 
 AssembledRoutine SameBoyBackend::assemble(std::string_view source) const {
-    // The Game Boy backend's assembler is SM83 (the engine's own, no external toolchain), with the
-    // standard hardware-register names predefined. A future console's backend assembles its own ISA.
-    return assembleSm83(source, gbHardwareSymbols());
+    // A source that names its address is assembled there. One that does not is assembled for the first gap of
+    // the arena that holds it — the size learned by assembling it once at the arena's start — so its labels
+    // resolve for the address it lands at; when no gap holds it, for the address past everything placed,
+    // where placement refuses it.
+    if (sm83DeclaredOrigin(source, gbHardwareSymbols())) {
+        return assembleSm83(source, gbHardwareSymbols());
+    }
+    const std::size_t size = assembleSm83(source, gbHardwareSymbols(), kRoutineBase).bytes.size();
+    const std::optional<std::uint16_t> gap = firstGap(placed_, size);
+    return assembleSm83(source, gbHardwareSymbols(), gap ? *gap : endOfPlaced());
 }
 
 int SameBoyBackend::registerWidthBytes(std::uint16_t registerId) const {
@@ -643,9 +700,11 @@ void SameBoyBackend::configureResidentImage(std::span<const DriverImage> images,
             throw std::invalid_argument(
                 "driver image overlaps the engine-reserved routine arena");
         }
-        // Any uploaded-routine arena already claimed on this VM.
-        if (begin < nextOffset_ && end > kRoutineBase) {
-            throw std::invalid_argument("driver image overlaps the uploaded-routine arena on this VM");
+        // Any routine already placed in the arena on this VM.
+        for (const PlacedRoutine& routine : placed_) {
+            if (begin < static_cast<std::uint32_t>(routine.base) + routine.size && routine.base < end) {
+                throw std::invalid_argument("driver image overlaps a routine placed in the arena on this VM");
+            }
         }
         for (const Placed& p : placed) {
             if (begin < p.end && p.begin < end) {
@@ -676,9 +735,10 @@ void SameBoyBackend::configureResidentImage(std::span<const DriverImage> images,
     rom[0x0147] = static_cast<std::uint8_t>(mapper.id());  // cartridge type (0x00 none / 0x10 MBC3)
     rom[0x0148] = sizeByte;                                // ROM size
     rom[0x0149] = 0x00;                                    // RAM size: none
-    if (nextOffset_ > kRoutineBase) {  // preserve any uploaded-routine bytes from the current image
-        std::span<std::uint8_t> oldRom = machine_.memory(GbHardwareMemory::Rom);
-        for (std::uint16_t a = kRoutineBase; a < nextOffset_; ++a) {
+    // Each routine placed in the arena keeps its bytes from the current image.
+    const std::span<std::uint8_t> oldRom = machine_.memory(GbHardwareMemory::Rom);
+    for (const PlacedRoutine& routine : placed_) {
+        for (std::size_t a = routine.base; a < static_cast<std::size_t>(routine.base) + routine.size; ++a) {
             rom[a] = oldRom[a];
         }
     }

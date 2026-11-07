@@ -19,6 +19,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <initializer_list>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -157,13 +158,19 @@ constexpr std::string memInner(const std::string& t) { return t.substr(1, t.size
 // ── expression evaluation ─────────────────────────────────────────────────────────────────────
 // Pass 1 uses a lenient lookup (unknown → 0) so instruction SIZES — which never depend on a value —
 // are computed even before labels are defined; pass 2 uses a strict lookup that errors on unknown.
+// `unaddressed`, when given, holds the source's labels in a source with no address: naming one is refused.
 constexpr std::int64_t evalTerm(const std::string& term, std::size_t line, const SymbolTable& syms,
-                                bool lenient) {
+                                bool lenient, const SymbolTable* unaddressed) {
     if (term.empty()) fail(line, "empty expression term");
     if (term[0] == '$') return parseDigits(std::string_view(term).substr(1), 16, line);
     if (term[0] == '%') return parseDigits(std::string_view(term).substr(1), 2, line);
     if (isDigitCh(term[0])) return parseDigits(term, 10, line);
     // A symbol (label or predefined constant).
+    if (unaddressed != nullptr && unaddressed->count(term) != 0) {
+        fail(line, "'" + term +
+                       "' is a position in this source, and the source has no address — say where it is "
+                       "with ORG, or let the machine place it");
+    }
     if (const std::uint32_t* v = syms.find(term)) return static_cast<std::int64_t>(*v);
     if (lenient) return 0;
     fail(line, "unknown symbol '" + term + "'");
@@ -172,7 +179,7 @@ constexpr std::int64_t evalTerm(const std::string& term, std::size_t line, const
 // Evaluate an operand expression: a term, optionally with one trailing +/- term (covers `label+2`,
 // `$FF00-1`). Leading sign is honored (`-2`).
 constexpr std::int64_t evalExpr(const std::string& expr, std::size_t line, const SymbolTable& syms,
-                                bool lenient) {
+                                bool lenient, const SymbolTable* unaddressed = nullptr) {
     std::string e = despace(expr);
     if (e.empty()) fail(line, "empty expression");
     bool        neg = false;
@@ -190,32 +197,37 @@ constexpr std::int64_t evalExpr(const std::string& expr, std::size_t line, const
         }
     }
     if (split == std::string::npos) {
-        const std::int64_t v = evalTerm(e.substr(i), line, syms, lenient);
+        const std::int64_t v = evalTerm(e.substr(i), line, syms, lenient, unaddressed);
         return neg ? -v : v;
     }
-    const std::int64_t left  = evalTerm(e.substr(i, split - i), line, syms, lenient);
-    const std::int64_t right = evalTerm(e.substr(split + 1), line, syms, lenient);
+    const std::int64_t left  = evalTerm(e.substr(i, split - i), line, syms, lenient, unaddressed);
+    const std::int64_t right = evalTerm(e.substr(split + 1), line, syms, lenient, unaddressed);
     const std::int64_t l     = neg ? -left : left;
     return e[split] == '+' ? l + right : l - right;
 }
 
-constexpr std::uint8_t imm8(std::int64_t v, std::size_t line) {
-    if (v < -128 || v > 255) fail(line, "8-bit value out of range: " + intToStr(v));
+// The sizing pass (`lenient`) checks no value: a label it has not reached reads as 0, and the second
+// pass checks every value against the label's real address.
+constexpr std::uint8_t imm8(std::int64_t v, std::size_t line, bool lenient) {
+    if (!lenient && (v < -128 || v > 255)) fail(line, "8-bit value out of range: " + intToStr(v));
     return static_cast<std::uint8_t>(v & 0xFF);
 }
 
-constexpr std::uint8_t rel8(std::int64_t target, std::int64_t afterInstr, std::size_t line) {
+constexpr std::uint8_t rel8(std::int64_t target, std::int64_t afterInstr, std::size_t line, bool lenient) {
     const std::int64_t d = target - afterInstr;
-    if (d < -128 || d > 127) fail(line, "jr target out of range (" + intToStr(d) + " bytes)");
+    if (!lenient && (d < -128 || d > 127)) fail(line, "jr target out of range (" + intToStr(d) + " bytes)");
     return static_cast<std::uint8_t>(d & 0xFF);
 }
 
 // ── one instruction → bytes ───────────────────────────────────────────────────────────────────
-// addr is the byte offset of this instruction (for jr relative resolution). Emits into `out`.
+// addr is the byte offset of this instruction. `labels` are the source's own and `origin` is its address,
+// if it has one; a label named as an address with no origin is refused in the second pass. Emits into `out`.
 constexpr void encode(const std::string& mnem, const std::vector<std::string>& ops, std::size_t addr,
                       std::size_t line, const SymbolTable& syms, bool lenient,
-                      std::vector<std::uint8_t>& out) {
-    auto eval = [&](const std::string& s) { return evalExpr(s, line, syms, lenient); };
+                      std::vector<std::uint8_t>& out, const SymbolTable& labels,
+                      std::optional<std::uint32_t> origin) {
+    const SymbolTable* const unaddressed = (lenient || origin) ? nullptr : &labels;
+    auto eval = [&](const std::string& s) { return evalExpr(s, line, syms, lenient, unaddressed); };
     auto emit = [&](std::initializer_list<int> bytes) {
         for (int b : bytes) out.push_back(static_cast<std::uint8_t>(b & 0xFF));
     };
@@ -232,7 +244,7 @@ constexpr void encode(const std::string& mnem, const std::vector<std::string>& o
         if (const int r = reg8(rhs); r >= 0) {
             emit({baseReg | r});
         } else {
-            emit({immOp, imm8(eval(rhs), line)});
+            emit({immOp, imm8(eval(rhs), line, lenient)});
         }
     };
 
@@ -249,7 +261,7 @@ constexpr void encode(const std::string& mnem, const std::vector<std::string>& o
             return;
         }
         if (dr >= 0 && sr < 0 && !isMem(s) && reg16(s, false) < 0) {
-            emit({0x06 | (dr << 3), imm8(eval(s), line)});  // ld r,n
+            emit({0x06 | (dr << 3), imm8(eval(s), line, lenient)});  // ld r,n
             return;
         }
         // ld a,[bc]/[de]/[hl+]/[hl-]/[nn] ; ld [bc]/[de]/[hl+]/[hl-]/[nn],a
@@ -278,7 +290,7 @@ constexpr void encode(const std::string& mnem, const std::vector<std::string>& o
         if (const int rp = reg16(d, false); rp >= 0 && !isMem(s)) {
             if (d == "hl" && (s.rfind("sp+", 0) == 0 || s.rfind("sp-", 0) == 0)) {
                 const std::int64_t e = eval(s.substr(2));                     // ld hl,sp+e
-                emit({0xF8, imm8(e, line)}); return;
+                emit({0xF8, imm8(e, line, lenient)}); return;
             }
             const std::int64_t v = eval(s);
             emit({0x01 | (rp << 4), static_cast<int>(v & 0xFF), static_cast<int>((v >> 8) & 0xFF)});
@@ -299,7 +311,7 @@ constexpr void encode(const std::string& mnem, const std::vector<std::string>& o
         auto highByte = [&](const std::string& m) -> std::uint8_t {
             const std::int64_t v  = eval(m);
             const std::int64_t lo = (v >= 0xFF00 && v <= 0xFFFF) ? (v - 0xFF00) : v;
-            if (lo < 0 || lo > 0xFF) fail(line, "ldh address out of high page: " + m);
+            if (!lenient && (lo < 0 || lo > 0xFF)) fail(line, "ldh address out of high page: " + m);
             return static_cast<std::uint8_t>(lo);
         };
         if (d == "a" && isMem(s)) {
@@ -323,7 +335,7 @@ constexpr void encode(const std::string& mnem, const std::vector<std::string>& o
             if (rp < 0) fail(line, "add hl,rp: bad register pair");
             emit({0x09 | (rp << 4)}); return;
         }
-        if (ops.size() == 2 && ops[0] == "sp") { emit({0xE8, imm8(eval(ops[1]), line)}); return; }
+        if (ops.size() == 2 && ops[0] == "sp") { emit({0xE8, imm8(eval(ops[1]), line, lenient)}); return; }
         alu(0x80, 0xC6); return;
     }
     if (mnem == "adc") { alu(0x88, 0xCE); return; }
@@ -383,8 +395,12 @@ constexpr void encode(const std::string& mnem, const std::vector<std::string>& o
             op0        = 0x20 | (cc << 3);
             targetExpr = ops[1];
         } else { fail(line, "jr: wrong operand count"); }
-        const std::int64_t target = eval(targetExpr);
-        emit({op0, rel8(target, static_cast<std::int64_t>(addr) + 2, line)});
+        // A distance: the instruction's own address moves with the origin as the label's does, so a
+        // `jr` target needs no address of the source's.
+        const std::int64_t target = evalExpr(targetExpr, line, syms, lenient);
+        const std::int64_t after  = static_cast<std::int64_t>(origin.value_or(0)) +
+                                   static_cast<std::int64_t>(addr) + 2;
+        emit({op0, rel8(target, after, line, lenient)});
         return;
     }
     if (mnem == "call") {
@@ -413,7 +429,7 @@ constexpr void encode(const std::string& mnem, const std::vector<std::string>& o
     if (mnem == "rst") {
         need(1);
         const std::int64_t v = eval(ops[0]);
-        if (v < 0 || v > 0x38 || (v & 0x07) != 0) fail(line, "rst: vector must be one of $00..$38 step 8");
+        if (!lenient && (v < 0 || v > 0x38 || (v & 0x07) != 0)) fail(line, "rst: vector must be one of $00..$38 step 8");
         emit({0xC7 | static_cast<int>(v)}); return;
     }
 
@@ -440,7 +456,7 @@ constexpr void encode(const std::string& mnem, const std::vector<std::string>& o
     if (mnem == "bit" || mnem == "res" || mnem == "set") {
         need(2);
         const std::int64_t b = eval(ops[0]);
-        if (b < 0 || b > 7) fail(line, mnem + ": bit index must be 0..7");
+        if (!lenient && (b < 0 || b > 7)) fail(line, mnem + ": bit index must be 0..7");
         const int r = reg8(ops[1]);
         if (r < 0) fail(line, mnem + ": bad register '" + ops[1] + "'");
         const int base = mnem == "bit" ? 0x40 : (mnem == "res" ? 0x80 : 0xC0);
@@ -507,6 +523,29 @@ constexpr std::vector<Line> parseLines(std::string_view source) {
     return lines;
 }
 
+// The address a source's ORG line names, or nothing when it has none. An ORG is one line, ahead of every
+// label and instruction, with no label of its own, naming a value in the 16-bit address space.
+constexpr std::optional<std::uint32_t> declaredOrigin(const std::vector<Line>& lines,
+                                                      const SymbolTable& predefined) {
+    std::optional<std::uint32_t> origin;
+    bool                         pastTheStart = false;
+    for (const Line& ln : lines) {
+        if (ln.mnemonic != "org") {
+            pastTheStart = true;
+            continue;
+        }
+        if (origin) fail(ln.number, "a second ORG; a source has one address");
+        if (pastTheStart || !ln.labels.empty()) {
+            fail(ln.number, "ORG comes first, before any label or instruction");
+        }
+        if (ln.operands.size() != 1) fail(ln.number, "org: expected 1 operand(s)");
+        const std::int64_t v = evalExpr(ln.operands[0], ln.number, predefined, /*lenient=*/false);
+        if (v < 0 || v > 0xFFFF) fail(ln.number, "ORG address out of range: " + intToStr(v));
+        origin = static_cast<std::uint32_t>(v);
+    }
+    return origin;
+}
+
 }  // namespace sm83detail
 
 // Assemble SM83 assembly source text into machine code. The conventional Game Boy dialect — the format the
@@ -515,16 +554,31 @@ constexpr std::vector<Line> parseLines(std::string_view source) {
 // instruction per line (a label may share a line with an instruction). `predefined` seeds the
 // symbol table with platform constants; labels in the source extend it.
 //
+// A label is a position in the source, and its address is where the bytes land plus its offset. The
+// source says where it lands with `ORG <address>` — one line, first — or the caller says with `origin`,
+// the address it will place the bytes at; an ORG wins over the caller. `jr` measures the distance to a
+// label and needs no address; every other use of a label (`jp`, `call`, `ld hl, label`, `ld a, [label]`)
+// names its address, and is refused when neither the source nor the caller gave one. The result's
+// `origin` is the address the bytes were assembled for, or nothing when none was given; its `labels`
+// are offsets within the bytes either way.
+//
 // `constexpr`: evaluable by the compiler (build-time bytecode embedding) AND at runtime (the
 // VmBackend::assemble seam). Throws std::runtime_error — carrying the 1-based line number and the
-// offending text — on an unknown mnemonic, a malformed operand, an unknown symbol, or an out-of-range
-// value; at compile time a thrown error makes the assembly ill-formed (a build error).
-constexpr AssembledRoutine assembleSm83(std::string_view source, const SymbolTable& predefined = {}) {
+// offending text — on an unknown mnemonic, a malformed operand, an unknown symbol, an out-of-range
+// value, an ORG that is not first or not alone, or a label named as an address with no address to
+// give it; at compile time a thrown error makes the assembly ill-formed (a build error).
+constexpr AssembledRoutine assembleSm83(std::string_view source, const SymbolTable& predefined = {},
+                                        std::optional<std::uint32_t> origin = std::nullopt) {
     using namespace sm83detail;
     const std::vector<Line> lines = parseLines(source);
 
+    const std::optional<std::uint32_t> declared = declaredOrigin(lines, predefined);
+    const std::optional<std::uint32_t> inForce  = declared ? declared : origin;
+    const std::uint32_t                base     = inForce.value_or(0);
+
     // Pass 1 — assign label offsets. Instruction length depends only on operand shape, so encoding
-    // with a lenient (unknown → 0) resolver yields the correct size even before labels are known.
+    // with a lenient (unknown → 0) resolver that checks no value yields the correct size even before
+    // labels are known. A label's value is its address; `labels` keeps its offset.
     SymbolTable syms = predefined;
     SymbolTable labels;
     {
@@ -536,11 +590,12 @@ constexpr AssembledRoutine assembleSm83(std::string_view source, const SymbolTab
                     fail(ln.number, "duplicate label '" + lbl + "'");
                 }
                 labels.set(lbl, static_cast<std::uint32_t>(addr));
-                syms.set(lbl, static_cast<std::uint32_t>(addr));
+                syms.set(lbl, base + static_cast<std::uint32_t>(addr));
             }
-            if (ln.mnemonic.empty()) continue;
+            if (ln.mnemonic.empty() || ln.mnemonic == "org") continue;
             scratch.clear();
-            encode(ln.mnemonic, ln.operands, addr, ln.number, syms, /*lenient=*/true, scratch);
+            encode(ln.mnemonic, ln.operands, addr, ln.number, syms, /*lenient=*/true, scratch, labels,
+                   inForce);
             addr += scratch.size();
         }
     }
@@ -548,14 +603,23 @@ constexpr AssembledRoutine assembleSm83(std::string_view source, const SymbolTab
     // Pass 2 — encode for real, every label now resolvable.
     AssembledRoutine result;
     result.labels    = labels;
+    result.origin    = inForce;
     std::size_t addr = 0;
     for (const Line& ln : lines) {
-        if (ln.mnemonic.empty()) continue;
+        if (ln.mnemonic.empty() || ln.mnemonic == "org") continue;
         const std::size_t before = result.bytes.size();
-        encode(ln.mnemonic, ln.operands, addr, ln.number, syms, /*lenient=*/false, result.bytes);
+        encode(ln.mnemonic, ln.operands, addr, ln.number, syms, /*lenient=*/false, result.bytes, labels,
+               inForce);
         addr += result.bytes.size() - before;
     }
     return result;
+}
+
+// The address a source names with ORG, or nothing when it names none. Reads the ORG line alone; the
+// rest of the source is not assembled.
+constexpr std::optional<std::uint32_t> sm83DeclaredOrigin(std::string_view source,
+                                                          const SymbolTable& predefined = {}) {
+    return sm83detail::declaredOrigin(sm83detail::parseLines(source), predefined);
 }
 
 }  // namespace retropp::vm

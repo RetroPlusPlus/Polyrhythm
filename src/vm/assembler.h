@@ -78,13 +78,13 @@ private:
 
 // The result of assembling routine source: the machine-code bytes, plus every label's byte offset
 // within them (so a routine's entry, or a named cell, is referenced by name rather than a magic
-// offset), plus the address the bytes were assembled for when the ISA's assembler is absolute. An
-// absolute routine is correct at `origin` and nowhere else, so it is placed there; one with no origin
-// is placed wherever the arena has room.
+// offset), plus the address the bytes were assembled for. A routine assembled for an address is correct
+// there and nowhere else, so it is placed there; one assembled for none is placed wherever the arena has
+// room.
 struct AssembledRoutine {
     std::vector<std::uint8_t>    bytes;
     SymbolTable                  labels;    // label name → byte offset within `bytes`
-    std::optional<std::uint32_t> origin{};  // the address of bytes[0], for an absolute assembler
+    std::optional<std::uint32_t> origin{};  // the address of bytes[0], when the bytes were assembled for one
 };
 
 }  // namespace retropp::vm

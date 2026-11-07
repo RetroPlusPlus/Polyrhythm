@@ -2693,8 +2693,8 @@ std::size_t Vm::registerRoutineResolvingPolicy(std::string_view logicalPath,
     if (resolveAssetPolicy(policy, AssetPolicy::Embed) == AssetPolicy::Embed) {
         if (const std::span<const std::uint8_t> baked = detail::findEmbeddedRoutine(logicalPath);
             !baked.empty()) {
-            // A routine an absolute assembler baked carries the address it was assembled for; one the
-            // SM83 assembler baked carries none and lands wherever the arena has room.
+            // A routine baked for an address carries it and lands there; one baked for none lands wherever
+            // the arena has room.
             const std::optional<detail::EmbeddedPlacement> placement =
                 detail::findEmbeddedRoutinePlacement(logicalPath);
             return registerResolved(baked, binding, inputWidths, outputWidth, instances,
