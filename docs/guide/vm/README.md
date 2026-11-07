@@ -129,6 +129,7 @@ that owns it; a console page adds only what its hardware makes different.
 | `audio(on)` · `audio(on, options)` · `VmConfig{.audio}` — the sound chip's frames at the rate you name, to the function you name | [co-execution.md § Sound](co-execution.md#sound-hearing-it) |
 | `buttons(held)` — the pad, a level landing at the next step boundary | [co-execution.md § Input](co-execution.md#input-playing-it) |
 | `VmConfig{.key}` · `batterySave(name)` — the guest's battery-backed data, kept for the player | [vm-and-routines.md § Keeping what the guest writes](vm-and-routines.md#keeping-what-the-guest-writes) |
+| `state()` · `restore(bytes)` — the whole machine at one moment as bytes, and those bytes taken back | [co-execution.md § Saving the machine and putting it back](co-execution.md#saving-the-machine-and-putting-it-back) |
 | the threading rule — a running machine belongs to the thread stepping it | [co-execution.md § While it runs](co-execution.md#while-it-runs-one-thread-owns-the-machine) |
 
 ## What depends on the core
@@ -144,6 +145,7 @@ names what the core does instead.
 | video, sound, both as above | answers | answers |
 | input — the pad | one pad, `gb::held` | two ports, `snes::Ports` |
 | battery-backed save data | `.sav` | `.srm` |
+| the machine's whole state, taken and put back | answers | answers |
 | a routine registered from bytes or `.asm` and called for a value | answers | answers |
 | `advanceClock` — the free-running clock between calls | answers | answers, on a routine machine |
 | naming places, `read` / `write` by address | answers | answers |

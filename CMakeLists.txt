@@ -1727,6 +1727,7 @@ if(RETROPP_BUILD_TESTS)
         tests/image_layer_test.cpp
         tests/guest_input_test.cpp
         tests/vm_save_data_test.cpp
+        tests/vm_state_test.cpp
         tests/snaggletooth_link_test.cpp
         tests/snes_backend_run_test.cpp
         tests/snes_backend_frame_test.cpp
@@ -2399,6 +2400,14 @@ if(RETROPP_BUILD_EXAMPLES)
     target_include_directories(retropp-snes_coexecution-demo PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}
         ${CMAKE_CURRENT_SOURCE_DIR}/third_party/snaggletooth/tools)
+    # ── SNES machine state — the demo cartridge in a window, with a key that takes the machine's whole
+    # state and a key that puts it back. It hosts the same shared cartridge the player does, so it links
+    # and includes the same. CI runs its --verify (registered below).
+    retropp_add_example(snes_machine_state DIRECTORY snes/machine_state)
+    target_link_libraries(retropp-snes_machine_state-demo PRIVATE snaggletooth_cpu65816 snaggletooth_spc700)
+    target_include_directories(retropp-snes_machine_state-demo PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/snaggletooth/tools)
     # ── SNES sound driver — a media-player faceplate for a driver hosted the way an SNES game carries one:
     # 65816 init and tick code, and an SPC700 sound program the init uploads to the audio unit. Its three
     # sources are registered as paths, so the build bakes each with its own instruction set's assembler.
@@ -2767,6 +2776,14 @@ if(RETROPP_BUILD_EXAMPLES)
     add_test(NAME RomRunExample.HoldsHardwareCadenceLive
              COMMAND retropp-rom_run-demo --verify)
 
+    # ── Machine state — a Game Boy cartridge in a window, with a key that takes the machine's whole
+    # state and a key that puts it back. With --verify it runs headless: a state put back gives the
+    # same bytes, the frames and the sound after a restore are the first run's, a machine that has
+    # never run carries on from a state, and bytes that are not its own are refused.
+    retropp_add_example(gb_machine_state)
+    add_test(NAME GbMachineStateExample.Verify
+             COMMAND retropp-gb_machine_state-demo --verify)
+
     add_test(NAME SnesPlayerExample.HoldsHardwareCadenceLive
              COMMAND retropp-snes_player-demo --verify)
 
@@ -2776,6 +2793,8 @@ if(RETROPP_BUILD_EXAMPLES)
     # coverage of the same verbs is snes_backend_places_test's and snes_regions_test's.
     add_test(NAME SnesCoexecutionExample.Verify
              COMMAND retropp-snes_coexecution-demo --verify)
+    add_test(NAME SnesMachineStateExample.Verify
+             COMMAND retropp-snes_machine_state-demo --verify)
 
     # The SNES sound driver demo, headless on a capture sink: it hosts the driver, plays a song, the effect
     # and a fade through the handle, and checks what the driver publishes and what the output carries; it

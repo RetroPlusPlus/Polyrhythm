@@ -35,10 +35,10 @@ macOS arm64:
 
 | Artifact | Size |
 |---|---|
-| The platform library (`retroppengine`) | ~1.8 MB |
-| A shipped binary, floor, no VM core | ~2.5 MB |
-| … with the Game Boy core | ~2.7 MB |
-| … with the SNES core | ~3.2 MB |
+| The platform library (`retroppengine`) | ~2.0 MB |
+| A shipped binary, floor, no VM core | ~2.6 MB |
+| … with the Game Boy core | ~2.9 MB |
+| … with the SNES core | ~3.6 MB |
 
 A floor is the smallest binary that links the platform, before a game adds its own code and content.
 
@@ -101,6 +101,7 @@ Active development. The core is in place and exercised end to end by a real cons
     through the same verbs a Game Boy cartridge does; its audio unit is places too — the
     communication ports, its RAM and the S-DSP's registers — driven directly, the way the
     console's own CPU does, on an audio system that hosts the unit alone on its own clock
+  - a machine's **whole state** is taken as bytes and put back, and the machine carries on from that moment — the frames it draws and the samples it sounds are the ones it would have
 - **A hosted machine's video** — ask a machine for video and the frames it finishes become a
   layer's content, composited by z among native tile and sprite layers: a game's own art over a
   running cartridge's picture, a transform or a screen-space effect on it, several machines on one

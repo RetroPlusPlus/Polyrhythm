@@ -297,6 +297,30 @@ public:
     void writeSaveData(std::span<const std::uint8_t>) override { throw notAMachine(); }
     [[nodiscard]] bool takeSaveDataChanged() override { return false; }
 
+    // ── The state seam ─────────────────────────────────────────────────────────────────────────
+    // This machine's whole memory is its state. A case switches the model off to watch the refusal,
+    // and reads what crossed the seam: how many states were taken and how many were put back.
+
+    [[nodiscard]] bool keepsState() const override { return keepsState_; }
+
+    [[nodiscard]] std::vector<std::uint8_t> readState() override {
+        ++statesRead;
+        return std::vector<std::uint8_t>(memory_.begin(), memory_.end());
+    }
+
+    bool writeState(std::span<const std::uint8_t> bytes) override {
+        ++statesWritten;
+        if (bytes.size() != memory_.size()) {
+            return false;
+        }
+        std::copy(bytes.begin(), bytes.end(), memory_.begin());
+        return true;
+    }
+
+    bool keepsState_   = true;  // flip to false to exercise the refusal
+    int  statesRead    = 0;     // how many times the seam was asked for a state
+    int  statesWritten = 0;     // and how many times it was handed one
+
 private:
     [[nodiscard]] static std::logic_error notAMachine() {
         return std::logic_error("MockVmBackend: this machine has no CPU");
