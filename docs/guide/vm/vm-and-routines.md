@@ -200,9 +200,11 @@ The SM83 assembly follows the conventional Game Boy dialect — the same syntax 
 disassemblies are written in: `;` line comments, `label:` definitions, `$hex` / `%bin` / decimal
 literals, `[hl]` / `[$FF04]` memory operands, condition codes, and the standard SM83 instruction set.
 Game Boy hardware registers are predefined by name, so you write `ldh a, [rDIV]` rather than `ldh a,
-[$FF04]`; labels are resolved across the routine (e.g. `jr` targets). The 65816 dialect is the SNES
-page's ([snes.md](snes.md#the-assemblers-dialect)); it is absolute, so a source that says `ORG` lands
-there and one that does not lands where the machine has room. The same `Sig` / `binding` rules as the
+[$FF04]`. Both dialects are absolute: a label's address is where the bytes land plus its offset, a
+source that says `ORG` lands there, and one that does not is assembled for the first gap of the arena and
+lands in it — so `jp label` and `call label` reach the label wherever the routine is placed. The Game Boy
+dialect is on [gameboy.md](gameboy.md#the-assemblers-dialect) and the 65816 dialect on
+[snes.md](snes.md#the-assemblers-dialect). The same `Sig` / `binding` rules as the
 byte form apply, and the routine's entry is its first byte. A bad mnemonic, a malformed operand, an
 unknown symbol, or an unreadable file throws at registration with the offending line — a typo fails
 loudly, not at call time.
@@ -219,11 +221,11 @@ std::vector<std::uint8_t> Vm::assemble(std::string_view source);
 `assemble` runs source through this VM's ISA assembler and hands back the machine-code bytes **without
 registering anything** — the path when you hold routine source as a *runtime* string (not a
 compile-time literal path) and want bytes to pass to `uploadRoutine`. It throws on a source error, with
-the offending line. The VM's platform fixes the ISA, so the right assembler is always selected: a Game
-Boy machine answers SM83 bytes, which `uploadRoutine` places where its arena has room; a SNES machine
-answers 65816 bytes assembled for the address the source names, or for the first gap of its arena when
-the source names none — and `uploadRoutine` on it takes the next gap, so bytes assembled this way land
-where they were assembled for as long as nothing is placed in between.
+the offending line. The VM's platform fixes the ISA, so the right assembler is always selected, and
+either machine answers bytes assembled for the address the source names with `ORG`, or for the first gap
+of its arena when the source names none — and `uploadRoutine` on it takes the next gap, so bytes assembled
+this way land where they were assembled for as long as nothing is placed in between. Bytes you place
+yourself — into an image you author, or with `write` — come from a source that says `ORG`.
 
 ### State persists across calls
 

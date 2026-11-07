@@ -983,7 +983,9 @@ public:
     // the VM's platform alone decides the ISA, so the right assembler is always selected. A source →
     // bytes transform, NOT a path or registration call: it is how a consumer holding routine/audio
     // source obtains bytes to hand to uploadRoutine (the "runtime need ⇒ hand raw bytes" path for
-    // source). The audio system uses it to materialize a LoadFromPath chiptune. Throws on a source error.
+    // source). The audio system uses it to materialize a LoadFromPath chiptune. A Game Boy machine answers
+    // bytes assembled for the address the source names with ORG, or for the first gap of its arena when it
+    // names none — where uploadRoutine places them next. Throws on a source error.
     [[nodiscard]] std::vector<std::uint8_t> assemble(std::string_view source);
 
 private:

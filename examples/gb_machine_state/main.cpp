@@ -51,9 +51,10 @@ namespace {
 constexpr int kGuestW = 160, kGuestH = 144;
 constexpr int kScale  = 4;  // 160×144 × 4 = a 640×576 window
 
-// The cartridge's own program, in two pieces: what it does once, and what it does every frame. A block
-// the d-pad moves a pixel a frame, over a dark background, and a round of four notes, one every 32 frames.
-constexpr std::string_view kSetupSource = R"(
+// The cartridge's own program: what it does once, then what it does every frame. A block the d-pad moves
+// a pixel a frame, over a dark background, and a round of four notes, one every 32 frames.
+constexpr std::string_view kProgramSource = R"(
+    ORG $0150           ; where the entry jumps
     ld a, $01
     ldh [$FFFF], a      ; IE: VBlank only
     xor a
@@ -115,10 +116,6 @@ block:
     ldh [$FF13], a
     ld a, $87
     ldh [$FF14], a      ; the first note
-    jp $0200            ; on to the frame loop, placed there
-)";
-
-constexpr std::string_view kFrameSource = R"(
 loop:
     halt
     nop
@@ -198,7 +195,7 @@ notDown:
     ld [hl+], a
     xor a
     ld [hl+], a
-    jr loop
+    jp loop
 )";
 
 // The one place this program reads. Never instantiated: the struct exists so the place has a name.
@@ -215,10 +212,8 @@ std::vector<std::uint8_t> authorGame(Vm& assembler) {
     rom[0x0040] = 0xD9;  // VBlank vector: reti
     rom[0x0100] = 0x00;                                          // entry: nop
     rom[0x0101] = 0xC3; rom[0x0102] = 0x50; rom[0x0103] = 0x01;  // jp $0150
-    const std::vector<std::uint8_t> setup = assembler.assemble(std::string(kSetupSource));
-    const std::vector<std::uint8_t> frame = assembler.assemble(std::string(kFrameSource));
-    std::copy(setup.begin(), setup.end(), rom.begin() + 0x150);
-    std::copy(frame.begin(), frame.end(), rom.begin() + 0x200);
+    const std::vector<std::uint8_t> program = assembler.assemble(std::string(kProgramSource));
+    std::copy(program.begin(), program.end(), rom.begin() + 0x150);
     return rom;
 }
 

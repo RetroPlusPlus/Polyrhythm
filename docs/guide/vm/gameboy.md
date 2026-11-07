@@ -155,9 +155,10 @@ is what they are on this hardware.
 - **Power-on RAM is filled the way hardware fills it**, and `reset()` does not restore RAM to a fixed
   state. A seed a routine reads is written first; a value the guest should find is written after `run()`.
 - **A registered routine is placed in the arena** — the boot-safe window `0x0160`–`0x01FF` of a
-  cartridge the platform builds for it. A machine hosting a game's cartridge has no arena, so
-  `uploadRoutine` / `registerRoutine` throw `std::logic_error` there; an arena with no room left for a
-  routine throws `std::runtime_error`.
+  cartridge the platform builds for it — at the address its source names with `ORG`, or at the first gap
+  that holds it. An `ORG` outside the arena or over a placed routine throws `std::invalid_argument`; an
+  arena with no room left for a routine throws `std::runtime_error`. A machine hosting a game's cartridge
+  has no arena, so `uploadRoutine` / `registerRoutine` throw `std::logic_error` there.
 - **A hosted image's header is the mapper and the size.** SameBoy reads it — the platform reads none of
   it — and rounds the image up to a power-of-two bank count, so the addressable size is the one the
   machine reports back, not the byte count handed in.
@@ -179,8 +180,30 @@ is what they are on this hardware.
 Game Boy dialect the published disassemblies are written in: `;` comments, `label:` definitions, `$hex`
 / `%bin` / decimal literals, `[hl]` / `[$FF04]` memory operands, condition codes, and the standard
 instruction set. The hardware registers are predefined by name, so a routine writes `ldh a, [rDIV]`
-rather than `ldh a, [$FF04]`, and labels resolve across the routine. The two registration forms and the
-`Embed` / `LoadFromPath` policy are on
+rather than `ldh a, [$FF04]`.
+
+A label is a position in the source, and its address is where the bytes land plus its offset. `jr label`
+measures the distance to it and is right wherever the bytes land; `jp label`, `call label`, `ld hl, label`
+and `ld a, [label]` name its address. A source the machine places — `registerRoutine`, or `assemble`
+followed by `uploadRoutine` — is assembled for the arena address it lands at. A source you place yourself
+says where with `ORG`, one line, first:
+
+```
+    ORG $0150           ; the address of the first byte
+loop:
+    halt
+    nop
+    ldh a, [$FF80]
+    inc a
+    ldh [$FF80], a
+    jp loop
+```
+
+`ORG` takes a 16-bit address; a banked image's source names the window address — `ORG $4000` for an image
+at `gb::banked(2, $4000)` — and the bank is the placement's. A source that says `ORG` and is registered
+lands at that address inside the arena, or is refused. A routine baked into the binary under `Embed` is
+assembled before any machine exists, so one whose labels are addresses says `ORG`; without it the build
+stops at the line. The two registration forms and the `Embed` / `LoadFromPath` policy are on
 [vm-and-routines.md](vm-and-routines.md#authoring-in-assembly-register-from-a-asm-file).
 
 ## Its save: `.sav`

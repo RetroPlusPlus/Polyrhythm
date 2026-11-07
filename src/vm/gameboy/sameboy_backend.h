@@ -14,6 +14,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <optional>
 #include <span>
 #include <string_view>
 #include <vector>
@@ -34,10 +35,17 @@ public:
     [[nodiscard]] std::optional<MachineClock> clock() const override {
         return MachineClock{.hertzNumerator = 4'194'304, .hertzDivisor = 1, .cyclesPerFrame = 70'224};
     }
+    // Place a routine into the arena — at `origin` when the bytes were assembled for an address, else at the
+    // first gap from 0x0160 that holds them — and answer the address of its first byte. Refuses an origin
+    // outside 0x0160–0x01FF or over a placed routine (std::invalid_argument), bytes no gap holds
+    // (std::runtime_error), and any placement on a machine hosting a game's cartridge (std::logic_error).
     std::uint32_t placeRoutine(std::span<const std::uint8_t> bytes,
                                std::optional<std::uint32_t> origin) override;
     void loadRom(std::span<const std::uint8_t> rom) override;
     void bootHostedRom() override;
+    // SM83 source through the engine's own assembler, the hardware registers predefined by name. A source
+    // that says ORG is assembled there; one that does not is assembled for the first gap of the arena that
+    // holds it, so its labels resolve for the address it lands at, and the result carries that origin.
     [[nodiscard]] AssembledRoutine assemble(std::string_view source) const override;
     [[nodiscard]] int registerWidthBytes(std::uint16_t registerId) const override;
     [[nodiscard]] bool regionIsAddressable(const MemoryRegion& region) const override;
@@ -182,8 +190,22 @@ private:
         return !escape.banked && escape.addr16 > 0x7FFF;
     }
 
+    // One routine placed in the arena: where its first byte is and how many bytes it holds.
+    struct PlacedRoutine {
+        std::uint16_t base = 0;
+        std::uint16_t size = 0;
+    };
+
+    // The first address from the arena's start at which `size` bytes fit between the routines placed so
+    // far, or nothing when no gap holds them.
+    [[nodiscard]] static std::optional<std::uint16_t> firstGap(const std::vector<PlacedRoutine>& placed,
+                                                               std::size_t size);
+
+    // The address past the highest routine placed, or the arena's start when nothing is placed.
+    [[nodiscard]] std::uint16_t endOfPlaced() const;
+
     SameBoyMachine machine_;
-    std::uint16_t  nextOffset_;       // next free byte in the code arena
+    std::vector<PlacedRoutine> placed_;  // every routine in the arena, in placement order
     Registers      pending_{};        // register file accumulated between beginCall and run
     std::uint64_t  audioOvershoot8MHz_ = 0;  // ticks a runForCycles overshot its budget, paid back next
     std::uint64_t  frameDebt8MHz_ = 0;       // ticks readState ran to finish a frame, owed back by the budgets that follow

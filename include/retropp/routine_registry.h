@@ -32,8 +32,7 @@ namespace retropp {
 
 namespace detail {
 
-// Where a routine assembled by an absolute assembler goes: the ISA its file name states, and the address
-// its bytes were assembled for.
+// Where a routine assembled for an address goes: its ISA, and the address its bytes were assembled for.
 struct EmbeddedPlacement {
     Isa           isa;
     std::uint32_t origin;
@@ -44,7 +43,8 @@ struct EmbeddedPlacement {
 // (retropp_autoembed, extended to routines) — emitted ONLY for routines with a scanned
 // call site, so an unused routine is never recorded here. A `.asm` whose name states an ISA
 // (`<name>.65816.asm`, `<name>.spc700.asm`) is recorded with its placement; a bare `.asm` is SM83,
-// lands wherever the arena has room, and carries none.
+// recorded with the address its ORG names, or with none when it names none and lands wherever the arena
+// has room.
 void registerEmbeddedRoutine(std::string_view path, const std::uint8_t* bytes, std::size_t size,
                              std::optional<EmbeddedPlacement> placement = std::nullopt);
 
