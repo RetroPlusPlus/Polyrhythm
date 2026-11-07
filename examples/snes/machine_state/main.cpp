@@ -114,7 +114,8 @@ int runVerify() {
     const Stretch                   second      = tenTicks(machine, sound);
     const std::vector<std::uint8_t> secondBytes = machine.state();
 
-    check(tookAgain && first.pictures.size() >= 8 && first.pictures == second.pictures,
+    check(tookAgain && first.pictures.size() >= 8 && first.pictures.front() != first.pictures.back() &&
+              first.pictures == second.pictures,
           "the frames after a restore are the frames the first run drew");
     const bool sounded = std::any_of(first.samples.begin(), first.samples.end(),
                                      [](std::int16_t sample) { return sample != 0; });
