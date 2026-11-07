@@ -193,6 +193,14 @@ public:
     void writeSaveData(std::span<const std::uint8_t> bytes) override;
     [[nodiscard]] bool takeSaveDataChanged() override;
 
+    // State: the machine's own, in its byte form, with the rate converter's history and the cycles
+    // this backend ran ahead finishing a frame. A frame part-drawn is finished first — a cartridge by
+    // running on, the engine's own image by idling on its loop — and those cycles come back out of
+    // the budgets that follow. The audio unit alone hands over none.
+    [[nodiscard]] bool keepsState() const override { return !apu_; }
+    [[nodiscard]] std::vector<std::uint8_t> readState() override;
+    bool writeState(std::span<const std::uint8_t> bytes) override;
+
 private:
     friend struct SnesBackendTestAccess;  // src/vm/snes/snes_backend_testing.h — reads state() for tests
 
@@ -218,6 +226,12 @@ private:
     // an interrupt sequence in flight, is finished first — under the guest's own registers, before a
     // call's presets go over them.
     void finishInstruction();
+
+    // Park on the idle loop, spend `cycles`, and put the register file back.
+    void idleFor(std::uint64_t cycles);
+
+    // What is left of a budget once the cycles readState ran ahead have been taken out of it.
+    [[nodiscard]] std::uint64_t lessFrameDebt(std::uint64_t cycles);
 
     // The memory a place is in, the offset of its first byte there, and that memory's size. Nothing when
     // no cartridge is hosted, or when the address names no memory: open bus, a space this console does
@@ -308,6 +322,7 @@ private:
     int                               insideWatch_ = 0;  // how deep the access watcher's calls are nested
     AudioSampleSink                   audioSink_;     // where each converted frame goes; empty until enableAudio
     std::optional<RationalResampler>  resampler_;     // 32'000 Hz to the sink's rate; built by enableAudio
+    std::uint64_t                     frameDebt_ = 0;  // master cycles readState ran to finish a frame, owed back by the budgets that follow
 };
 
 }  // namespace retropp::vm

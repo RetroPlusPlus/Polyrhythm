@@ -8,6 +8,7 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <filesystem>
 #include <fstream>
 #include <list>
@@ -77,6 +78,20 @@ struct PendingRegionWrite {
     std::vector<std::uint8_t> bytes;
 };
 
+// A state() or restore() made from the game's thread while the machine runs on a thread of its own.
+// The caller posts it and waits; the machine's thread serves it between two steps and answers.
+struct StateCall {
+    std::mutex              callers;  // one call at a time
+    std::mutex              mx;       // guards everything below but `posted`
+    std::condition_variable answered;
+    std::atomic<bool>       posted{false};  // a call is waiting — what the machine's look tests
+    bool                    done    = false;
+    bool                    restore = false;  // restore() when set, state() when clear
+    std::span<const std::uint8_t> in;         // restore(): the bytes handed over
+    std::vector<std::uint8_t>     out;        // state(): the bytes answered
+    bool                    ok = false;       // restore(): whether the machine took them
+};
+
 // Everything Vm::run() stands up: the governor owed cycles accrue against, the seqlock publish of
 // the declared places, the write channel, and the runner whose thread steps the machine. The runner
 // exists exactly while the machine runs — stop() takes the thread down with it — so a machine with
@@ -100,6 +115,10 @@ struct RomRunState {
     // The thread stepping the machine, recorded by the machine's own step. A call into the guest is
     // made from there or not at all — the game thread's verbs cross to it, and a call does not.
     std::atomic<std::thread::id> steppingThread{};
+
+    // The state call waiting for the machine's thread, when one is. Declared before the runner on
+    // purpose: the runner's thread is the one that reads it.
+    StateCall stateCall;
 
     std::unique_ptr<vm::VmRunner> runner;
 };
@@ -174,6 +193,22 @@ private:
     bool  previous_;
 };
 
+// Counts one of the machine's own runs for as long as it lasts: a step, a routine call, a clock
+// advance. A state is taken between runs, so a state call made while one is in flight — from a
+// handler, from the audio function — is refused.
+class RunScope {
+public:
+    explicit RunScope(std::atomic<int>& depth) noexcept : depth_(depth) {
+        depth_.fetch_add(1, std::memory_order_relaxed);
+    }
+    ~RunScope() { depth_.fetch_sub(1, std::memory_order_relaxed); }
+    RunScope(const RunScope&)            = delete;
+    RunScope& operator=(const RunScope&) = delete;
+
+private:
+    std::atomic<int>& depth_;
+};
+
 // A call in the guest's context runs until the routine returns; this is the runaway guard for one
 // that never does, in the shape and at the size the machine's own run-to-return carries.
 constexpr std::size_t kMaxContextInstructions = 1'000'000;
@@ -224,6 +259,51 @@ constexpr std::string_view isaName(Isa isa) noexcept {
     }
     return "an ISA this build does not name";
 }
+
+namespace {
+
+// ── A machine's state, as the host frames it ─────────────────────────────────────────────────────
+// The core's bytes, untouched, behind a header of the host's own: what the host itself holds between
+// steps and has to put back for the machine to carry on exactly. Little-endian, fixed widths:
+//
+//      0   4  the mark, "RPVS"
+//      4   2  the header's layout, 1
+//      6   1  the platform the machine is
+//      7   1  bit 0: the hosted image has booted
+//      8   8  the tick's fraction of a cycle, in nanoseconds
+//     16   8  the speed factor's fraction of a cycle
+//     24   4  the denominator that fraction is held against
+//     28   4  the core's bytes, how many
+//     32   4  the last finished picture: its width
+//     36   4  its height
+//     40   4  its pixel layout
+//     44   4  its bytes, how many
+//     48   4  the woven picture: its width
+//     52   4  a field's height
+//     56   4  its bytes, how many
+//     60      the core's bytes, then the picture, then the woven picture
+constexpr std::size_t                 kStateHeaderBytes = 60;
+constexpr std::array<std::uint8_t, 4> kStateMark{'R', 'P', 'V', 'S'};
+constexpr std::uint16_t               kStateLayout = 1;
+
+// A picture wider or taller than this is no console's, and a header naming one is not a state.
+constexpr std::uint64_t kStateLongestSide = 0xFFFF;
+
+void putLe(std::uint8_t* at, std::uint64_t value, int bytes) noexcept {
+    for (int i = 0; i < bytes; ++i) {
+        at[i] = static_cast<std::uint8_t>((value >> (8 * i)) & 0xFF);
+    }
+}
+
+[[nodiscard]] std::uint64_t getLe(const std::uint8_t* at, int bytes) noexcept {
+    std::uint64_t value = 0;
+    for (int i = 0; i < bytes; ++i) {
+        value |= static_cast<std::uint64_t>(at[i]) << (8 * i);
+    }
+    return value;
+}
+
+}  // namespace
 
 struct Vm::Impl {
     VMPlatform                   platform;
@@ -350,6 +430,7 @@ struct Vm::Impl {
         std::mutex    mx;
         std::uint64_t latest  = 0;
         bool          pending = false;
+        bool          submitted = false;  // the game has handed buttons over at least once
     };
     Held buttons;
 
@@ -751,6 +832,248 @@ struct Vm::Impl {
         // away means its data is ON DISK, not merely handed over, so this waits for the rest of it: the
         // program may be about to end, and a machine that has been parked can be read back at once.
         vm::SaveWriter::shared().settle(saveFiles(), saveDocument());
+    }
+
+    // ── State ────────────────────────────────────────────────────────────────────────────────────
+
+    // How many of this machine's own runs are in flight: a step, a routine call, a clock advance.
+    std::atomic<int> runDepth{0};
+
+    // What a state call on a machine with a thread of its own comes back with.
+    struct StateAnswer {
+        std::vector<std::uint8_t> bytes;
+        bool                      ok = false;
+    };
+
+    // The six things a step boundary lands, in the order it lands them.
+    void landIssuedVerbs() {
+        drainRegionWrites();
+        drainEscapeChanges();
+        drainWatchChanges();
+        drainVideoChange();
+        drainAudioChange();
+        drainButtons();
+    }
+
+    // Where a state call is answered. A machine on a thread of its own answers it there, so the call
+    // crosses; any other machine is stepped by the calling thread and answers it here. Made from
+    // inside one of the machine's own runs — a handler, the audio function — there is no boundary for
+    // it to land at, and it is refused.
+    [[nodiscard]] bool stateCallCrosses(const char* verb) const {
+        const auto partWay = [verb] {
+            return std::logic_error(std::string(verb) +
+                                    ": the machine is part-way through a step on this thread, and a "
+                                    "state is taken between steps; call it once the step has returned");
+        };
+        if (running() && romRun.runner->mode() == vm::VmRunner::Mode::Threaded) {
+            if (std::this_thread::get_id() == romRun.steppingThread.load(std::memory_order_relaxed)) {
+                throw partWay();
+            }
+            return true;
+        }
+        if (inGuestHook || runDepth.load(std::memory_order_relaxed) != 0) {
+            throw partWay();
+        }
+        return false;
+    }
+
+    // The machine as bytes, on the thread that owns it.
+    std::vector<std::uint8_t> takeState() {
+        romRun.steppingThread.store(std::this_thread::get_id(), std::memory_order_relaxed);
+        landIssuedVerbs();
+        std::vector<std::uint8_t> core;
+        {
+            // Finishing a part-drawn frame runs the machine, and whatever that runs — a handler, the
+            // audio function — is inside a step for as long as it does.
+            const RunScope inRun{runDepth};
+            core = backend->readState();
+        }
+        if (running()) {
+            publishStep();  // the machine may have run on to its frame's end
+        }
+
+        // The last picture the machine finished: waiting in the hand-off slot, or already taken.
+        std::vector<std::uint8_t> picture;
+        int                       pictureWidth  = 0;
+        int                       pictureHeight = 0;
+        if (video.on.load(std::memory_order_relaxed)) {
+            const std::lock_guard guard{video.mx};
+            if (video.readyHeld) {
+                picture       = video.ready;
+                pictureWidth  = video.readyWidth;
+                pictureHeight = video.readyHeight;
+            } else if (video.completed != 0) {
+                picture       = video.shown;
+                pictureWidth  = video.width;
+                pictureHeight = video.height;
+            }
+        }
+        const std::size_t wovenBytes = video.wovenSeen ? video.woven.size() : 0;
+
+        std::vector<std::uint8_t> bytes(kStateHeaderBytes + core.size() + picture.size() + wovenBytes);
+        std::uint8_t*             h = bytes.data();
+        std::copy(kStateMark.begin(), kStateMark.end(), h);
+        putLe(h + 4, kStateLayout, 2);
+        h[6] = static_cast<std::uint8_t>(platform);
+        h[7] = static_cast<std::uint8_t>(romRun.booted ? 1 : 0);
+        putLe(h + 8, cycleCarryNs, 8);
+        putLe(h + 16, factorCarry, 8);
+        putLe(h + 24, factorCarryDen, 4);
+        putLe(h + 28, core.size(), 4);
+        putLe(h + 32, static_cast<std::uint64_t>(pictureWidth), 4);
+        putLe(h + 36, static_cast<std::uint64_t>(pictureHeight), 4);
+        putLe(h + 40, static_cast<std::uint64_t>(RasterPixelFormat::Rgba8888), 4);
+        putLe(h + 44, picture.size(), 4);
+        putLe(h + 48, wovenBytes != 0 ? static_cast<std::uint64_t>(video.wovenWidth) : 0, 4);
+        putLe(h + 52, wovenBytes != 0 ? static_cast<std::uint64_t>(video.wovenHeight) : 0, 4);
+        putLe(h + 56, wovenBytes, 4);
+        std::uint8_t* at = h + kStateHeaderBytes;
+        at               = std::copy(core.begin(), core.end(), at);
+        at               = std::copy(picture.begin(), picture.end(), at);
+        if (wovenBytes != 0) {
+            std::copy(video.woven.begin(), video.woven.end(), at);
+        }
+        return bytes;
+    }
+
+    // Take a state back, on the thread that owns the machine. False, and nothing touched, for bytes
+    // that are not this machine's.
+    bool putState(std::span<const std::uint8_t> bytes) {
+        if (bytes.size() < kStateHeaderBytes) {
+            return false;
+        }
+        const std::uint8_t* h = bytes.data();
+        if (!std::equal(kStateMark.begin(), kStateMark.end(), h) || getLe(h + 4, 2) != kStateLayout ||
+            h[6] != static_cast<std::uint8_t>(platform)) {
+            return false;
+        }
+        const std::uint64_t carryDen      = getLe(h + 24, 4);
+        const std::uint64_t coreBytes     = getLe(h + 28, 4);
+        const std::uint64_t pictureWidth  = getLe(h + 32, 4);
+        const std::uint64_t pictureHeight = getLe(h + 36, 4);
+        const std::uint64_t pictureFormat = getLe(h + 40, 4);
+        const std::uint64_t pictureBytes  = getLe(h + 44, 4);
+        const std::uint64_t wovenWidth    = getLe(h + 48, 4);
+        const std::uint64_t wovenHeight   = getLe(h + 52, 4);
+        const std::uint64_t wovenBytes    = getLe(h + 56, 4);
+        const std::uint64_t pixelBytes    = bytesPerPixel(RasterPixelFormat::Rgba8888);
+        if (carryDen == 0 || bytes.size() != kStateHeaderBytes + coreBytes + pictureBytes + wovenBytes ||
+            pictureFormat != static_cast<std::uint64_t>(RasterPixelFormat::Rgba8888) ||
+            pictureWidth > kStateLongestSide || pictureHeight > kStateLongestSide ||
+            wovenWidth > kStateLongestSide || wovenHeight > kStateLongestSide ||
+            pictureBytes != pictureWidth * pictureHeight * pixelBytes ||
+            wovenBytes != wovenWidth * wovenHeight * 2 * pixelBytes) {
+            return false;
+        }
+        const std::span<const std::uint8_t> core =
+            bytes.subspan(kStateHeaderBytes, static_cast<std::size_t>(coreBytes));
+        const std::span<const std::uint8_t> picture = bytes.subspan(
+            kStateHeaderBytes + static_cast<std::size_t>(coreBytes), static_cast<std::size_t>(pictureBytes));
+        const std::span<const std::uint8_t> woven =
+            bytes.subspan(kStateHeaderBytes + static_cast<std::size_t>(coreBytes + pictureBytes),
+                          static_cast<std::size_t>(wovenBytes));
+
+        romRun.steppingThread.store(std::this_thread::get_id(), std::memory_order_relaxed);
+        landIssuedVerbs();
+        if (!backend->writeState(core)) {
+            return false;
+        }
+
+        cycleCarryNs   = getLe(h + 8, 8);
+        factorCarry    = getLe(h + 16, 8);
+        factorCarryDen = static_cast<std::uint32_t>(carryDen);
+        if (romHosted) {
+            romRun.booted = (h[7] & 1u) != 0;  // a run after this carries on, or boots, as the state says
+        }
+
+        // The picture the machine had last finished, into the slot a finished frame lands in.
+        if (video.on.load(std::memory_order_relaxed) && !picture.empty()) {
+            const std::lock_guard guard{video.mx};
+            video.ready.assign(picture.begin(), picture.end());
+            video.readyWidth  = static_cast<int>(pictureWidth);
+            video.readyHeight = static_cast<int>(pictureHeight);
+            video.readyFormat = RasterPixelFormat::Rgba8888;
+            video.readyHeld   = true;
+            ++video.completed;
+        }
+        // The fields of a woven picture, so the next field lands beside the one the state held.
+        video.woven.assign(woven.begin(), woven.end());
+        video.wovenWidth  = static_cast<int>(wovenWidth);
+        video.wovenHeight = static_cast<int>(wovenHeight);
+        video.wovenSeen   = !woven.empty();
+
+        // The buttons are the game's: the machine holds what was last handed over.
+        if (backend->takesButtons()) {
+            std::optional<std::uint64_t> held;
+            {
+                const std::lock_guard guard{buttons.mx};
+                if (buttons.submitted) {
+                    held = buttons.latest;
+                }
+            }
+            if (held) {
+                backend->setButtons(*held);
+            }
+        }
+        if (keepsSave()) {
+            save.dirty = true;  // the file follows the machine
+        }
+        if (running()) {
+            publishStep();  // a read answers the restored machine from here
+        }
+        // A machine this thread also composes for takes its picture now; one on a thread of its own
+        // is latched by the game's next video().
+        if (!(running() && romRun.runner->mode() == vm::VmRunner::Mode::Threaded)) {
+            latchVideo();
+        }
+        return true;
+    }
+
+    // Game thread: post a state call to the machine's own thread and wait for its answer.
+    StateAnswer callOnMachine(bool restore, std::span<const std::uint8_t> in) {
+        StateCall&                        call = romRun.stateCall;
+        const std::lock_guard<std::mutex> one(call.callers);
+        {
+            const std::lock_guard<std::mutex> lock(call.mx);
+            call.restore = restore;
+            call.in      = in;
+            call.done    = false;
+            call.posted.store(true, std::memory_order_release);
+        }
+        romRun.runner->wake();  // a machine waiting for its next frame answers now
+        std::unique_lock<std::mutex> lock(call.mx);
+        call.answered.wait(lock, [&call] { return call.done; });
+        return StateAnswer{.bytes = std::move(call.out), .ok = call.ok};
+    }
+
+    // The machine's thread, at every look, and stop(): serve the state call waiting, if one is.
+    void serveStateCall() {
+        StateCall& call = romRun.stateCall;
+        if (!call.posted.load(std::memory_order_acquire)) {
+            return;
+        }
+        bool                          restore = false;
+        std::span<const std::uint8_t> in;
+        {
+            const std::lock_guard<std::mutex> lock(call.mx);
+            call.posted.store(false, std::memory_order_relaxed);
+            restore = call.restore;
+            in      = call.in;
+        }
+        std::vector<std::uint8_t> out;
+        bool                      ok = false;
+        if (restore) {
+            ok = putState(in);
+        } else {
+            out = takeState();
+        }
+        {
+            const std::lock_guard<std::mutex> lock(call.mx);
+            call.out  = std::move(out);
+            call.ok   = ok;
+            call.done = true;
+        }
+        call.answered.notify_one();
     }
 
     // Declared after `backend` on purpose: members destroy in reverse order, so the runner (and its
@@ -1317,19 +1640,20 @@ struct Vm::Impl {
             // The machine's own step says which thread it belongs to; a call into the guest is made
             // from there or not at all.
             romRun.steppingThread.store(std::this_thread::get_id(), std::memory_order_relaxed);
-            drainRegionWrites();
-            drainEscapeChanges();
-            drainWatchChanges();
-            drainVideoChange();
-            drainAudioChange();
-            drainButtons();
+            landIssuedVerbs();
         });
         runner->afterEachStep([this] {
             publishStep();
             stepSaveData();
         });
+        // A state call from the game's thread is served between two steps, the moment the machine
+        // looks: a wake brings a waiting machine here at once.
+        runner->onEachLook([this] { serveStateCall(); });
         romRun.runner = std::move(runner);
         if (mode == vm::VmRunner::Mode::Threaded) {
+            // The machine's thread records itself at its first look or step. Until then no thread is
+            // the stepping one, so a verb from the game's thread crosses from the moment run() returns.
+            romRun.steppingThread.store(std::thread::id{}, std::memory_order_relaxed);
             // The pace: step while cycles run lag cycles owed, park otherwise. Owed advances with
             // the wall clock at the platform's speed times the factor; both sides are read on the
             // stepping thread, so the closure is race-free by construction. A machine the engine's
@@ -1456,6 +1780,7 @@ void Vm::reset() {
 
 void Vm::advanceClock(std::uint64_t cycles) {
     impl_->requireNotRunning("advanceClock");
+    const RunScope inRun{impl_->runDepth};
     impl_->backend->advanceClock(cycles);
 }
 
@@ -1477,6 +1802,7 @@ void Vm::advanceTick(std::chrono::nanoseconds enginePeriod) {
     // true rate however the tick period relates to it. A core that keeps no clock advances nothing;
     // its picture still latches.
     if (const std::optional<vm::MachineClock> clock = impl_->backend->clock()) {
+        const RunScope inRun{impl_->runDepth};
         const CycleDraw draw = clock->cyclesFor(enginePeriod, impl_->cycleCarryNs);
         impl_->cycleCarryNs  = draw.carryNs;
         if (draw.cycles != 0) {
@@ -1506,6 +1832,7 @@ void Vm::startDriver(const Routine<void()>& driver) {
 }
 
 std::uint64_t Vm::stepDriver(std::uint64_t cpuCycles) {
+    const RunScope inRun{impl_->runDepth};
     return impl_->backend->runForCycles(cpuCycles);
 }
 
@@ -1551,11 +1878,14 @@ void Vm::buttons(GuestButtons held) {
     // Held on the game's thread and applied on the machine's, so a submission never reaches the core
     // while its own thread is mid-step. A machine that is not running has no such thread, so the state
     // lands where it was asked for.
-    if (impl_->running()) {
+    {
         const std::lock_guard guard{impl_->buttons.mx};
-        impl_->buttons.latest  = held.held;
-        impl_->buttons.pending = true;
-        return;
+        impl_->buttons.latest    = held.held;
+        impl_->buttons.submitted = true;
+        if (impl_->running()) {
+            impl_->buttons.pending = true;
+            return;
+        }
     }
     impl_->backend->setButtons(held.held);
 }
@@ -1654,7 +1984,28 @@ void Vm::stop() {
     impl_->drainWatchChanges();
     impl_->drainVideoChange();
     impl_->drainAudioChange();
+    impl_->serveStateCall();  // a state call still waiting is answered here, by the parked machine
     impl_->flushSaveData();
+}
+
+std::vector<std::uint8_t> Vm::state() {
+    if (!impl_->backend->keepsState()) {
+        throw std::logic_error("state: this machine's core hands over no state");
+    }
+    if (impl_->stateCallCrosses("state")) {
+        return impl_->callOnMachine(/*restore=*/false, {}).bytes;
+    }
+    return impl_->takeState();
+}
+
+bool Vm::restore(std::span<const std::uint8_t> bytes) {
+    if (!impl_->backend->keepsState()) {
+        throw std::logic_error("restore: this machine's core hands over no state");
+    }
+    if (impl_->stateCallCrosses("restore")) {
+        return impl_->callOnMachine(/*restore=*/true, bytes).ok;
+    }
+    return impl_->putState(bytes);
 }
 
 std::vector<std::uint8_t> Vm::read(const MemoryRegion& where, std::uint32_t index) {
@@ -2121,6 +2472,7 @@ void Vm::hostDriver(const DriverBinding& binding) {
     impl_->driver.slots = binding.slots;
     // Perform the declared .init once — the engine runs it at host time (Gap 3: no call site exists).
     if (binding.init.has_value()) {
+        const RunScope inRun{impl_->runDepth};
         performInstruction(*binding.init, kInitCycleCap);
     }
 }
@@ -2129,6 +2481,7 @@ std::uint64_t Vm::tickDriver(std::span<const Instruction> queued, std::uint64_t 
     if (!impl_->driver.hosted) {
         throw std::logic_error("tickDriver: no driver is hosted on this VM (call hostDriver first)");
     }
+    const RunScope inRun{impl_->runDepth};
     std::uint64_t spent = 0;
     // Perform queued gestures in submission order (mailbox writes and entry calls).
     for (const Instruction& ins : queued) {
@@ -2367,6 +2720,7 @@ std::size_t Vm::registerRoutineResolvingPolicy(std::string_view logicalPath,
 }
 
 std::uint64_t Vm::invoke(std::size_t handle, std::span<const CallValue> inputs) {
+    const RunScope inRun{impl_->runDepth};
     const ResolvedRoutine& routine = impl_->routines[handle];
     vm::VmBackend& backend = *impl_->backend;
 

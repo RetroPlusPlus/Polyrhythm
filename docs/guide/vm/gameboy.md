@@ -223,6 +223,7 @@ scheme, a seed layout — is the game's own `.asm`, registered through `register
 | `examples/driver_mixed_images` | one driver built from a tick routine read out of a cartridge and a setup routine baked from `.asm` |
 | `examples/cartridge_assets` | an authored cartridge hosted for its tile art and name table, patched in place, `gb::WorkRam` read |
 | `examples/rom_run` | a cartridge run and measured at four speeds, a write round-tripped through its loop, parked and resumed |
+| `examples/gb_machine_state` | windowed: a cartridge's whole state taken at a key and put back at another; the frames and the sound after a restore compared with the first run's under `--verify` |
 | `examples/guest_escape` | an escape counting the guest's loop, then a routine replaced and answered natively |
 | `examples/guest_nesting` | a replacement calling the cartridge's own generator from inside the escape; a decompressor called parked |
 | `examples/coexecution` | windowed: every co-execution verb acting on one picture |

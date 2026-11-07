@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cstring>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -54,6 +55,12 @@ constexpr std::size_t   kLandingOffset  = kReturnLanding - kHramBase;
 // advanceClock ticks the divider by running the landing's JR $ idle; JR $ is 12 T-cycles when
 // taken, so one frame's 70'224-cycle budget is exactly 5'852 idle steps.
 constexpr std::uint64_t kCyclesPerIdleStep = 12;
+
+// RET, the SM83's one-byte return: what a replacing escape stands at a routine's entry.
+constexpr std::uint8_t kSm83Ret = 0xC9;
+
+// The two counts a state opens with, eight bytes each: the overshoot and the frame debt.
+constexpr std::size_t kStateCountsBytes = 16;
 
 // Borrows the landing's two bytes for the length of one run: writes the JR-$ self-loop the CPU
 // parks on, and puts the guest's own bytes back on the way out. The marker therefore needs no
@@ -155,9 +162,18 @@ SameBoyBackend::SameBoyBackend(ConsoleModel model)
     romBytes_ = machine_.memory(GbHardwareMemory::Rom).size();
 }
 
-void SameBoyBackend::reset() { machine_.reset(); }
+void SameBoyBackend::reset() {
+    machine_.reset();
+    frameDebt8MHz_ = 0;
+}
 
 void SameBoyBackend::advanceClock(std::uint64_t cycles) {
+    // The budget, less what a state ran ahead: the clock moves by the whole of `cycles` from where
+    // it stood before that state was taken.
+    idleFor(lessFrameDebt(cycles * 2) / 2);
+}
+
+void SameBoyBackend::idleFor(std::uint64_t cycles) {
     if (cycles == 0) {
         return;
     }
@@ -186,6 +202,12 @@ void SameBoyBackend::advanceClock(std::uint64_t cycles) {
         machine_.runToReturn(/*returnAddress=*/0x0000, instructions);  // never reached from JR $
     }
     machine_.setRegisters(before);
+}
+
+std::uint64_t SameBoyBackend::lessFrameDebt(std::uint64_t ticks8MHz) {
+    const std::uint64_t paid = std::min(ticks8MHz, frameDebt8MHz_);
+    frameDebt8MHz_ -= paid;
+    return ticks8MHz - paid;
 }
 
 std::uint32_t SameBoyBackend::placeRoutine(std::span<const std::uint8_t> bytes,
@@ -227,6 +249,7 @@ void SameBoyBackend::loadRom(std::span<const std::uint8_t> rom) {
     // reads none of it. Reset brings the machine up on the loaded image.
     machine_.loadRom(rom);
     machine_.reset();
+    frameDebt8MHz_ = 0;
     // SameBoy rounds an image up to a power-of-two bank count, so the addressable size is the one it
     // reports back, not the one handed in.
     romBytes_ = machine_.memory(GbHardwareMemory::Rom).size();
@@ -267,6 +290,7 @@ void SameBoyBackend::bootHostedRom() {
     // values are read from the vendored firmware source (BootROMs/dmg_boot.asm's final block;
     // BootROMs/cgb_boot.asm's KEY0 handoff and EmulateDMG's "final values for DMG mode").
     machine_.reset();
+    frameDebt8MHz_ = 0;
 
     const std::span<const std::uint8_t> rom = machine_.memory(GbHardwareMemory::Rom);
     const bool cgbImage = rom.size() > 0x143 && (rom[0x143] & 0x80) != 0;
@@ -532,15 +556,18 @@ std::uint64_t SameBoyBackend::runForCycles(std::uint64_t cpuCycles) {
     // The TimingProfile CPU unit is 4 MHz T-cycles; SameBoy counts in 8 MHz ticks (GB_run's unit), so
     // a frame's 70'224 T-cycles is 140'448 ticks. Pay back any overshoot the previous run carried, so
     // the long-run production rate tracks real time exactly (no slow drift, no periodic dropped frame).
-    const std::uint64_t budget8MHz = cpuCycles * 2;
+    const std::uint64_t asked8MHz  = cpuCycles * 2;
+    const std::uint64_t budget8MHz = lessFrameDebt(asked8MHz);
+    // What a state already ran of this budget, finishing a frame: counted here, where it is owed.
+    const std::uint64_t paid8MHz = asked8MHz - budget8MHz;
     if (budget8MHz <= audioOvershoot8MHz_) {
         audioOvershoot8MHz_ -= budget8MHz;  // still paying back a prior overshoot; run nothing this tick
-        return 0;
+        return paid8MHz / 2;
     }
     const std::uint64_t target = budget8MHz - audioOvershoot8MHz_;
     const std::uint64_t ran = machine_.runForCycles(target);
     audioOvershoot8MHz_ = ran - target;  // ran ≥ target (a partial last instruction); carry it forward
-    return ran / 2;                       // report in CPU T-cycles
+    return (ran + paid8MHz) / 2;         // report in CPU T-cycles
 }
 
 // ── Resident driver ───────────────────────────────────────────────────────────────────────────────
@@ -667,6 +694,7 @@ void SameBoyBackend::configureResidentImage(std::span<const DriverImage> images,
     residentStackTop_ = resolvedStack;
     residentConfigured_ = true;
     audioOvershoot8MHz_ = 0;
+    frameDebt8MHz_ = 0;
 }
 
 std::uint64_t SameBoyBackend::callResident(std::uint32_t entry,
@@ -771,14 +799,12 @@ void SameBoyBackend::armEscape(std::uint32_t address, bool replacesRoutine) {
         .encoded = address, .addr16 = addr16, .bank = bank, .banked = bank != 0,
         .replaces = replacesRoutine};
     if (replacesRoutine) {
-        // The answering kind: RET (the SM83's one-byte return) sits at the entry while this escape is
-        // armed, so the one instruction that executes after the sink returns sends control back to
-        // whatever called the routine. The displaced byte rides the record and disarm restores it.
-        constexpr std::uint8_t kSm83Ret = 0xC9;
-        std::size_t off = 0;
-        std::span<std::uint8_t> region = regionSpanFor(MemoryRegion{.at = address, .size = 1}, 0, off);
-        armed.savedByte = region[off];
-        region[off]     = kSm83Ret;
+        // The answering kind: RET sits at the entry while this escape is armed, so the one instruction
+        // that executes after the sink returns sends control back to whatever called the routine. The
+        // displaced byte rides the record and disarm restores it.
+        std::uint8_t& byte = escapeByte(armed);
+        armed.savedByte    = byte;
+        byte               = kSm83Ret;
     }
     armedEscapes_.push_back(armed);
     machine_.armEscape(addr16);
@@ -792,11 +818,8 @@ void SameBoyBackend::disarmEscape(std::uint32_t address) {
         return;
     }
     if (at->replaces) {
-        // Put the routine back exactly as it was: the displaced byte returns to its address, through
-        // the same resolver that displaced it.
-        std::size_t off = 0;
-        std::span<std::uint8_t> region = regionSpanFor(MemoryRegion{.at = address, .size = 1}, 0, off);
-        region[off] = at->savedByte;
+        // Put the routine back exactly as it was: the displaced byte returns to its address.
+        escapeByte(*at) = at->savedByte;
     }
     armedEscapes_.erase(at);
 
@@ -1019,6 +1042,68 @@ void SameBoyBackend::writeSaveData(std::span<const std::uint8_t> bytes) {
 
 bool SameBoyBackend::takeSaveDataChanged() {
     return romHosted_ && machine_.takeSaveDataChanged();
+}
+
+std::uint8_t& SameBoyBackend::escapeByte(const ArmedEscape& escape) {
+    std::size_t off = 0;
+    std::span<std::uint8_t> region = regionSpanFor(MemoryRegion{.at = escape.encoded, .size = 1}, 0, off);
+    return region[off];
+}
+
+std::vector<std::uint8_t> SameBoyBackend::readState() {
+    machine_.decideFromStateAlone();
+
+    // The frame in progress first, so the state stands where the next frame is drawn whole.
+    if (romHosted_) {
+        frameDebt8MHz_ += machine_.runToFrameEnd();
+    } else {
+        // An engine-built image has no program of its own to run on: it idles on the landing, a line
+        // at a time, until the display reaches its blank.
+        constexpr std::uint64_t kLine    = 456;           // T-cycles a line takes
+        constexpr std::uint64_t kLongest = 2u * 70'224u;  // two frames
+        for (std::uint64_t idled = 0; idled < kLongest && machine_.pictureInProgress(); idled += kLine) {
+            idleFor(kLine);
+            frameDebt8MHz_ += kLine * 2;
+        }
+    }
+
+    // A replacing escape's return stands in memory while it is armed. Where that byte is one a state
+    // carries, the state holds the byte the escape displaced: an armed escape is the host's, so a
+    // state taken with one armed restores into a machine with none.
+    for (const ArmedEscape& e : armedEscapes_) {
+        if (e.replaces && inStateMemory(e)) {
+            escapeByte(e) = e.savedByte;
+        }
+    }
+    const std::vector<std::uint8_t> core = machine_.readState();
+    for (const ArmedEscape& e : armedEscapes_) {
+        if (e.replaces && inStateMemory(e)) {
+            escapeByte(e) = kSm83Ret;
+        }
+    }
+
+    std::vector<std::uint8_t> bytes(kStateCountsBytes + core.size());
+    std::memcpy(bytes.data(), &audioOvershoot8MHz_, 8);
+    std::memcpy(bytes.data() + 8, &frameDebt8MHz_, 8);
+    std::copy(core.begin(), core.end(), bytes.data() + kStateCountsBytes);
+    return bytes;
+}
+
+bool SameBoyBackend::writeState(std::span<const std::uint8_t> bytes) {
+    if (bytes.size() < kStateCountsBytes || !machine_.writeState(bytes.subspan(kStateCountsBytes))) {
+        return false;
+    }
+    std::memcpy(&audioOvershoot8MHz_, bytes.data(), 8);
+    std::memcpy(&frameDebt8MHz_, bytes.data() + 8, 8);
+    // An armed replacing escape stands its return again, over the byte the state brought.
+    for (ArmedEscape& e : armedEscapes_) {
+        if (e.replaces && inStateMemory(e)) {
+            std::uint8_t& byte = escapeByte(e);
+            e.savedByte        = byte;
+            byte               = kSm83Ret;
+        }
+    }
+    return true;
 }
 
 }  // namespace retropp::vm

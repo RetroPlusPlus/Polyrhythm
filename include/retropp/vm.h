@@ -621,6 +621,53 @@ public:
     // thread is gone by return. Harmless when nothing runs.
     void stop();
 
+    // ── State ───────────────────────────────────────────────────────────────────────────────────
+    // Everything the machine is at one moment — CPU, memory, every chip, the picture it last
+    // finished — as bytes, and those bytes taken back. A machine restored from a state carries on
+    // from that moment: it draws the frames and sounds the samples it would have, and a machine
+    // advanced by the game's tick lands on the same bytes tick for tick.
+    //
+    // A state is the machine where it has finished a frame. Asked while a picture is part-drawn, the
+    // machine first runs on to the end of that frame, under the buttons it holds, and the cycles that
+    // took come out of the steps that follow, so its clock is where it would have been.
+    //
+    // What the game attached stays the game's: the cartridge image and anything written into it, the
+    // declared places, escapes and watches with their arming, routines, the video and audio switches
+    // with their settings, the speed, the key and the battery save's name, and the buttons last
+    // submitted. A state carries none of them and a restore changes none of them.
+    //
+    // From the machine's first state() or restore() on, what it does next is decided by its state
+    // alone: a Game Boy cartridge's real-time clock counts the machine's own time, and a camera
+    // cartridge sees a fixed picture.
+
+    // The machine as bytes. They are for restore(), and nothing else reads them.
+    //
+    // On a machine running on a thread of its own the call crosses to that thread, is answered at
+    // its next step boundary — at once when the machine is waiting for its next frame, as the step in
+    // flight ends otherwise — and returns the answer; the machine keeps running. Anywhere else it is
+    // answered on the calling thread. Every verb issued before it has landed in the state.
+    //
+    // Throws std::logic_error if this machine's core hands over no state, or when called from inside
+    // one of the machine's own steps — an escape, a replacement or a watch handler, the audio
+    // function — where the machine is part-way through an instruction.
+    [[nodiscard]] std::vector<std::uint8_t> state();
+
+    // Take a state back. True: the machine stands at the state's moment. False: the bytes are not a
+    // state of this machine — not a state at all, cut short or padded, taken on another platform or
+    // from a core that lays its bytes out differently, or from a machine keeping another amount of
+    // memory — and the machine is exactly as it was.
+    //
+    //     machine.hostRom(image);
+    //     machine.restore(bytes);              // before the first run: the run carries on from the
+    //     machine.run(Vm::Advance::OnTick);    // state's moment, with no boot
+    //
+    // The cartridge is the machine's configuration and is hosted first. A keyed machine's battery
+    // file follows the restored machine: the save the state carries is written out as any change the
+    // guest makes is.
+    //
+    // Lands where state() is answered, on the same terms, and throws as it does.
+    [[nodiscard]] bool restore(std::span<const std::uint8_t> bytes);
+
     // ── Video ───────────────────────────────────────────────────────────────────────────────────
     // A machine hosts WITHOUT drawing: a raster costs cycles, and a machine hosted for its memory or
     // its routines shows nothing. Turn video on and the frames it finishes become a layer's content,

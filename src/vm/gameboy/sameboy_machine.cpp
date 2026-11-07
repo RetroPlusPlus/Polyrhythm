@@ -20,6 +20,17 @@
 // it — which is where a guest's own time belongs.
 extern "C" void GB_cpu_run(GB_gameboy_t* gb);
 
+// The engine's own C beside the core (sameboy_state_extras.c): the sound output stage, whose fields
+// the core's header names for C alone, whether a frame is part-drawn, and what the state alone decides.
+extern "C" {
+std::size_t retropp_sameboy_output_stage_size(void);
+void        retropp_sameboy_read_output_stage(GB_gameboy_t* gb, std::uint8_t* out);
+bool        retropp_sameboy_write_output_stage(GB_gameboy_t* gb, const std::uint8_t* in);
+bool        retropp_sameboy_picture_in_progress(GB_gameboy_t* gb);
+void        retropp_sameboy_decide_from_state_alone(GB_gameboy_t* gb);
+void        retropp_sameboy_after_load(GB_gameboy_t* gb);
+}
+
 namespace retropp::vm {
 
 namespace {
@@ -523,6 +534,60 @@ bool SameBoyMachine::takeSaveDataChanged() {
         return false;
     }
     GB_clear_battery_dirty(&impl_->gb);
+    return true;
+}
+
+bool SameBoyMachine::pictureInProgress() const {
+    return retropp_sameboy_picture_in_progress(&impl_->gb);
+}
+
+void SameBoyMachine::decideFromStateAlone() {
+    retropp_sameboy_decide_from_state_alone(&impl_->gb);
+}
+
+std::uint64_t SameBoyMachine::runToFrameEnd() {
+    // Two frames bound a display the program switches off and on as this runs.
+    constexpr std::uint64_t kLongest = 2u * 140'448u;
+    impl_->syncHook();
+    std::uint64_t ran = 0;
+    while (ran < kLongest && retropp_sameboy_picture_in_progress(&impl_->gb)) {
+        ran += GB_run(&impl_->gb);
+    }
+    impl_->syncHook();
+    return ran;
+}
+
+std::vector<std::uint8_t> SameBoyMachine::readState() {
+    const std::size_t stage = retropp_sameboy_output_stage_size();
+    const std::size_t core  = GB_get_save_state_size(&impl_->gb);
+    std::vector<std::uint8_t> bytes(stage + core);
+    retropp_sameboy_read_output_stage(&impl_->gb, bytes.data());
+    GB_save_state_to_buffer(&impl_->gb, bytes.data() + stage);
+    return bytes;
+}
+
+bool SameBoyMachine::writeState(std::span<const std::uint8_t> bytes) {
+    const std::size_t stage = retropp_sameboy_output_stage_size();
+    const std::size_t core  = GB_get_save_state_size(&impl_->gb);
+    if (bytes.size() != stage + core) {
+        return false;
+    }
+    // The core's bytes open with its mark and its layout version, and a state this machine writes
+    // opens with the same eight. The core is asked only once they agree: handed another layout it
+    // loads what it can and answers that it loaded.
+    std::vector<std::uint8_t> own(core);
+    GB_save_state_to_buffer(&impl_->gb, own.data());
+    const std::span<const std::uint8_t> theirs = bytes.subspan(stage);
+    if (!std::equal(own.begin(), own.begin() + 8, theirs.begin())) {
+        return false;
+    }
+    if (GB_load_state_from_buffer(&impl_->gb, theirs.data(), theirs.size()) != 0) {
+        return false;
+    }
+    // After the core's own load, which leaves the output stage where the run before it stood.
+    retropp_sameboy_write_output_stage(&impl_->gb, bytes.data());
+    retropp_sameboy_after_load(&impl_->gb);
+    retropp_sameboy_decide_from_state_alone(&impl_->gb);
     return true;
 }
 

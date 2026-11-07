@@ -282,6 +282,32 @@ public:
     // asked. Asking clears the flag, so each change is reported once.
     [[nodiscard]] bool takeSaveDataChanged();
 
+    // ── State ─────────────────────────────────────────────────────────────────
+    // The whole machine: the core's own save state, with the sound output stage the
+    // core keeps beside it — where the machine stands between two output samples, each
+    // channel's band-limiting history, the DC-blocking filter's running value. With both
+    // put back, the samples that follow are the ones the machine would have produced.
+
+    // From this call on, the state alone decides what the machine does next: a cartridge's
+    // real-time clock counts the machine's own cycles, and a camera cartridge sees a fixed
+    // picture. Taking a state calls this first, and taking one back calls it after the load.
+    void decideFromStateAlone();
+
+    // Whether a frame is part-drawn: the display is on and the beam is past the first
+    // line's sprite search and short of the vertical blank.
+    [[nodiscard]] bool pictureInProgress() const;
+
+    // Run whole instructions from where the CPU stands until no frame is part-drawn, and
+    // answer the 8 MHz ticks that took; zero when none was.
+    std::uint64_t runToFrameEnd();
+
+    // The state as bytes. Called between runs, on the thread running the CPU.
+    [[nodiscard]] std::vector<std::uint8_t> readState();
+
+    // Take a state back. False, with the machine as it was, for bytes of another length
+    // than this machine writes or opening with another layout of the core's own.
+    bool writeState(std::span<const std::uint8_t> bytes);
+
     // Defined in sameboy_machine.cpp. Public only so the backend's TU-local
     // execution callback can name it (it receives the instance via SameBoy's
     // user-data pointer); an incomplete type here, it exposes nothing usable.

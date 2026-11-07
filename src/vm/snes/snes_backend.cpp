@@ -55,6 +55,26 @@ std::optional<snaggletooth::Joypad> decodePad(std::uint64_t word, unsigned shift
     return pad;
 }
 
+// A state opens with what the backend itself carries, at fixed little-endian widths: the frame debt,
+// eight bytes; the converter's two factors, its newest frame's index and its next output's position,
+// four bytes each; and its history, the left frames then the right, two bytes a frame.
+constexpr std::size_t kStateHistoryFrames = 2 * RationalResampler::kTapsPerPhase;
+constexpr std::size_t kStatePrefixBytes   = 8 + 4 * 4 + 2 * 2 * kStateHistoryFrames;
+
+void putLe(std::uint8_t* at, std::uint64_t value, int bytes) noexcept {
+    for (int i = 0; i < bytes; ++i) {
+        at[i] = static_cast<std::uint8_t>((value >> (8 * i)) & 0xFF);
+    }
+}
+
+[[nodiscard]] std::uint64_t getLe(const std::uint8_t* at, int bytes) noexcept {
+    std::uint64_t value = 0;
+    for (int i = 0; i < bytes; ++i) {
+        value |= static_cast<std::uint64_t>(at[i]) << (8 * i);
+    }
+    return value;
+}
+
 }  // namespace
 
 SnesBackend::SnesBackend() { rebuildRoutineImage(); }
@@ -71,6 +91,7 @@ void SnesBackend::emplaceMachine() {
     snes_->setFrameObserver(videoEnabled_ ? this : nullptr);
     rearm();               // escapes and watches are the host's, not the machine's state
     saveChanged_ = false;  // a fresh machine has changed nothing since it was last taken
+    frameDebt_ = 0;        // and owes nothing
     if (resampler_) {
         resampler_->reset();  // a fresh machine's sound starts from silence, as its picture does
     }
@@ -193,7 +214,7 @@ std::uint64_t SnesBackend::runForCycles(std::uint64_t cpuCycles) {
     // quarter frame. Snaggletooth carries the overshoot inside the machine and run(a) then run(b) is
     // run(a + b), so the slicing changes nothing the program can observe.
     const std::uint64_t slice = clock()->cyclesPerFrame / 4;
-    for (std::uint64_t remaining = cpuCycles; remaining != 0;) {
+    for (std::uint64_t remaining = lessFrameDebt(cpuCycles); remaining != 0;) {
         const std::uint64_t step = std::min(remaining, slice);
         if (apu_) {
             apu_->run(step);
@@ -594,6 +615,75 @@ void requireConsole(bool audioUnitOnly, const char* verb) {
 
 }  // namespace
 
+std::vector<std::uint8_t> SnesBackend::readState() {
+    requireConsole(apu_.has_value(), "readState");
+    // The frame in progress first: a line at a time until the beam is in the vertical blank, or on
+    // the line before the picture, where no row of the next frame is drawn.
+    constexpr std::uint64_t kLine    = 1'364;          // master cycles a line takes
+    constexpr std::uint64_t kLongest = 2u * 425'568u;  // two of the longer console's frames
+    for (std::uint64_t ran = 0; ran < kLongest; ran += kLine) {
+        const snaggletooth::SnesState& now = snes_->state();
+        if (now.inVblank || now.vpos == 0) {
+            break;
+        }
+        if (imageBuilt_) {
+            idleFor(kLine);  // the engine's own image has no program to run on
+        } else {
+            snes_->run(kLine);
+            drainAudio();
+        }
+        frameDebt_ += kLine;
+    }
+
+    const std::vector<std::uint8_t> core = snes_->state().asBytes();
+    std::vector<std::uint8_t>       bytes(kStatePrefixBytes + core.size());
+    std::uint8_t*                   at = bytes.data();
+    putLe(at, frameDebt_, 8);
+    if (resampler_) {
+        const RationalResampler::State held = resampler_->state();
+        putLe(at + 8, resampler_->upFactor(), 4);
+        putLe(at + 12, resampler_->downFactor(), 4);
+        putLe(at + 16, held.head, 4);
+        putLe(at + 20, held.offset, 4);
+        for (std::size_t i = 0; i < kStateHistoryFrames; ++i) {
+            putLe(at + 24 + 2 * i, static_cast<std::uint16_t>(held.left[i]), 2);
+            putLe(at + 24 + 2 * (kStateHistoryFrames + i), static_cast<std::uint16_t>(held.right[i]), 2);
+        }
+    }
+    std::copy(core.begin(), core.end(), at + kStatePrefixBytes);
+    return bytes;
+}
+
+bool SnesBackend::writeState(std::span<const std::uint8_t> bytes) {
+    requireConsole(apu_.has_value(), "writeState");
+    if (bytes.size() <= kStatePrefixBytes) {
+        return false;
+    }
+    // A SnesState is a quarter of a megabyte, so it is built on the heap: this runs on whichever
+    // thread steps the machine, and a thread's stack is not sized for it.
+    auto state = std::make_unique<snaggletooth::SnesState>();
+    if (!snaggletooth::SnesState::fromBytes(bytes.subspan(kStatePrefixBytes), *state) ||
+        !snes_->restore(*state)) {
+        return false;
+    }
+    const std::uint8_t* at = bytes.data();
+    frameDebt_             = getLe(at, 8);
+    // The converter's history goes back where the converter is the one the state was taken through.
+    if (resampler_ && resampler_->upFactor() == getLe(at + 8, 4) &&
+        resampler_->downFactor() == getLe(at + 12, 4)) {
+        RationalResampler::State held;
+        held.head   = static_cast<std::uint32_t>(getLe(at + 16, 4));
+        held.offset = static_cast<std::uint32_t>(getLe(at + 20, 4));
+        for (std::size_t i = 0; i < kStateHistoryFrames; ++i) {
+            held.left[i] = static_cast<std::int16_t>(static_cast<std::uint16_t>(getLe(at + 24 + 2 * i, 2)));
+            held.right[i] = static_cast<std::int16_t>(
+                static_cast<std::uint16_t>(getLe(at + 24 + 2 * (kStateHistoryFrames + i), 2)));
+        }
+        resampler_->restore(held);
+    }
+    return true;
+}
+
 std::uint32_t SnesBackend::placeRoutine(std::span<const std::uint8_t> bytes,
                                        std::optional<std::uint32_t> origin) {
     requireConsole(apu_.has_value(), "placeRoutine");
@@ -755,9 +845,14 @@ void SnesBackend::advanceClock(std::uint64_t cycles) {
                                    : "advanceClock: this machine holds no image to idle on (place a "
                                      "routine first)");
     }
+    cycles = lessFrameDebt(cycles);
     if (cycles == 0) {
         return;
     }
+    idleFor(cycles);
+}
+
+void SnesBackend::idleFor(std::uint64_t cycles) {
     // Park on the idle loop, spend the cycles, and put the file back: the machine's clock moves and
     // nothing a call marshals does. A call's cycles are spent ahead of the budget the machine runs, so
     // the budget owes them; they are paid here, and the clock moves by the whole of `cycles` from where
@@ -771,6 +866,12 @@ void SnesBackend::advanceClock(std::uint64_t cycles) {
     snes_->run(cycles + owed);
     snes_->setCpuState(saved);
     drainAudio();  // what the sound chip made while the machine idled reaches the sink
+}
+
+std::uint64_t SnesBackend::lessFrameDebt(std::uint64_t cycles) {
+    const std::uint64_t paid = std::min(cycles, frameDebt_);
+    frameDebt_ -= paid;
+    return cycles - paid;
 }
 
 void SnesBackend::seatOnIdleLoop(snaggletooth::Cpu65816State& file) const {

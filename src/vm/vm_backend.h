@@ -467,6 +467,38 @@ public:
     // separate clear verb would be one more thing to forget. A backend whose core cannot tell answers
     // true and lets the host's own pacing decide how often that costs a write.
     [[nodiscard]] virtual bool takeSaveDataChanged() = 0;
+
+    // ── State (the whole machine at one moment) ────────────────────────────────────────────────────
+    // The backend's part is HOLD AND HAND OVER, as it is for save data: it copies out everything the
+    // machine is — CPU, memory, every chip, and whatever the backend itself holds beside the core that
+    // the machine's next cycle or next sample depends on — and takes a copy back. The generic host
+    // never reads a byte of it.
+    //
+    // A state is taken where the machine has finished a frame. Asked while a picture is part-drawn,
+    // readState runs the machine on to that frame's end first — a cartridge by running its program, an
+    // image the backend built by idling on its own loop. The cycles that took are the backend's to pay
+    // back out of the budgets that follow (runForCycles, advanceClock), and what is still owed rides in
+    // the bytes. A machine restored from a state therefore draws its next frame whole, and a machine
+    // advanced by a count lands where it would have with no state taken.
+    //
+    // Both are called on the thread stepping the machine, between runs.
+
+    // Whether this core hands its state over at all. A backend with no model answers false, and the
+    // public surface refuses on the calling thread — the posture takesButtons() takes.
+    [[nodiscard]] virtual bool keepsState() const { return false; }
+
+    // The machine as bytes, in the backend's own form.
+    [[nodiscard]] virtual std::vector<std::uint8_t> readState() {
+        throw std::logic_error("this core hands over no state");
+    }
+
+    // Take a state back. Answers false, and leaves the machine exactly as it was, for bytes that are
+    // not a state of this machine: another length, another layout of the core's bytes, or a machine
+    // keeping another amount of memory. What the host attached stays as it is — the sinks, the armed
+    // escapes and watches, placed code, the cartridge image.
+    virtual bool writeState(std::span<const std::uint8_t> /*bytes*/) {
+        throw std::logic_error("this core hands over no state");
+    }
 };
 
 }  // namespace retropp::vm

@@ -47,6 +47,7 @@ bytes exactly as they shipped, in memory this process owns, with the behavior li
 - [Sound: hearing it](#sound-hearing-it)
 - [Input: playing it](#input-playing-it)
 - [While it runs: one thread owns the machine](#while-it-runs-one-thread-owns-the-machine)
+- [Saving the machine and putting it back](#saving-the-machine-and-putting-it-back)
 - [Escaping into your own code](#escaping-into-your-own-code)
 - [Replacing a routine the cartridge calls](#replacing-a-routine-the-cartridge-calls)
 - [Managing the escape table](#managing-the-escape-table)
@@ -463,6 +464,7 @@ every verb still lands at that same boundary, on the same terms.
 | `escapes()[key].armed(...)` / `.remove()` | crosses and lands at the next step boundary, in the order issued |
 | `watches()[key].armed(...)` / `.remove()` | crosses and lands at the next step boundary, in the order issued |
 | `video(on)` / `video(on, options)` · `audio(on)` / `audio(on, options)` | cross and land at the next step boundary, with their settings |
+| `state()` / `restore(bytes)` | cross and are answered at the next step boundary; the call returns the answer |
 | a place built **on the spot** | refused — declare it before `run()`, or `stop()` first |
 | `bindRoutine`, `registerRegions`, `registerEscapes`, `registerWatches` | refused — these settle the terms, and the terms settle before the run |
 | `reset`, `advanceClock`, `hostRom` | refused — `stop()` first |
@@ -488,6 +490,73 @@ there and nowhere else. Its *reads and writes* still ride the publish and the bo
 are how the machine's memory is observed at all.
 
 The machine also stays where it is in memory: `stop()` before moving the `Vm` object.
+
+## Saving the machine and putting it back
+
+`state()` hands over everything the machine is at one moment — CPU, memory, every chip, and the
+picture it last finished — as bytes. `restore(bytes)` takes them back, and the machine carries on from
+that moment: it draws the frames and sounds the samples it would have drawn and sounded.
+
+```cpp
+std::vector<std::uint8_t> battle = machine.state();   // the machine, as bytes
+
+// … the game goes on …
+
+if (!machine.restore(battle)) {
+    // the bytes are not a state of this machine, and it is exactly as it was
+}
+```
+
+The bytes are yours to keep: hold them, or file them the way you file anything else. A session that
+opens at a moment of the game hosts the cartridge, restores, and runs:
+
+```cpp
+Vm::GBC machine{VmConfig{.video = true}};
+machine.hostRom(image);
+if (machine.restore(saved)) {            // before the first run, so the run carries on from the
+    machine.run(Vm::Advance::OnTick);    // state's moment, with no boot
+}
+```
+
+**A state is the machine where it has finished a frame.** Asked while a picture is part-drawn, the
+machine first runs on to the end of that frame, under the buttons it holds, and the state is taken
+there. The cycles that took come out of the steps that follow, so a machine on your tick lands where it
+would have, and the frame it finishes after a restore is whole.
+
+**What it carries, and what stays yours.**
+
+| In the state | As your game has it |
+|---|---|
+| the CPU, every memory and every chip, the battery-backed save among them | the cartridge image, and anything written into it |
+| the last picture the machine finished, and the fields of a woven one | the declared places, escapes and watches, with their arming |
+| where the sound stands between two samples | routines, placed and bound |
+| the fractions of a cycle its clock owes it | `video` and `audio`, their settings and the function sound reaches |
+| whether the image has booted | `speed`, the clock it runs on, the key and the battery save's name |
+| | the buttons you last submitted |
+
+A restored machine holds the buttons you last handed it. A keyed machine's battery file follows the
+restored machine: the save the state carries is written out the way a change the guest makes is.
+From the machine's first `state()` or `restore()` on, what it does next is decided by its state alone:
+a Game Boy cartridge's real-time clock counts the machine's own time, and a camera cartridge sees a
+fixed picture.
+
+**Where it lands.** Both verbs are answered at a step boundary, after every verb issued before them:
+
+| The machine is | `state()` and `restore()` |
+|---|---|
+| parked, or has never run | answered on the calling thread, at once |
+| on your tick (`Advance::OnTick`) | answered on the calling thread, between two `advanceTick`s |
+| on a thread of its own (`Advance::Continuously`) | cross to that thread and are answered at its next step boundary — at once when it is waiting for its next frame, as the step in flight ends otherwise — and the call returns the answer; the machine keeps running |
+
+Called from inside one of the machine's own steps — an escape, a replacement or a watch handler, the
+audio function — either throws `std::logic_error`: the machine is part-way through an instruction
+there. A handler that wants a state sets a flag, and the game takes it once the step has returned.
+
+**What `restore` refuses.** It answers `false`, with the machine untouched, for bytes that are not a
+state, bytes cut short or padded, a state taken on another platform (`GameBoy`, `GameBoyColor` and
+`Snes` each take their own), a state whose core laid its bytes out differently, and a state of a
+machine keeping another amount of memory. A core that hands over no state throws `std::logic_error`
+from both verbs.
 
 ## Escaping into your own code
 
@@ -831,7 +900,7 @@ be discovered.
 
 ## Try it
 
-Eight examples: four of one act each, two that put a console's surface on a single screen, and two that run a cartridge of your own.
+Ten examples: four of one act each, two that put a console's surface on a single screen, two that run a cartridge of your own, and two that save a machine and put it back.
 
 | | |
 |---|---|
@@ -843,8 +912,10 @@ Eight examples: four of one act each, two that put a console's surface on a sing
 | `examples/snes/coexecution` | windowed: the SNES demo cartridge running beside a panel drawn from its own memory every tick — its palette as swatches, its first sixteen tiles of video RAM decoded, its sprite's position in work RAM, a step byte inside the image, and the pad registers read as they stand — with keys that write the first four while it runs; and a routine two ways, placed from 65816 source on a machine of its own and bound where the cartridge holds it, either called for a value that sets the sprite's color; and two escapes and two watches switched at keys while it runs — the cartridge's own step routine answered natively with its own `mix` called inside the escape, an escape hearing every frame, a watch vetoing or corralling the sprite's Y, and one answering every read of the step byte |
 | `examples/gb_player` | windowed: one ROM of your own on two machines side by side, one advanced by the engine's tick and one free-running on a clock of its own, both submitting their video as layer content. Asks for a ROM through the native file picker and ships none |
 | `examples/snes/player` | windowed: a SNES cartridge on two machines side by side — one advanced by the engine's tick, one free-running on a clock of its own — the same two pads driving both, each machine's sound in a queue of its own with a key choosing which is heard and a scope of what the device took. Asks for a ROM through the native file picker, and runs its own demo cartridge (`examples/snes/cartridge/`, authored as source and assembled as the program starts) when none is chosen |
+| `examples/gb_machine_state` | windowed: a Game Boy cartridge played from the pad, with a key that takes the machine's state and a key that puts it back, so the picture jumps to where it stood; headless under `--verify`, where the frames and the sound after a restore are compared with the first run's |
+| `examples/snes/machine_state` | windowed: the SNES demo cartridge played from the pad, with the same two keys; headless under `--verify`, on the same terms |
 
-Every cartridge in the first six is authored in-code or by a committed generator script; the two players take a ROM of your own at runtime and ship none.
+Every cartridge here is authored in-code or by a committed generator script, except the two players', which take a ROM of your own at runtime and ship none.
 
 ## Where to change things
 
@@ -872,8 +943,8 @@ built-on-the-spot forms; the `gb::` memory constants and `gb::banked` addressing
 `.handler` and `.replaces` — the escape table (`armed` / `remove` / `contains` / `size`) including
 changing it while the machine runs; `registerWatches` with both directions, the `AccessVerdict`
 outcomes, `AccessSource` and the watch table on the same terms; `bindRoutine`, in the guest's own
-context, nested to any depth; and `video`, declared through `VmConfig` or switched at runtime, with its
-settings, on either clock.
+context, nested to any depth; `video`, declared through `VmConfig` or switched at runtime, with its
+settings, on either clock; and `state` / `restore`, on a parked machine and on either clock.
 
 **On a `Vm::SNES`, every verb above answers**, with the `snes::` memory and register constants and
 `snes::rtl` for a routine an `RTL` leaves. What its hardware imposes on them — an escape and a watch on
