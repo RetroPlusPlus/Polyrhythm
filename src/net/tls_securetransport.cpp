@@ -229,10 +229,10 @@ TlsStream& TlsStream::operator=(TlsStream&& other) noexcept {
     return *this;
 }
 
-Status openTlsClient(std::unique_ptr<Stream> over, const TlsClientConfig& accepting, TlsStream& out) {
+Secured tlsClient(std::unique_ptr<Stream> over, const TlsClientConfig& accepting) {
     auto state = std::make_unique<TlsStream::State>();
     if (const Status opened = openTls(std::move(over), kSSLClientSide, *state); opened != Status::Ok) {
-        return opened;
+        return Secured{.status = opened, .stream = nullptr};
     }
 
     state->pinned = accepting.pinned;
@@ -242,27 +242,29 @@ Status openTlsClient(std::unique_ptr<Stream> over, const TlsClientConfig& accept
     // Stop at the trust point and decide here. Without this the library applies its own policy and a
     // pinned certificate no public CA signed would be refused before this code ever sees it.
     if (SSLSetSessionOption(state->context, kSSLSessionOptionBreakOnServerAuth, true) != errSecSuccess) {
-        return Status::Other;
+        return Secured{.status = Status::Other, .stream = nullptr};
     }
 
-    out.state_ = std::move(state);
-    return Status::Ok;
+    auto stream    = std::make_unique<TlsStream>();
+    stream->state_ = std::move(state);
+    return Secured{.status = Status::Ok, .stream = std::move(stream)};
 }
 
-Status openTlsServer(std::unique_ptr<Stream> over, const TlsServerConfig& presenting, TlsStream& out) {
+Secured tlsServer(std::unique_ptr<Stream> over, const TlsServerConfig& presenting) {
     auto state = std::make_unique<TlsStream::State>();
     if (const Status opened = openTls(std::move(over), kSSLServerSide, *state); opened != Status::Ok) {
-        return opened;
+        return Secured{.status = opened, .stream = nullptr};
     }
 
     CFArrayRef identity = importIdentity(presenting.identity, presenting.password);
-    if (identity == nullptr) return Status::Other;
+    if (identity == nullptr) return Secured{.status = Status::Other, .stream = nullptr};
     const OSStatus set = SSLSetCertificate(state->context, identity);
     CFRelease(identity);
-    if (set != errSecSuccess) return Status::Other;
+    if (set != errSecSuccess) return Secured{.status = Status::Other, .stream = nullptr};
 
-    out.state_ = std::move(state);
-    return Status::Ok;
+    auto stream    = std::make_unique<TlsStream>();
+    stream->state_ = std::move(state);
+    return Secured{.status = Status::Ok, .stream = std::move(stream)};
 }
 
 Status TlsStream::handshake(std::chrono::milliseconds timeout) {

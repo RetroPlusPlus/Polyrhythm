@@ -27,8 +27,8 @@ namespace {
 using namespace std::chrono_literals;
 
 using retropp::net::connectStream;
-using retropp::net::openTlsClient;
-using retropp::net::SocketAddress;
+using retropp::net::tlsClient;
+using retropp::net::Endpoint;
 using retropp::net::SocketHandle;
 using retropp::net::SocketStream;
 using retropp::net::Status;
@@ -66,11 +66,15 @@ struct Dialed {
 Dialed dial(const std::string& host) {
     Dialed d;
     SocketHandle socket{};
-    d.connected = connectStream(SocketAddress{.host = host, .port = 443}, kConnect, socket);
+    d.connected = connectStream(Endpoint{.host = host, .port = 443}, kConnect, socket);
     if (d.connected != Status::Ok) return d;
-    const Status opened = openTlsClient(std::make_unique<SocketStream>(socket),
-                                        TlsClientConfig{.hostname = host, .pinned = {}}, d.tls);
-    if (opened != Status::Ok) d.connected = opened;
+    retropp::net::Secured made = tlsClient(std::make_unique<SocketStream>(socket),
+                                           TlsClientConfig{.hostname = host, .pinned = {}});
+    if (made.status != Status::Ok) {
+        d.connected = made.status;
+        return d;
+    }
+    d.tls = std::move(*made.stream);
     return d;
 }
 

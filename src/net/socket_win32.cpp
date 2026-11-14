@@ -29,6 +29,7 @@
 #include <cstdlib>
 #include <mutex>
 #include <string>
+#include <vector>
 
 namespace retropp::net {
 namespace {
@@ -110,7 +111,7 @@ public:
     Resolution(const Resolution&)            = delete;
     Resolution& operator=(const Resolution&) = delete;
 
-    [[nodiscard]] bool resolve(const SocketAddress& address, bool passive, int socktype) {
+    [[nodiscard]] bool resolve(const Endpoint& address, bool passive, int socktype) {
         ::addrinfo hints{};
         hints.ai_family   = AF_UNSPEC;  // v4 and v6 both; the OS orders the candidates
         hints.ai_socktype = socktype;
@@ -136,6 +137,13 @@ SocketHandle handleOf(SOCKET socket) noexcept {
 bool makeNonBlocking(SOCKET socket) {
     u_long nonBlocking = 1;
     return ::ioctlsocket(socket, FIONBIO, &nonBlocking) == 0;
+}
+
+// A stream sends each write as it is made. Left to itself the OS may hold a small write back to join it
+// to the next one, which a byte exchange between two games feels as a stall.
+void sendAtOnce(SOCKET socket) {
+    BOOL on = TRUE;
+    ::setsockopt(socket, IPPROTO_TCP, TCP_NODELAY, reinterpret_cast<const char*>(&on), sizeof(on));
 }
 
 // Closes a socket that has not taken a lease of its own yet.
@@ -179,7 +187,7 @@ int transferLength(std::size_t size) noexcept {
     return static_cast<int>(size < kCeiling ? size : kCeiling);
 }
 
-void addressFrom(const ::sockaddr* storage, int length, SocketAddress& out) {
+void addressFrom(const ::sockaddr* storage, int length, Endpoint& out) {
     char host[NI_MAXHOST] = {};
     char port[NI_MAXSERV] = {};
     if (::getnameinfo(storage, length, host, sizeof(host), port, sizeof(port),
@@ -191,7 +199,7 @@ void addressFrom(const ::sockaddr* storage, int length, SocketAddress& out) {
 
 }  // namespace
 
-Status connectStream(const SocketAddress& to, std::chrono::milliseconds timeout, SocketHandle& out) {
+Status connectStream(const Endpoint& to, std::chrono::milliseconds timeout, SocketHandle& out) {
     const WinsockScope scope;
     if (!scope.held()) return Status::Other;
 
@@ -221,6 +229,7 @@ Status connectStream(const SocketAddress& to, std::chrono::milliseconds timeout,
         }
 
         if (settled == Status::Ok) {
+            sendAtOnce(socket);
             if (!acquireWinsock()) {
                 discard(socket);
                 return Status::Other;
@@ -234,7 +243,7 @@ Status connectStream(const SocketAddress& to, std::chrono::milliseconds timeout,
     return last;
 }
 
-Status listenStream(const SocketAddress& at, int backlog, SocketHandle& out) {
+Status listenStream(const Endpoint& at, int backlog, SocketHandle& out) {
     const WinsockScope scope;
     if (!scope.held()) return Status::Other;
 
@@ -278,11 +287,12 @@ Status acceptStream(SocketHandle listener, SocketHandle& out) {
         discard(accepted);
         return Status::Other;
     }
+    sendAtOnce(accepted);
     out = handleOf(accepted);
     return Status::Ok;
 }
 
-Status bindDatagram(const SocketAddress& at, SocketHandle& out) {
+Status bindDatagram(const Endpoint& at, SocketHandle& out) {
     const WinsockScope scope;
     if (!scope.held()) return Status::Other;
 
@@ -298,6 +308,12 @@ Status bindDatagram(const SocketAddress& at, SocketHandle& out) {
             last = lastStatus();
             continue;
         }
+
+        // A datagram socket may send to a broadcast address, which is how one machine reaches every other
+        // on its network.
+        BOOL broadcast = TRUE;
+        ::setsockopt(socket, SOL_SOCKET, SO_BROADCAST, reinterpret_cast<const char*>(&broadcast),
+                     sizeof(broadcast));
 
         if (::bind(socket, candidate->ai_addr, static_cast<int>(candidate->ai_addrlen)) == 0 &&
             makeNonBlocking(socket)) {
@@ -349,7 +365,7 @@ Transfer receiveStream(SocketHandle socket, std::span<std::byte> into) {
     return Transfer{.status = Status::Ok, .bytes = static_cast<std::size_t>(moved)};
 }
 
-Transfer sendDatagram(SocketHandle socket, const SocketAddress& to,
+Transfer sendDatagram(SocketHandle socket, const Endpoint& to,
                       std::span<const std::byte> bytes) {
     Resolution resolution;
     if (!resolution.resolve(to, /*passive=*/false, SOCK_DGRAM)) {
@@ -364,7 +380,7 @@ Transfer sendDatagram(SocketHandle socket, const SocketAddress& to,
     return Transfer{.status = Status::Ok, .bytes = static_cast<std::size_t>(moved)};
 }
 
-Transfer receiveDatagram(SocketHandle socket, std::span<std::byte> into, SocketAddress& from) {
+Transfer receiveDatagram(SocketHandle socket, std::span<std::byte> into, Endpoint& from) {
     ::sockaddr_storage sender{};
     int                size    = static_cast<int>(sizeof(sender));
     const int          offered = transferLength(into.size());
@@ -396,6 +412,21 @@ Status waitReadable(SocketHandle socket, std::chrono::milliseconds timeout) {
     if (ready == SOCKET_ERROR) return lastStatus();
     if (ready == 0) return Status::TimedOut;
     return Status::Ok;
+}
+
+SocketOptions socketOptions(SocketHandle socket) {
+    SocketOptions read{};
+    BOOL          flag = FALSE;
+    int           size = static_cast<int>(sizeof(flag));
+    read.mayBroadcast = ::getsockopt(socketOf(socket), SOL_SOCKET, SO_BROADCAST,
+                                     reinterpret_cast<char*>(&flag), &size) != SOCKET_ERROR &&
+                        flag != FALSE;
+    flag = FALSE;
+    size = static_cast<int>(sizeof(flag));
+    read.sendsAtOnce = ::getsockopt(socketOf(socket), IPPROTO_TCP, TCP_NODELAY,
+                                    reinterpret_cast<char*>(&flag), &size) != SOCKET_ERROR &&
+                       flag != FALSE;
+    return read;
 }
 
 void closeSocket(SocketHandle& socket) noexcept {

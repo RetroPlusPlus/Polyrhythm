@@ -245,21 +245,23 @@ TlsStream& TlsStream::operator=(TlsStream&& other) noexcept {
     return *this;
 }
 
-Status openTlsClient(std::unique_ptr<Stream> over, const TlsClientConfig& accepting, TlsStream& out) {
+Secured tlsClient(std::unique_ptr<Stream> over, const TlsClientConfig& accepting) {
     auto state = std::make_unique<TlsStream::State>();
     if (const Status opened = openTls(std::move(over), TLS_client_method(), *state);
         opened != Status::Ok) {
-        return opened;
+        return Secured{.status = opened, .stream = nullptr};
     }
 
     state->pinned = accepting.pinned;
     if (state->pinned.empty() && SSL_CTX_set_default_verify_paths(state->context) != 1) {
         // With nothing pinned the OS's roots are the whole answer, so not finding them is a failure to
         // bring the client up rather than something to discover at the handshake.
-        return Status::Other;
+        return Secured{.status = Status::Other, .stream = nullptr};
     }
 
-    if (const Status attached = attach(*state); attached != Status::Ok) return attached;
+    if (const Status attached = attach(*state); attached != Status::Ok) {
+        return Secured{.status = attached, .stream = nullptr};
+    }
     SSL_set_connect_state(state->ssl);
     SSL_set_ex_data(state->ssl, pinnedSlot(), state.get());
     SSL_set_verify(state->ssl, SSL_VERIFY_PEER, verifyPeer);
@@ -271,23 +273,27 @@ Status openTlsClient(std::unique_ptr<Stream> over, const TlsClientConfig& accept
         if (state->pinned.empty()) SSL_set1_host(state->ssl, accepting.hostname.c_str());
     }
 
-    out.state_ = std::move(state);
-    return Status::Ok;
+    auto stream    = std::make_unique<TlsStream>();
+    stream->state_ = std::move(state);
+    return Secured{.status = Status::Ok, .stream = std::move(stream)};
 }
 
-Status openTlsServer(std::unique_ptr<Stream> over, const TlsServerConfig& presenting, TlsStream& out) {
+Secured tlsServer(std::unique_ptr<Stream> over, const TlsServerConfig& presenting) {
     auto state = std::make_unique<TlsStream::State>();
     if (const Status opened = openTls(std::move(over), TLS_server_method(), *state);
         opened != Status::Ok) {
-        return opened;
+        return Secured{.status = opened, .stream = nullptr};
     }
 
-    if (!presentIdentity(*state, presenting)) return Status::Other;
-    if (const Status attached = attach(*state); attached != Status::Ok) return attached;
+    if (!presentIdentity(*state, presenting)) return Secured{.status = Status::Other, .stream = nullptr};
+    if (const Status attached = attach(*state); attached != Status::Ok) {
+        return Secured{.status = attached, .stream = nullptr};
+    }
     SSL_set_accept_state(state->ssl);
 
-    out.state_ = std::move(state);
-    return Status::Ok;
+    auto stream    = std::make_unique<TlsStream>();
+    stream->state_ = std::move(state);
+    return Secured{.status = Status::Ok, .stream = std::move(stream)};
 }
 
 Status TlsStream::handshake(std::chrono::milliseconds timeout) {

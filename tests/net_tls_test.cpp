@@ -36,8 +36,8 @@ using retropp::net::InProcessStream;
 using retropp::net::listenStream;
 using retropp::net::localPort;
 using retropp::net::openInProcessStream;
-using retropp::net::openTlsClient;
-using retropp::net::openTlsServer;
+using retropp::net::tlsClient;
+using retropp::net::tlsServer;
 using retropp::net::SocketHandle;
 using retropp::net::SocketStream;
 using retropp::net::Status;
@@ -193,12 +193,16 @@ testing::AssertionResult bringUp(std::unique_ptr<Stream> clientCarrier,
                                     .pinned   = std::vector<Certificate>{pinned}};
     const TlsServerConfig presenting{.identity = identity, .password = kPassword};
 
-    if (openTlsClient(std::move(clientCarrier), accepting, ends.client) != Status::Ok) {
+    retropp::net::Secured client = tlsClient(std::move(clientCarrier), accepting);
+    if (client.status != Status::Ok) {
         return testing::AssertionFailure() << "could not take the client side";
     }
-    if (openTlsServer(std::move(serverCarrier), presenting, ends.server) != Status::Ok) {
+    retropp::net::Secured server = tlsServer(std::move(serverCarrier), presenting);
+    if (server.status != Status::Ok) {
         return testing::AssertionFailure() << "could not take the server side";
     }
+    ends.client = std::move(*client.stream);
+    ends.server = std::move(*server.stream);
     return testing::AssertionSuccess();
 }
 

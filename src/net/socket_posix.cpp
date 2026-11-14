@@ -9,8 +9,11 @@
 
 #include <arpa/inet.h>
 #include <fcntl.h>
+#include <ifaddrs.h>
+#include <net/if.h>
 #include <netdb.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <poll.h>
 #include <sys/socket.h>
 #include <sys/types.h>
@@ -19,6 +22,7 @@
 #include <cerrno>
 #include <cstdlib>
 #include <string>
+#include <vector>
 
 namespace retropp::net {
 namespace {
@@ -62,7 +66,7 @@ public:
 
     // Resolves a host and port for either family. A host left empty means "every interface" when
     // passive and the loopback when not, which is what the two callers each want by default.
-    [[nodiscard]] bool resolve(const SocketAddress& address, bool passive, int socktype) {
+    [[nodiscard]] bool resolve(const Endpoint& address, bool passive, int socktype) {
         ::addrinfo hints{};
         hints.ai_family   = AF_UNSPEC;  // v4 and v6 both; the OS orders the candidates
         hints.ai_socktype = socktype;
@@ -98,6 +102,13 @@ bool makeNonBlocking(int descriptor) {
     return true;
 }
 
+// A stream sends each write as it is made. Left to itself the OS may hold a small write back to join it
+// to the next one, which a byte exchange between two games feels as a stall.
+void sendAtOnce(int descriptor) {
+    int on = 1;
+    ::setsockopt(descriptor, IPPROTO_TCP, TCP_NODELAY, &on, sizeof(on));
+}
+
 // Linux carries the same guarantee as a per-call flag instead of a socket option.
 constexpr int kSendFlags =
 #if defined(MSG_NOSIGNAL)
@@ -107,7 +118,7 @@ constexpr int kSendFlags =
 #endif
 
 // Reads a bound or peer sockaddr back into the presentation form the seam speaks.
-void addressFrom(const ::sockaddr* storage, ::socklen_t length, SocketAddress& out) {
+void addressFrom(const ::sockaddr* storage, ::socklen_t length, Endpoint& out) {
     char host[NI_MAXHOST] = {};
     char port[NI_MAXSERV] = {};
     if (::getnameinfo(storage, length, host, sizeof(host), port, sizeof(port),
@@ -137,7 +148,7 @@ Status waitWritable(int descriptor, std::chrono::milliseconds timeout) {
 
 }  // namespace
 
-Status connectStream(const SocketAddress& to, std::chrono::milliseconds timeout, SocketHandle& out) {
+Status connectStream(const Endpoint& to, std::chrono::milliseconds timeout, SocketHandle& out) {
     Resolution resolution;
     if (!resolution.resolve(to, /*passive=*/false, SOCK_STREAM)) return Status::Unreachable;
 
@@ -163,6 +174,7 @@ Status connectStream(const SocketAddress& to, std::chrono::milliseconds timeout,
         }
 
         if (settled == Status::Ok) {
+            sendAtOnce(descriptor);
             out = handleOf(descriptor);
             return Status::Ok;
         }
@@ -172,7 +184,7 @@ Status connectStream(const SocketAddress& to, std::chrono::milliseconds timeout,
     return last;
 }
 
-Status listenStream(const SocketAddress& at, int backlog, SocketHandle& out) {
+Status listenStream(const Endpoint& at, int backlog, SocketHandle& out) {
     Resolution resolution;
     if (!resolution.resolve(at, /*passive=*/true, SOCK_STREAM)) return Status::Other;
 
@@ -208,11 +220,12 @@ Status acceptStream(SocketHandle listener, SocketHandle& out) {
         ::close(accepted);
         return why;
     }
+    sendAtOnce(accepted);
     out = handleOf(accepted);
     return Status::Ok;
 }
 
-Status bindDatagram(const SocketAddress& at, SocketHandle& out) {
+Status bindDatagram(const Endpoint& at, SocketHandle& out) {
     Resolution resolution;
     if (!resolution.resolve(at, /*passive=*/true, SOCK_DGRAM)) return Status::Other;
 
@@ -228,6 +241,9 @@ Status bindDatagram(const SocketAddress& at, SocketHandle& out) {
 
         int on = 1;
         ::setsockopt(descriptor, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on));
+        // A datagram socket may send to a broadcast address, which is how one machine reaches every other
+        // on its network.
+        ::setsockopt(descriptor, SOL_SOCKET, SO_BROADCAST, &on, sizeof(on));
 
         if (::bind(descriptor, candidate->ai_addr, candidate->ai_addrlen) == 0 &&
             makeNonBlocking(descriptor)) {
@@ -272,7 +288,7 @@ Transfer receiveStream(SocketHandle socket, std::span<std::byte> into) {
     return Transfer{.status = Status::Ok, .bytes = static_cast<std::size_t>(moved)};
 }
 
-Transfer sendDatagram(SocketHandle socket, const SocketAddress& to,
+Transfer sendDatagram(SocketHandle socket, const Endpoint& to,
                       std::span<const std::byte> bytes) {
     Resolution resolution;
     if (!resolution.resolve(to, /*passive=*/false, SOCK_DGRAM)) {
@@ -286,7 +302,7 @@ Transfer sendDatagram(SocketHandle socket, const SocketAddress& to,
     return Transfer{.status = Status::Ok, .bytes = static_cast<std::size_t>(moved)};
 }
 
-Transfer receiveDatagram(SocketHandle socket, std::span<std::byte> into, SocketAddress& from) {
+Transfer receiveDatagram(SocketHandle socket, std::span<std::byte> into, Endpoint& from) {
     // recvmsg rather than recvfrom: it reports whether the datagram fit. recvfrom copies what it can and
     // says nothing about the rest, which would hand a caller a short count indistinguishable from a
     // short datagram.
@@ -320,6 +336,19 @@ Status waitReadable(SocketHandle socket, std::chrono::milliseconds timeout) {
     if (ready < 0) return statusFromErrno(errno);
     if (ready == 0) return Status::TimedOut;
     return Status::Ok;
+}
+
+SocketOptions socketOptions(SocketHandle socket) {
+    SocketOptions read{};
+    int           value = 0;
+    socklen_t     size  = sizeof(value);
+    read.mayBroadcast = ::getsockopt(descriptorOf(socket), SOL_SOCKET, SO_BROADCAST, &value, &size) == 0 &&
+                        value != 0;
+    value = 0;
+    size  = sizeof(value);
+    read.sendsAtOnce = ::getsockopt(descriptorOf(socket), IPPROTO_TCP, TCP_NODELAY, &value, &size) == 0 &&
+                       value != 0;
+    return read;
 }
 
 void closeSocket(SocketHandle& socket) noexcept {
