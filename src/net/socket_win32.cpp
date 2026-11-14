@@ -25,6 +25,7 @@
 #include <winsock2.h>
 // ws2tcpip.h must follow winsock2.h.
 #include <ws2tcpip.h>
+#include <iphlpapi.h>
 
 #include <cstdlib>
 #include <mutex>
@@ -427,6 +428,59 @@ SocketOptions socketOptions(SocketHandle socket) {
                                     reinterpret_cast<char*>(&flag), &size) != SOCKET_ERROR &&
                        flag != FALSE;
     return read;
+}
+
+std::vector<Interface> localAddresses() {
+    std::vector<Interface> found;
+    const WinsockScope     scope;  // getnameinfo below needs the library up
+    if (!scope.held()) return found;
+
+    // The list's size is the OS's to say: ask, grow to what it names, ask again.
+    ULONG                      size = 15 * 1024;
+    std::vector<unsigned char> storage;
+    ULONG                      answer = ERROR_BUFFER_OVERFLOW;
+    for (int attempt = 0; attempt < 3 && answer == ERROR_BUFFER_OVERFLOW; ++attempt) {
+        storage.resize(size);
+        answer = ::GetAdaptersAddresses(
+            AF_UNSPEC, GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST | GAA_FLAG_SKIP_DNS_SERVER, nullptr,
+            reinterpret_cast<IP_ADAPTER_ADDRESSES*>(storage.data()), &size);
+    }
+    if (answer != NO_ERROR) return found;
+
+    for (const IP_ADAPTER_ADDRESSES* adapter =
+             reinterpret_cast<const IP_ADAPTER_ADDRESSES*>(storage.data());
+         adapter != nullptr; adapter = adapter->Next) {
+        if (adapter->OperStatus != IfOperStatusUp) continue;
+
+        std::string name;
+        if (adapter->FriendlyName != nullptr) {
+            const int wide = ::WideCharToMultiByte(CP_UTF8, 0, adapter->FriendlyName, -1, nullptr, 0,
+                                                   nullptr, nullptr);
+            if (wide > 1) {
+                name.resize(static_cast<std::size_t>(wide - 1));
+                ::WideCharToMultiByte(CP_UTF8, 0, adapter->FriendlyName, -1, name.data(), wide, nullptr,
+                                      nullptr);
+            }
+        }
+
+        for (const IP_ADAPTER_UNICAST_ADDRESS* unicast = adapter->FirstUnicastAddress; unicast != nullptr;
+             unicast                                   = unicast->Next) {
+            const ::sockaddr* address = unicast->Address.lpSockaddr;
+            if (address == nullptr) continue;
+            if (address->sa_family != AF_INET && address->sa_family != AF_INET6) continue;
+
+            char host[NI_MAXHOST] = {};
+            if (::getnameinfo(address, unicast->Address.iSockaddrLength, host, sizeof(host), nullptr, 0,
+                              NI_NUMERICHOST) != 0) {
+                continue;
+            }
+            found.push_back(Interface{.name         = name,
+                                      .address      = host,
+                                      .prefixLength = static_cast<int>(unicast->OnLinkPrefixLength),
+                                      .loopback     = adapter->IfType == IF_TYPE_SOFTWARE_LOOPBACK});
+        }
+    }
+    return found;
 }
 
 void closeSocket(SocketHandle& socket) noexcept {

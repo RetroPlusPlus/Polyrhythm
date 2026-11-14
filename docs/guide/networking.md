@@ -4,7 +4,9 @@
 
 `<retropp/net.h>` is the platform's networking surface, in namespace `retropp::net`: a byte stream
 between two parties, over TCP or over a pair inside one process; a listener that accepts streams; a
-datagram socket; and TLS over any stream. A game links it with the platform and configures nothing. A
+datagram socket; TLS over any stream; and the helpers a game composes them with — an address read from
+text, the addresses this machine holds, an interface's broadcast address, and the wait between attempts.
+A game links it with the platform and configures nothing. A
 binary carries the transport when its code calls it, and the operating system's TLS library when its code
 names TLS.
 
@@ -26,6 +28,8 @@ net::Opened dialed = net::open(net::Tcp{.host = "127.0.0.1", .port = listening.l
 - [What a call answers](#what-a-call-answers)
 - [Datagrams](#datagrams)
 - [TLS](#tls)
+- [Addresses](#addresses)
+- [Waiting between attempts](#waiting-between-attempts)
 - [Related pages & where to change things](#related-pages--where-to-change-things)
 
 ## Every call answers at once
@@ -284,6 +288,87 @@ while (step == net::Status::WouldBlock && std::chrono::steady_clock::now() < dea
 A binary that names TLS records the operating system's TLS library, and a binary that does not records
 none. **On Linux that library is the system's OpenSSL, which the player's machine must have at run time.**
 
+## Addresses
+
+`parseEndpoint(text)` reads `host:port` into an `Endpoint`:
+
+| Text | `host` | `port` |
+|---|---|---|
+| `192.168.1.42:7654` | `192.168.1.42` | 7654 |
+| `example.com:443` | `example.com` | 443 |
+| `[::1]:7654` | `::1` | 7654 |
+| `[fe80::1%en0]:80` | `fe80::1%en0` | 80 |
+| `:7654` | empty | 7654 |
+
+A v6 literal is written in brackets, because its own colons would otherwise read as the port's. The text
+is read as written and no name is looked up: a name in the host is resolved where the endpoint is used.
+`parseEndpoint` answers an empty `std::optional` when the text has no port, when the port is not a number
+from 0 to 65535, or when a v6 literal is outside brackets.
+
+```cpp
+const std::optional<net::Endpoint> peer = net::parseEndpoint("192.168.1.42:7654");
+```
+
+`localAddresses()` answers every address this machine holds on an interface that is up, one `Interface`
+per address, in the order the operating system lists them. An interface with several addresses appears
+once for each.
+
+| `Interface` field | Holds |
+|---|---|
+| `name` | the operating system's name for the interface: `en0`, `eth0`, `Ethernet` |
+| `address` | a v4 or v6 literal |
+| `prefixLength` | how many leading bits name the network: 24 for a netmask of `255.255.255.0` |
+| `loopback` | `true` for an address that reaches this machine only |
+
+The loopback is in the list — `127.0.0.1`, with a prefix of 8 — and the addresses another machine dials
+are the ones with `loopback` false.
+
+```cpp
+const std::vector<net::Interface> addresses = net::localAddresses();
+```
+
+`broadcastAddress(iface)` is the address that reaches every machine on an interface's network: the
+interface's address with every bit past its prefix set. It is arithmetic on the two fields and asks the
+operating system nothing. It answers an empty `std::optional` for a v6 address, which has no broadcast,
+and for anything that is not a v4 literal with a prefix from 0 to 32.
+
+```cpp
+const net::Interface             iface{.name = "en0", .address = "192.168.1.42", .prefixLength = 24};
+const std::optional<std::string> everyone = net::broadcastAddress(iface);
+```
+
+`everyone` holds `"192.168.1.255"`. A [datagram socket](#datagrams) sends to it like any other address.
+
+## Waiting between attempts
+
+`backoffDelay(attempt, policy)` answers how long to wait after attempt number `attempt` — 0 for the first
+— before trying again. The wait is `policy.base` doubled once per attempt and held at `policy.max`, then
+moved by the jitter to a point within `jitter` of its length on either side.
+
+| `Backoff` field | Default | Meaning |
+|---|---|---|
+| `base` | 250 ms | the wait after the first attempt |
+| `max` | 30000 ms | the longest wait, jitter included |
+| `jitter` | 0.2 | how far a wait may fall either side of its length, as a fraction of it; held between 0 and 1 |
+| `seed` | 0 | what the jitter is drawn from |
+
+```cpp
+const net::Backoff steady{.jitter = 0.0f};
+```
+
+With no jitter, attempts 0, 1, 2 and 3 wait 250, 500, 1000 and 2000 ms, and every attempt from 7 on waits
+30000 ms. An attempt below 0 reads as 0.
+
+The function is pure: the same arguments answer the same wait, on every operating system. The count of
+attempts and the seed are the caller's to keep. A game counts the attempts that failed and starts again
+from 0 after one succeeds, and two machines that seed differently spread their retries apart rather than
+retrying in step.
+
+```cpp
+const net::Backoff              policy{.seed = seed};
+const std::chrono::milliseconds wait = net::backoffDelay(attempt, policy);
+```
+
 ## Related pages & where to change things
 
 - [build-and-consume.md](build-and-consume.md) — linking the platform, which carries the networking
@@ -291,6 +376,8 @@ none. **On Linux that library is the system's OpenSSL, which the player's machin
 - [environment-setup.md](environment-setup.md) — the OpenSSL development headers a Linux build needs.
 - [run-loop-and-timing.md](run-loop-and-timing.md) — the tick a game polls its streams and sockets from.
 - The public header is `include/retropp/net.h`. The implementation is `src/net/`: the socket calls per
-  operating system in `socket_posix.cpp` and `socket_win32.cpp`, the in-process pair in `in_process.cpp`,
-  the streams, listeners and datagram sockets in `connection.cpp`, dialing with TLS in `open_tls.cpp`, and
-  TLS per operating system in `tls_securetransport.cpp`, `tls_schannel.cpp` and `tls_openssl.cpp`.
+  operating system in `socket_posix.cpp` and `socket_win32.cpp`, which also answer `localAddresses`; the
+  in-process pair in `in_process.cpp`; the streams, listeners and datagram sockets in `connection.cpp`;
+  dialing with TLS in `open_tls.cpp`; TLS per operating system in `tls_securetransport.cpp`,
+  `tls_schannel.cpp` and `tls_openssl.cpp`; and `parseEndpoint`, `broadcastAddress` and `backoffDelay`,
+  which ask the operating system nothing, in `address.cpp`.

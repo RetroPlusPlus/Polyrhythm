@@ -302,4 +302,46 @@ struct Bound {
 // Bind a UDP port. Port 0 asks the OS for an unused port.
 [[nodiscard]] Bound bindDatagram(const Endpoint& at);
 
+// ── Addresses ───────────────────────────────────────────────────────────────────
+
+// Read "host:port" into an Endpoint: "192.168.1.42:7654", "example.com:443", "[::1]:7654", and ":7654"
+// for an empty host. A v6 literal is written in brackets. The text is read as written and no name is
+// looked up. Answers nothing when the text has no port, the port is not a number from 0 to 65535, or a
+// v6 literal is outside brackets.
+[[nodiscard]] std::optional<Endpoint> parseEndpoint(std::string_view text);
+
+// One address this machine holds on one of its network interfaces.
+struct Interface {
+    std::string name{};            // the OS's name for the interface: "en0", "eth0", "Ethernet"
+    std::string address{};         // a v4 or v6 literal
+    int         prefixLength = 0;  // how many leading bits name the network: 24 for 255.255.255.0
+    bool        loopback     = false;  // the address reaches this machine only
+};
+
+// Every address on every interface that is up, loopback included, in the order the OS lists them. The
+// addresses another machine dials are the ones with `loopback` false.
+[[nodiscard]] std::vector<Interface> localAddresses();
+
+// The address that reaches every machine on an interface's network: its address with every bit past the
+// prefix set. 192.168.1.42 with a 24-bit prefix answers "192.168.1.255". Answers nothing for a v6
+// address, which has no broadcast.
+[[nodiscard]] std::optional<std::string> broadcastAddress(const Interface& of);
+
+// ── Retrying ────────────────────────────────────────────────────────────────────
+
+// How the wait between attempts grows.
+struct Backoff {
+    std::chrono::milliseconds base{250};   // the wait after the first attempt
+    std::chrono::milliseconds max{30000};  // the longest wait
+    // How far a wait may fall either side of its length, as a fraction of it.
+    float jitter = 0.2f;
+    // What the jitter is drawn from; callers that seed differently wait differently.
+    std::uint32_t seed = 0;
+};
+
+// How long to wait after attempt number `attempt` (0 for the first) before trying again: `base` doubled
+// once per attempt, held at `max`, then moved by the jitter. The same arguments answer the same wait, and
+// the count of attempts is the caller's to keep.
+[[nodiscard]] std::chrono::milliseconds backoffDelay(int attempt, const Backoff& policy = {});
+
 }  // namespace retropp::net

@@ -109,6 +109,15 @@ void sendAtOnce(int descriptor) {
     ::setsockopt(descriptor, IPPROTO_TCP, TCP_NODELAY, &on, sizeof(on));
 }
 
+// How many leading bits of a netmask are set.
+int prefixOf(const unsigned char* mask, std::size_t length) {
+    int bits = 0;
+    for (std::size_t i = 0; i < length; ++i) {
+        for (unsigned char byte = mask[i]; byte != 0; byte = static_cast<unsigned char>(byte << 1)) ++bits;
+    }
+    return bits;
+}
+
 // Linux carries the same guarantee as a per-call flag instead of a socket option.
 constexpr int kSendFlags =
 #if defined(MSG_NOSIGNAL)
@@ -349,6 +358,42 @@ SocketOptions socketOptions(SocketHandle socket) {
     read.sendsAtOnce = ::getsockopt(descriptorOf(socket), IPPROTO_TCP, TCP_NODELAY, &value, &size) == 0 &&
                        value != 0;
     return read;
+}
+
+std::vector<Interface> localAddresses() {
+    std::vector<Interface> found;
+    ::ifaddrs*             list = nullptr;
+    if (::getifaddrs(&list) != 0 || list == nullptr) return found;
+
+    for (const ::ifaddrs* entry = list; entry != nullptr; entry = entry->ifa_next) {
+        if (entry->ifa_addr == nullptr || (entry->ifa_flags & IFF_UP) == 0) continue;
+        const int family = entry->ifa_addr->sa_family;
+        if (family != AF_INET && family != AF_INET6) continue;
+
+        const ::socklen_t length = family == AF_INET ? sizeof(::sockaddr_in) : sizeof(::sockaddr_in6);
+        char              host[NI_MAXHOST] = {};
+        if (::getnameinfo(entry->ifa_addr, length, host, sizeof(host), nullptr, 0, NI_NUMERICHOST) != 0) {
+            continue;
+        }
+
+        int prefix = 0;
+        if (entry->ifa_netmask != nullptr) {
+            if (family == AF_INET) {
+                const auto* mask = reinterpret_cast<const ::sockaddr_in*>(entry->ifa_netmask);
+                prefix = prefixOf(reinterpret_cast<const unsigned char*>(&mask->sin_addr), 4);
+            } else {
+                const auto* mask = reinterpret_cast<const ::sockaddr_in6*>(entry->ifa_netmask);
+                prefix = prefixOf(reinterpret_cast<const unsigned char*>(&mask->sin6_addr), 16);
+            }
+        }
+
+        found.push_back(Interface{.name         = entry->ifa_name,
+                                  .address      = host,
+                                  .prefixLength = prefix,
+                                  .loopback     = (entry->ifa_flags & IFF_LOOPBACK) != 0});
+    }
+    ::freeifaddrs(list);
+    return found;
 }
 
 void closeSocket(SocketHandle& socket) noexcept {

@@ -1386,7 +1386,8 @@ endif()
 # What a game holds: streams, listeners and datagram sockets over the socket seam. Dialing with TLS is a
 # file of its own, so a binary that never names it links no TLS and records no TLS library —
 # net_linkage_plain_stream_has_no_tls measures that.
-list(APPEND _retropp_net_sources src/net/connection.cpp src/net/open_tls.cpp)
+# The address helpers include no OS header, so a binary that calls only them links no socket.
+list(APPEND _retropp_net_sources src/net/connection.cpp src/net/open_tls.cpp src/net/address.cpp)
 # TLS layers over the socket seam rather than replacing it, so its per-platform file joins the same
 # archive. Every platform has a stack, and exactly one of these compiles.
 if(APPLE)
@@ -1412,8 +1413,9 @@ target_include_directories(retropp-net PRIVATE
 retropp_set_warnings(retropp-net)
 if(WIN32)
     # An import library: it contributes to a binary's import table only when a symbol is used, so a
-    # consumer that links the archive and calls nothing in it pays nothing for this either.
-    target_link_libraries(retropp-net PRIVATE ws2_32)
+    # consumer that links the archive and calls nothing in it pays nothing for this either. iphlpapi is
+    # the interface query's, on the same terms.
+    target_link_libraries(retropp-net PRIVATE ws2_32 iphlpapi)
 endif()
 if(APPLE)
     # The OS's own TLS, dynamically linked. A framework on this archive's link line reaches every
@@ -1770,6 +1772,7 @@ if(RETROPP_BUILD_TESTS)
         tests/net_connection_test.cpp
         tests/net_socket_options_test.cpp
         tests/net_open_trust_roots_test.cpp
+        tests/net_address_test.cpp
         tests/vm_frame_sink_test.cpp
         tests/vm_audio_switch_test.cpp
         tests/vm_video_weave_test.cpp
