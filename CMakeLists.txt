@@ -1383,6 +1383,11 @@ if(WIN32)
 else()
     set(_retropp_net_sources src/net/socket_posix.cpp src/net/in_process.cpp)
 endif()
+# What a game holds: streams, listeners and datagram sockets over the socket seam. Dialing with TLS is a
+# file of its own, so a binary that never names it links no TLS and records no TLS library —
+# net_linkage_plain_stream_has_no_tls measures that.
+# The address helpers include no OS header, so a binary that calls only them links no socket.
+list(APPEND _retropp_net_sources src/net/connection.cpp src/net/open_tls.cpp src/net/address.cpp)
 # TLS layers over the socket seam rather than replacing it, so its per-platform file joins the same
 # archive. Every platform has a stack, and exactly one of these compiles.
 if(APPLE)
@@ -1403,12 +1408,14 @@ endif()
 add_library(retropp-net STATIC ${_retropp_net_sources})
 target_compile_features(retropp-net PUBLIC cxx_std_20)
 target_include_directories(retropp-net PRIVATE
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>)
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>)
 retropp_set_warnings(retropp-net)
 if(WIN32)
     # An import library: it contributes to a binary's import table only when a symbol is used, so a
-    # consumer that links the archive and calls nothing in it pays nothing for this either.
-    target_link_libraries(retropp-net PRIVATE ws2_32)
+    # consumer that links the archive and calls nothing in it pays nothing for this either. iphlpapi is
+    # the interface query's, on the same terms.
+    target_link_libraries(retropp-net PRIVATE ws2_32 iphlpapi)
 endif()
 if(APPLE)
     # The OS's own TLS, dynamically linked. A framework on this archive's link line reaches every
@@ -1762,6 +1769,10 @@ if(RETROPP_BUILD_TESTS)
         tests/net_socket_test.cpp
         tests/net_tls_test.cpp
         tests/net_tls_trust_roots_test.cpp
+        tests/net_connection_test.cpp
+        tests/net_socket_options_test.cpp
+        tests/net_open_trust_roots_test.cpp
+        tests/net_address_test.cpp
         tests/vm_frame_sink_test.cpp
         tests/vm_audio_switch_test.cpp
         tests/vm_video_weave_test.cpp
@@ -1931,6 +1942,40 @@ if(RETROPP_BUILD_TESTS)
                      -DREFERENCING=$<TARGET_FILE:retroppengine-tests>
                      -DCONTROL=$<TARGET_FILE:net_linkage_control>
                      -DSYMBOL=${_retropp_net_symbols}
+                     -DPROBE=${_retropp_net_probe}
+                     -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/net_linkage.cmake)
+
+    # A program that dials a plain stream and binds a datagram socket, and names no TLS. It carries the
+    # sockets and records no TLS library: TLS is an argument a game passes, and a binary pays for it when
+    # its code does.
+    add_executable(net_linkage_plain_stream tests/net_linkage_plain_stream.cpp)
+    target_compile_features(net_linkage_plain_stream PRIVATE cxx_std_20)
+    target_link_libraries(net_linkage_plain_stream PRIVATE retropp::engine)
+    retropp_set_warnings(net_linkage_plain_stream)
+
+    if(MSVC)
+        set(_retropp_net_socket_needle "ws2_32.dll")
+        set(_retropp_net_tls_needle "secur32.dll")
+    elseif(APPLE)
+        set(_retropp_net_socket_needle "connectstream")
+        set(_retropp_net_tls_needle "security.framework")
+    else()
+        set(_retropp_net_socket_needle "connectstream")
+        set(_retropp_net_tls_needle "libssl")
+    endif()
+
+    add_test(NAME net_linkage_plain_stream_has_the_sockets
+             COMMAND ${CMAKE_COMMAND}
+                     -DREFERENCING=$<TARGET_FILE:net_linkage_plain_stream>
+                     -DCONTROL=$<TARGET_FILE:net_linkage_control>
+                     -DSYMBOL=${_retropp_net_socket_needle}
+                     -DPROBE=${_retropp_net_probe}
+                     -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/net_linkage.cmake)
+    add_test(NAME net_linkage_plain_stream_has_no_tls
+             COMMAND ${CMAKE_COMMAND}
+                     -DREFERENCING=$<TARGET_FILE:retroppengine-tests>
+                     -DCONTROL=$<TARGET_FILE:net_linkage_plain_stream>
+                     -DSYMBOL=${_retropp_net_tls_needle}
                      -DPROBE=${_retropp_net_probe}
                      -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/net_linkage.cmake)
 
@@ -2880,6 +2925,17 @@ if(RETROPP_BUILD_EXAMPLES)
     # proving they were restored. Dev-run only; the live SdlPlatform/Renderer + SaveStore path is the CI
     # compile signal (the exit surface is proven headlessly in exit_guard / exit_multitick).
     retropp_add_example(exit_snapshot)
+
+    # ── LAN link demo — two copies of one program find each other on the local network and link, and each
+    # player's square moves on both screens. Each copy announces its listening port to every broadcast
+    # address on a datagram socket, dials a copy it hears, and sends its position on the stream every tick;
+    # --join host:port dials an address instead. --verify runs the link over the in-process pair and over a
+    # loopback socket, finds a peer from the sender a datagram names and decides which of two copies dials,
+    # sends to the broadcast address, reads a closed peer as closed and reads --join's argument, with no
+    # window and no GPU device, on every platform.
+    retropp_add_example(lan_link)
+    add_test(NAME LanLinkExample.Verify
+             COMMAND retropp-lan_link-demo --verify)
 endif()
 
 # ── Reflect the accumulated custom shaders into ScreenSpaceEffect's param union ──

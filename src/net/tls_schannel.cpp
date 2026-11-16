@@ -439,31 +439,37 @@ TlsStream& TlsStream::operator=(TlsStream&& other) noexcept {
     return *this;
 }
 
-Status openTlsClient(std::unique_ptr<Stream> over, const TlsClientConfig& accepting, TlsStream& out) {
+Secured tlsClient(std::unique_ptr<Stream> over, const TlsClientConfig& accepting) {
     auto state = std::make_unique<TlsStream::State>();
     if (const Status opened = openTls(std::move(over), true, *state); opened != Status::Ok) {
-        return opened;
+        return Secured{.status = opened, .stream = nullptr};
     }
 
     state->pinned   = accepting.pinned;
     state->hostname = accepting.hostname;
-    if (const Status held = acquire(*state, SECPKG_CRED_OUTBOUND); held != Status::Ok) return held;
-
-    out.state_ = std::move(state);
-    return Status::Ok;
-}
-
-Status openTlsServer(std::unique_ptr<Stream> over, const TlsServerConfig& presenting, TlsStream& out) {
-    auto state = std::make_unique<TlsStream::State>();
-    if (const Status opened = openTls(std::move(over), false, *state); opened != Status::Ok) {
-        return opened;
+    if (const Status held = acquire(*state, SECPKG_CRED_OUTBOUND); held != Status::Ok) {
+        return Secured{.status = held, .stream = nullptr};
     }
 
-    if (!presentIdentity(*state, presenting)) return Status::Other;
-    if (const Status held = acquire(*state, SECPKG_CRED_INBOUND); held != Status::Ok) return held;
+    auto stream    = std::make_unique<TlsStream>();
+    stream->state_ = std::move(state);
+    return Secured{.status = Status::Ok, .stream = std::move(stream)};
+}
 
-    out.state_ = std::move(state);
-    return Status::Ok;
+Secured tlsServer(std::unique_ptr<Stream> over, const TlsServerConfig& presenting) {
+    auto state = std::make_unique<TlsStream::State>();
+    if (const Status opened = openTls(std::move(over), false, *state); opened != Status::Ok) {
+        return Secured{.status = opened, .stream = nullptr};
+    }
+
+    if (!presentIdentity(*state, presenting)) return Secured{.status = Status::Other, .stream = nullptr};
+    if (const Status held = acquire(*state, SECPKG_CRED_INBOUND); held != Status::Ok) {
+        return Secured{.status = held, .stream = nullptr};
+    }
+
+    auto stream    = std::make_unique<TlsStream>();
+    stream->state_ = std::move(state);
+    return Secured{.status = Status::Ok, .stream = std::move(stream)};
 }
 
 Status TlsStream::handshake(std::chrono::milliseconds timeout) {

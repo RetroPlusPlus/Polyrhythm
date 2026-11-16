@@ -28,7 +28,7 @@ using retropp::net::localPort;
 using retropp::net::openInProcessStream;
 using retropp::net::receiveDatagram;
 using retropp::net::sendDatagram;
-using retropp::net::SocketAddress;
+using retropp::net::Endpoint;
 using retropp::net::SocketHandle;
 using retropp::net::SocketStream;
 using retropp::net::Status;
@@ -171,7 +171,7 @@ TEST(NetSocket, DatagramBoundariesArePreserved) {
 
     std::uint16_t receiverPort = 0;
     ASSERT_EQ(localPort(receiver, receiverPort), Status::Ok);
-    const SocketAddress to{.host = "127.0.0.1", .port = receiverPort};
+    const Endpoint to{.host = "127.0.0.1", .port = receiverPort};
 
     const std::vector<std::byte> shortOne = bytesOf({0x11, 0x22});
     const std::vector<std::byte> longOne  = bytesOf({0x31, 0x32, 0x33, 0x34, 0x35});
@@ -180,7 +180,7 @@ TEST(NetSocket, DatagramBoundariesArePreserved) {
 
     // A buffer large enough to hold both, so coalescing would show up as one longer read.
     std::array<std::byte, 64> into{};
-    SocketAddress             from;
+    Endpoint                  from;
 
     ASSERT_EQ(waitReadable(receiver, kSettle), Status::Ok);
     const Transfer first = receiveDatagram(receiver, into, from);
@@ -212,7 +212,7 @@ TEST(NetSocket, DatagramCarriesItsSenderAddress) {
               Status::Ok);
 
     std::array<std::byte, 16> into{};
-    SocketAddress             from;
+    Endpoint                  from;
     ASSERT_EQ(waitReadable(receiver, kSettle), Status::Ok);
     ASSERT_EQ(receiveDatagram(receiver, into, from).status, Status::Ok);
 
@@ -242,7 +242,7 @@ TEST(NetSocket, ADatagramTooLargeForItsBufferSaysSo) {
               Status::Ok);
 
     std::array<std::byte, 8> into{};
-    SocketAddress            from;
+    Endpoint                 from;
     ASSERT_EQ(waitReadable(receiver, kSettle), Status::Ok);
     const Transfer got = receiveDatagram(receiver, into, from);
 

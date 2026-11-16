@@ -25,10 +25,12 @@
 #include <winsock2.h>
 // ws2tcpip.h must follow winsock2.h.
 #include <ws2tcpip.h>
+#include <iphlpapi.h>
 
 #include <cstdlib>
 #include <mutex>
 #include <string>
+#include <vector>
 
 namespace retropp::net {
 namespace {
@@ -110,7 +112,7 @@ public:
     Resolution(const Resolution&)            = delete;
     Resolution& operator=(const Resolution&) = delete;
 
-    [[nodiscard]] bool resolve(const SocketAddress& address, bool passive, int socktype) {
+    [[nodiscard]] bool resolve(const Endpoint& address, bool passive, int socktype) {
         ::addrinfo hints{};
         hints.ai_family   = AF_UNSPEC;  // v4 and v6 both; the OS orders the candidates
         hints.ai_socktype = socktype;
@@ -136,6 +138,13 @@ SocketHandle handleOf(SOCKET socket) noexcept {
 bool makeNonBlocking(SOCKET socket) {
     u_long nonBlocking = 1;
     return ::ioctlsocket(socket, FIONBIO, &nonBlocking) == 0;
+}
+
+// A stream sends each write as it is made. Left to itself the OS may hold a small write back to join it
+// to the next one, which a byte exchange between two games feels as a stall.
+void sendAtOnce(SOCKET socket) {
+    BOOL on = TRUE;
+    ::setsockopt(socket, IPPROTO_TCP, TCP_NODELAY, reinterpret_cast<const char*>(&on), sizeof(on));
 }
 
 // Closes a socket that has not taken a lease of its own yet.
@@ -179,7 +188,7 @@ int transferLength(std::size_t size) noexcept {
     return static_cast<int>(size < kCeiling ? size : kCeiling);
 }
 
-void addressFrom(const ::sockaddr* storage, int length, SocketAddress& out) {
+void addressFrom(const ::sockaddr* storage, int length, Endpoint& out) {
     char host[NI_MAXHOST] = {};
     char port[NI_MAXSERV] = {};
     if (::getnameinfo(storage, length, host, sizeof(host), port, sizeof(port),
@@ -191,7 +200,7 @@ void addressFrom(const ::sockaddr* storage, int length, SocketAddress& out) {
 
 }  // namespace
 
-Status connectStream(const SocketAddress& to, std::chrono::milliseconds timeout, SocketHandle& out) {
+Status connectStream(const Endpoint& to, std::chrono::milliseconds timeout, SocketHandle& out) {
     const WinsockScope scope;
     if (!scope.held()) return Status::Other;
 
@@ -221,6 +230,7 @@ Status connectStream(const SocketAddress& to, std::chrono::milliseconds timeout,
         }
 
         if (settled == Status::Ok) {
+            sendAtOnce(socket);
             if (!acquireWinsock()) {
                 discard(socket);
                 return Status::Other;
@@ -234,7 +244,7 @@ Status connectStream(const SocketAddress& to, std::chrono::milliseconds timeout,
     return last;
 }
 
-Status listenStream(const SocketAddress& at, int backlog, SocketHandle& out) {
+Status listenStream(const Endpoint& at, int backlog, SocketHandle& out) {
     const WinsockScope scope;
     if (!scope.held()) return Status::Other;
 
@@ -278,11 +288,12 @@ Status acceptStream(SocketHandle listener, SocketHandle& out) {
         discard(accepted);
         return Status::Other;
     }
+    sendAtOnce(accepted);
     out = handleOf(accepted);
     return Status::Ok;
 }
 
-Status bindDatagram(const SocketAddress& at, SocketHandle& out) {
+Status bindDatagram(const Endpoint& at, SocketHandle& out) {
     const WinsockScope scope;
     if (!scope.held()) return Status::Other;
 
@@ -298,6 +309,12 @@ Status bindDatagram(const SocketAddress& at, SocketHandle& out) {
             last = lastStatus();
             continue;
         }
+
+        // A datagram socket may send to a broadcast address, which is how one machine reaches every other
+        // on its network.
+        BOOL broadcast = TRUE;
+        ::setsockopt(socket, SOL_SOCKET, SO_BROADCAST, reinterpret_cast<const char*>(&broadcast),
+                     sizeof(broadcast));
 
         if (::bind(socket, candidate->ai_addr, static_cast<int>(candidate->ai_addrlen)) == 0 &&
             makeNonBlocking(socket)) {
@@ -349,7 +366,7 @@ Transfer receiveStream(SocketHandle socket, std::span<std::byte> into) {
     return Transfer{.status = Status::Ok, .bytes = static_cast<std::size_t>(moved)};
 }
 
-Transfer sendDatagram(SocketHandle socket, const SocketAddress& to,
+Transfer sendDatagram(SocketHandle socket, const Endpoint& to,
                       std::span<const std::byte> bytes) {
     Resolution resolution;
     if (!resolution.resolve(to, /*passive=*/false, SOCK_DGRAM)) {
@@ -364,7 +381,7 @@ Transfer sendDatagram(SocketHandle socket, const SocketAddress& to,
     return Transfer{.status = Status::Ok, .bytes = static_cast<std::size_t>(moved)};
 }
 
-Transfer receiveDatagram(SocketHandle socket, std::span<std::byte> into, SocketAddress& from) {
+Transfer receiveDatagram(SocketHandle socket, std::span<std::byte> into, Endpoint& from) {
     ::sockaddr_storage sender{};
     int                size    = static_cast<int>(sizeof(sender));
     const int          offered = transferLength(into.size());
@@ -396,6 +413,74 @@ Status waitReadable(SocketHandle socket, std::chrono::milliseconds timeout) {
     if (ready == SOCKET_ERROR) return lastStatus();
     if (ready == 0) return Status::TimedOut;
     return Status::Ok;
+}
+
+SocketOptions socketOptions(SocketHandle socket) {
+    SocketOptions read{};
+    BOOL          flag = FALSE;
+    int           size = static_cast<int>(sizeof(flag));
+    read.mayBroadcast = ::getsockopt(socketOf(socket), SOL_SOCKET, SO_BROADCAST,
+                                     reinterpret_cast<char*>(&flag), &size) != SOCKET_ERROR &&
+                        flag != FALSE;
+    flag = FALSE;
+    size = static_cast<int>(sizeof(flag));
+    read.sendsAtOnce = ::getsockopt(socketOf(socket), IPPROTO_TCP, TCP_NODELAY,
+                                    reinterpret_cast<char*>(&flag), &size) != SOCKET_ERROR &&
+                       flag != FALSE;
+    return read;
+}
+
+std::vector<Interface> localAddresses() {
+    std::vector<Interface> found;
+    const WinsockScope     scope;  // getnameinfo below needs the library up
+    if (!scope.held()) return found;
+
+    // The list's size is the OS's to say: ask, grow to what it names, ask again.
+    ULONG                      size = 15 * 1024;
+    std::vector<unsigned char> storage;
+    ULONG                      answer = ERROR_BUFFER_OVERFLOW;
+    for (int attempt = 0; attempt < 3 && answer == ERROR_BUFFER_OVERFLOW; ++attempt) {
+        storage.resize(size);
+        answer = ::GetAdaptersAddresses(
+            AF_UNSPEC, GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST | GAA_FLAG_SKIP_DNS_SERVER, nullptr,
+            reinterpret_cast<IP_ADAPTER_ADDRESSES*>(storage.data()), &size);
+    }
+    if (answer != NO_ERROR) return found;
+
+    for (const IP_ADAPTER_ADDRESSES* adapter =
+             reinterpret_cast<const IP_ADAPTER_ADDRESSES*>(storage.data());
+         adapter != nullptr; adapter = adapter->Next) {
+        if (adapter->OperStatus != IfOperStatusUp) continue;
+
+        std::string name;
+        if (adapter->FriendlyName != nullptr) {
+            const int wide = ::WideCharToMultiByte(CP_UTF8, 0, adapter->FriendlyName, -1, nullptr, 0,
+                                                   nullptr, nullptr);
+            if (wide > 1) {
+                name.resize(static_cast<std::size_t>(wide - 1));
+                ::WideCharToMultiByte(CP_UTF8, 0, adapter->FriendlyName, -1, name.data(), wide, nullptr,
+                                      nullptr);
+            }
+        }
+
+        for (const IP_ADAPTER_UNICAST_ADDRESS* unicast = adapter->FirstUnicastAddress; unicast != nullptr;
+             unicast                                   = unicast->Next) {
+            const ::sockaddr* address = unicast->Address.lpSockaddr;
+            if (address == nullptr) continue;
+            if (address->sa_family != AF_INET && address->sa_family != AF_INET6) continue;
+
+            char host[NI_MAXHOST] = {};
+            if (::getnameinfo(address, unicast->Address.iSockaddrLength, host, sizeof(host), nullptr, 0,
+                              NI_NUMERICHOST) != 0) {
+                continue;
+            }
+            found.push_back(Interface{.name         = name,
+                                      .address      = host,
+                                      .prefixLength = static_cast<int>(unicast->OnLinkPrefixLength),
+                                      .loopback     = adapter->IfType == IF_TYPE_SOFTWARE_LOOPBACK});
+        }
+    }
+    return found;
 }
 
 void closeSocket(SocketHandle& socket) noexcept {
