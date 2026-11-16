@@ -249,7 +249,6 @@ Status bindDatagram(const Endpoint& at, SocketHandle& out) {
         }
 
         int on = 1;
-        ::setsockopt(descriptor, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on));
         // A datagram socket may send to a broadcast address, which is how one machine reaches every other
         // on its network.
         ::setsockopt(descriptor, SOL_SOCKET, SO_BROADCAST, &on, sizeof(on));

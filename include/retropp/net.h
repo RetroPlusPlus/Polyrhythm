@@ -299,7 +299,8 @@ struct Bound {
     DatagramSocket socket{};
 };
 
-// Bind a UDP port. Port 0 asks the OS for an unused port.
+// Bind a UDP port. Port 0 asks the OS for an unused port. A port holds one datagram socket: binding a
+// port another socket holds answers a status other than Ok, with a socket that holds nothing.
 [[nodiscard]] Bound bindDatagram(const Endpoint& at);
 
 // ── Addresses ───────────────────────────────────────────────────────────────────

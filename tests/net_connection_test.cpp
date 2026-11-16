@@ -556,4 +556,29 @@ TEST(NetConnection, TlsOverNoStreamAnswersClosedWithNoStream) {
     EXPECT_EQ(server.stream, nullptr);
 }
 
+// The unnamed host both times, the way a program binds a port every copy of it knows.
+TEST(NetConnection, ASecondDatagramSocketOnAHeldPortIsRefused) {
+    net::Bound first = net::bindDatagram({.port = 0});
+    ASSERT_EQ(first.status, net::Status::Ok);
+
+    const net::Bound second = net::bindDatagram({.port = first.socket.port()});
+    EXPECT_NE(second.status, net::Status::Ok);  // which status is the operating system's
+    EXPECT_EQ(second.socket.port(), 0);
+
+    // The first still holds the port and hears what is sent to it.
+    net::Bound sender = net::bindDatagram({.host = "127.0.0.1", .port = 0});
+    ASSERT_EQ(sender.status, net::Status::Ok);
+    const std::vector<std::byte> sent = bytesOf({0x41, 0x42, 0x43});
+    ASSERT_EQ(sender.socket.send({.host = "127.0.0.1", .port = first.socket.port()}, sent).status,
+              net::Status::Ok);
+
+    std::array<std::byte, 64> into{};
+    ASSERT_EQ(first.socket.waitReadable(kSettle), net::Status::Ok);
+    const net::Received heard = first.socket.receive(into);
+    ASSERT_EQ(heard.status, net::Status::Ok);
+    ASSERT_EQ(heard.bytes, sent.size());
+    EXPECT_EQ(std::vector<std::byte>(into.begin(), into.begin() + static_cast<std::ptrdiff_t>(heard.bytes)),
+              sent);
+}
+
 }  // namespace

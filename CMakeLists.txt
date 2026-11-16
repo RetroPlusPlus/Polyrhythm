@@ -2925,6 +2925,17 @@ if(RETROPP_BUILD_EXAMPLES)
     # proving they were restored. Dev-run only; the live SdlPlatform/Renderer + SaveStore path is the CI
     # compile signal (the exit surface is proven headlessly in exit_guard / exit_multitick).
     retropp_add_example(exit_snapshot)
+
+    # ── LAN link demo — two copies of one program find each other on the local network and link, and each
+    # player's square moves on both screens. Each copy announces its listening port to every broadcast
+    # address on a datagram socket, dials a copy it hears, and sends its position on the stream every tick;
+    # --join host:port dials an address instead. --verify runs the link over the in-process pair and over a
+    # loopback socket, finds a peer from the sender a datagram names and decides which of two copies dials,
+    # sends to the broadcast address, reads a closed peer as closed and reads --join's argument, with no
+    # window and no GPU device, on every platform.
+    retropp_add_example(lan_link)
+    add_test(NAME LanLinkExample.Verify
+             COMMAND retropp-lan_link-demo --verify)
 endif()
 
 # ── Reflect the accumulated custom shaders into ScreenSpaceEffect's param union ──

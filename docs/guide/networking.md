@@ -30,6 +30,8 @@ net::Opened dialed = net::open(net::Tcp{.host = "127.0.0.1", .port = listening.l
 - [TLS](#tls)
 - [Addresses](#addresses)
 - [Waiting between attempts](#waiting-between-attempts)
+- [Finding a peer on the local network](#finding-a-peer-on-the-local-network)
+- [Try it](#try-it)
 - [Related pages & where to change things](#related-pages--where-to-change-things)
 
 ## Every call answers at once
@@ -195,7 +197,9 @@ Every operating-system code the platform can tell apart maps onto one `Status`, 
 
 `bindDatagram(at)` binds a UDP port and answers a `Bound`: a `status`, and a `DatagramSocket` that holds
 the port when the status is `Ok`. Port 0 asks the operating system for an unused port, and `port()` reads
-it back. An empty host binds every interface's IPv4 address, as `listen` does.
+it back. An empty host binds every interface's IPv4 address, as `listen` does. A port holds one datagram
+socket: binding a port another socket holds answers a status other than `Ok`, with a socket that holds
+nothing.
 
 ```cpp
 net::Bound sender   = net::bindDatagram({.host = "127.0.0.1", .port = 0});
@@ -369,6 +373,120 @@ const net::Backoff              policy{.seed = seed};
 const std::chrono::milliseconds wait = net::backoffDelay(attempt, policy);
 ```
 
+## Finding a peer on the local network
+
+Two copies of a game on one network find each other with a datagram socket on a port both know, the
+broadcast address of each network the machine is on, and the sender every datagram names. The bytes a copy
+sends to be found are the game's own: whatever two copies agree on — here, the port its listener holds and
+a tag that decides which copy dials.
+
+Each copy listens for a stream on a port the operating system picks, and binds the port both copies know
+for datagrams. The empty host binds every interface's IPv4 address, which is the family a broadcast travels
+in. A second copy on the same machine finds that port taken and binds another, and says so in what it
+sends, because it will hear nothing:
+
+```cpp
+net::Listening listening = net::listen({.port = 0});
+```
+
+```cpp
+net::Bound discovery = net::bindDatagram({.port = kDiscoveryPort});
+if (discovery.status != net::Status::Ok) {
+    discovery = net::bindDatagram({.port = 0});
+    self.deaf = true;
+}
+```
+
+To be found, a copy sends its announce to the broadcast address of every network it is on, and to its own
+machine for a second copy there:
+
+```cpp
+void announce(net::DatagramSocket& discovery, const Announce& self) {
+    const std::array<std::byte, kAnnounceSize> bytes = writeAnnounce(self);
+    for (const net::Interface& iface : net::localAddresses()) {
+        if (iface.loopback) continue;
+        if (const std::optional<std::string> everyone = net::broadcastAddress(iface)) {
+            (void)discovery.send({.host = *everyone, .port = kDiscoveryPort}, bytes);
+        }
+    }
+    (void)discovery.send({.host = "127.0.0.1", .port = kDiscoveryPort}, bytes);
+}
+```
+
+To find one, it reads every datagram waiting. `Received::from` is the host that sent it, and the announce
+carries the port that host listens on, so the two together are what to dial. Of two copies that hear each
+other, one dials and the other waits to be dialed, so the pair links once:
+
+```cpp
+[[nodiscard]] std::optional<net::Endpoint> hear(net::DatagramSocket& discovery, const Announce& self) {
+    std::optional<net::Endpoint> target;
+    std::array<std::byte, 64>    buffer{};
+    for (;;) {
+        const net::Received heard = discovery.receive(buffer);
+        if (heard.status == net::Status::Truncated) continue;
+        if (heard.status != net::Status::Ok) return target;
+
+        const std::optional<Announce> other =
+            readAnnounce(std::span<const std::byte>(buffer).first(heard.bytes));
+        if (!other || other->tag == self.tag) continue;
+        if (other->deaf || other->tag > self.tag) {
+            target = net::Endpoint{.host = heard.from.host, .port = other->port};
+        }
+    }
+}
+```
+
+While a copy holds no stream, each tick it takes one another copy dialed with `accept`, then dials what it
+heard. One place dials, for a copy heard announcing and for an address the player names. A dial waits
+inside the tick for at most its timeout, so a dial that fails sets the earliest time of the next with
+`backoffDelay`, and the copy keeps the count of dials that failed since its last link:
+
+```cpp
+const std::optional<net::Endpoint> target = join ? join : hear(discovery.socket, self);
+if (target && std::chrono::steady_clock::now() >= notBefore) {
+    net::Opened opened = net::open(net::Tcp{.host = target->host, .port = target->port, .timeout = 1000ms});
+    if (opened.status == net::Status::Ok) {
+        link.emplace(std::move(opened.stream));
+        linkedTo = target->host;
+        attempt  = 0;
+    } else {
+        notBefore = std::chrono::steady_clock::now() + net::backoffDelay(attempt++, {.seed = self.tag});
+    }
+}
+```
+
+From there both ends hold a `Stream`. Until a copy holds one, it announces every 30 ticks and reads what has
+arrived on every tick, and it goes back to that when the stream reads as closed, with a dial allowed at once.
+Seeding the wait with the copy's tag spaces two copies' dials differently.
+
+A network that drops broadcasts is crossed by naming the other copy outright: `parseEndpoint` reads the
+`host:port` a player types, and that address is the `join` the same dial opens, spaced the same way. A copy
+given an address neither announces nor reads announces, and it still accepts.
+
+## Try it
+
+`examples/lan_link/` is two copies of one program that find each other this way and link. Each player
+moves a square with the arrow keys, and each square moves on both screens; the second square appears when
+the link comes up and goes when it drops.
+
+Run one copy on each of two machines on one network, or two copies on one machine. On a network that drops
+broadcasts, start one copy with `--join` and the address and port the other shows:
+
+```
+retropp-lan_link-demo --join 192.168.1.42:49152
+```
+
+The first status line reads `SEARCHING` while a copy looks for a peer, and `DIALING` with the address while
+a copy started with `--join` has no link. Once linked, the copy that dialed reads `LINKED TO` and the host
+it dialed, and the copy that accepted reads `A PEER DIALED IN AND LINKED`, since an accepted stream carries
+no peer address. The second line is the copy's own address and port — `YOUR ADDRESS 192.168.1.42 PORT
+49152`, the form `--join` takes on the other machine — and reads `NONE` for the address on a machine with
+no IPv4 address off the loopback.
+
+`--verify` runs the link with no window: over the in-process pair, over a loopback socket, a peer found from
+the sender a datagram names and which of two copies dials, a send to the broadcast address, a closed peer,
+and `--join`'s argument.
+
 ## Related pages & where to change things
 
 - [build-and-consume.md](build-and-consume.md) — linking the platform, which carries the networking
@@ -381,3 +499,5 @@ const std::chrono::milliseconds wait = net::backoffDelay(attempt, policy);
   dialing with TLS in `open_tls.cpp`; TLS per operating system in `tls_securetransport.cpp`,
   `tls_schannel.cpp` and `tls_openssl.cpp`; and `parseEndpoint`, `broadcastAddress` and `backoffDelay`,
   which ask the operating system nothing, in `address.cpp`.
+- The worked example is `examples/lan_link/main.cpp`: the announce, finding a peer, and the link that
+  carries each player's position.
