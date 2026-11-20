@@ -127,6 +127,10 @@ public:
     [[nodiscard]] std::chrono::nanoseconds displayRefreshPeriod() const override;
     void sleepPrecise(std::chrono::nanoseconds duration) override;
 
+    // The machine's logical cores (SDL_GetNumLogicalCPUCores), 0 when SDL cannot tell. Threads start
+    // through the base Platform::startThread. See the Platform seam for the contract.
+    [[nodiscard]] std::size_t coreCount() const override;
+
     // The live GPU device + window the renderer draws with. Exposed (rather than hidden
     // behind a present method) because the renderer is a separate object that owns the
     // pipeline/viewport and submits frames against this device. SDL types appear here by

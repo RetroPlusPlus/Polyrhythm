@@ -13,6 +13,7 @@
 #include "retropp/run_loop.h"         // RunLoop::defaultTiming
 #include "retropp/tween.h"            // TweenPlayer<T>::defaultTiming (the interpolable T's)
 #include "retropp/vibration.h"        // VibrationPlayer::defaultTiming
+#include "retropp/worker_pool.h"      // WorkerPool::defaultWorkers
 
 namespace retropp {
 
@@ -39,9 +40,9 @@ std::filesystem::path resolveAssetRoot(const std::filesystem::path& configured) 
 //
 // This also seeds the playback-cadence defaults — AnimationPlayer::defaultTiming, every interpolable
 // TweenPlayer<T>::defaultTiming, PathWalker::defaultTiming, SpritePath::defaultTiming, and
-// VibrationPlayer::defaultTiming — and the blit sampling default, so one startup call covers timing,
-// viewport, sampling, animation cadence, tween cadence, the path-movement cadences, and the vibration
-// cadence (a game need not set any of them separately).
+// VibrationPlayer::defaultTiming — the blit sampling default, and WorkerPool::defaultWorkers, so one
+// startup call covers timing, viewport, sampling, animation cadence, tween cadence, the path-movement
+// cadences, the vibration cadence, and the worker count (a game need not set any of them separately).
 void EngineConfig::setActive(const EngineConfig& config) {
     // The identity is required. No major platform lets a project exist without one — an IDE
     // demands it before the first hello-world builds — and an engine that starts anonymously
@@ -73,6 +74,9 @@ void EngineConfig::setActive(const EngineConfig& config) {
     // The application identity: a bare SaveStore resolves its per-user save directory from
     // this (and refuses an empty one — see app_identity.h for why no fallback exists).
     SaveStore::defaultIdentity        = config.identity;
+    // The worker count a WorkerPool made without a count of its own starts; unset leaves it to the
+    // machine.
+    WorkerPool::defaultWorkers = config.workers;
     // Asset root: resolve to an absolute path ONCE (here, the SDL-coupled meeting point) so LoadFromPath
     // assets resolve the same way everywhere via assetPath(). There is no separate routine root —
     // LoadFromPath routines resolve against this same assetRoot(). Embed-vs-load carries no global

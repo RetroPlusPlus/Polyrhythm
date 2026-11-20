@@ -49,6 +49,9 @@ Active development. The core is in place and exercised end to end by a real cons
 - **Run loop & timing** — fixed-step simulation with sim/render decoupling, frame interpolation
   across the ticks a frame actually ran, a per-layer declaration of how often a world advances (a
   simulation on a divider eases across the ticks it takes), and a host-selected timing profile.
+- **Worker pool** — one pool of worker threads sized from the machine's cores, that a tick hands a
+  batch of independent jobs at its end and collects at the start of the next: the workers step
+  while the main thread renders, and the result is a plain loop's at every worker count.
 - **Platform & input** — SDL3 window, `SDL_GPU` device and event pump; native fullscreen and
   high-DPI; an action-based input surface — a game declares its own actions, binds each to any
   number of sources, and the input surface resolves them per controller family; a controls screen

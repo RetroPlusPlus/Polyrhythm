@@ -1,6 +1,8 @@
 #pragma once
 
+#include <cstddef>
 #include <filesystem>
+#include <optional>
 #include <string>
 
 #include "retropp/app_identity.h"  // AppIdentity — the program's identity to the host platform
@@ -42,14 +44,14 @@ struct EnhancementToggles {
 // The single startup configuration the host hands the platform: window + internal viewport + render
 // timing + forward enhancement toggles. Platform-agnostic VALUE types only (no live device
 // handles): the platform layer reads `window`; the renderer reads `viewport`; the run loop reads
-// `timing`. Every field defaults to the faithful Game Boy Color baseline, so a default-constructed
+// `timing`; a worker pool reads `workers`. Every field defaults to the faithful Game Boy Color baseline, so a default-constructed
 // EngineConfig reproduces the original behavior.
 //
 // Input carries NO config field: the game's action map (input_actions.h) is a value handed to the
 // platform directly (SdlPlatform::actions) — an unconfigured platform simply reports no actions.
 //
 // Dynamic vs startup:
-//   * STARTUP-ONLY (consumed once at construction): window title, viewport, timing.
+//   * STARTUP-ONLY (consumed once at construction): window title, viewport, timing, workers.
 //   * RUNTIME-DYNAMIC: the action map (actions on the platform); enhancements — windowScale
 //     seeds the initial window size and is then re-applied live via window().size(),
 //     fullscreen via window().fullscreen(), sampling seeded from config by setActive() (so the call
@@ -97,6 +99,13 @@ struct EngineConfig {
     // assets-and-embedding.md.
     std::filesystem::path      assetRoot{};
 
+    // How many worker threads a WorkerPool made without a count of its own starts (worker_pool.h).
+    // Unset, the machine decides: one fewer than its cores, less the machines running on their own
+    // threads, and never fewer than one on a machine with two cores or more. A value is used as given,
+    // zero included — at zero a pool runs every batch on the thread that collects it. Seeds
+    // WorkerPool::defaultWorkers via setActive(); a count passed to the pool's constructor overrides it.
+    std::optional<std::size_t> workers{};
+
     // The set-once active config: the host assigns it once via setActive() (below), and bare
     // ctors then inherit from it instead of every field being threaded to every ctor — RunLoop and
     // Renderer read the per-type static defaults setActive() fans the config out into, and SdlPlatform
@@ -112,7 +121,7 @@ struct EngineConfig {
     // TweenPlayer<T> / PathWalker / SpritePath / VibrationPlayer ::defaultTiming; the renderer fields →
     // Renderer::defaultViewport / defaultSamplingMode / defaultInterpolation / defaultEvaluationGrid;
     // config.identity → SaveStore::defaultIdentity; config.assetRoot → the asset root (resolved absolute
-    // once). One call at startup. Defined in src/engine_config.cpp — keeping the definition out of
+    // once); config.workers → WorkerPool::defaultWorkers. One call at startup. Defined in src/engine_config.cpp — keeping the definition out of
     // this header avoids pulling renderer.h (SDL_gpu) / run_loop.h / animation.h in, so this header stays
     // light and SDL/GPU-free, and it quarantines the one point where the SDL-coupled config layer and the
     // locked SDL-free core loop meet (data flows downward only).

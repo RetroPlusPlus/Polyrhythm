@@ -1466,6 +1466,7 @@ add_library(retroppengine STATIC
     src/save_store.cpp
     src/user_files.cpp
     src/data_library.cpp
+    src/worker_pool.cpp
     src/audio/audio_system.cpp
     src/audio/audio_mixer.cpp
     src/audio/audio_library.cpp
@@ -1785,6 +1786,7 @@ if(RETROPP_BUILD_TESTS)
         tests/snes_timing_test.cpp
         tests/machine_clock_test.cpp
         tests/vm_runner_test.cpp
+        tests/worker_pool_test.cpp
         tests/free_run_park_test.cpp
         tests/driver_hosting_vm_test.cpp
         tests/driver_registration_test.cpp
@@ -2115,6 +2117,52 @@ if(RETROPP_BUILD_TESTS)
                          VoiceLiteral.ARuntimeValueDoesNotCompile
                          VoiceLiteral.ASevenCompiles
                          PROPERTIES RESOURCE_LOCK retropp_build_tree)
+
+    # ── A worker pool's job is checked as the program compiles ────────────────────────────────────────
+    # The same harness: three jobs submit() refuses — a mutable lambda, one past kJobBytes, one with a
+    # destructor — and a lambda capturing by reference as the control. Each needle is a phrase of the
+    # refusal's own message, so a case that fails to build for another reason fails its row.
+    foreach(_case job_mutable job_past_the_storage job_with_a_destructor job_capturing_references)
+        add_library(compile_${_case} OBJECT EXCLUDE_FROM_ALL tests/compile_fail/${_case}.cpp)
+        target_compile_features(compile_${_case} PRIVATE cxx_std_20)
+        target_link_libraries(compile_${_case} PRIVATE retropp::engine)
+        retropp_set_warnings(compile_${_case})
+    endforeach()
+
+    add_test(NAME WorkerPoolJob.AMutableJobDoesNotCompile
+             COMMAND ${CMAKE_COMMAND} -DBINARY_DIR=${CMAKE_BINARY_DIR}
+                     -DTARGET=compile_job_mutable -DCONFIG=$<CONFIG>
+                     -DEXPECT=fails "-DDIAGNOSTIC=a mutable lambda does not qualify"
+                     -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_outcome.cmake)
+    add_test(NAME WorkerPoolJob.AJobPastTheStorageDoesNotCompile
+             COMMAND ${CMAKE_COMMAND} -DBINARY_DIR=${CMAKE_BINARY_DIR}
+                     -DTARGET=compile_job_past_the_storage -DCONFIG=$<CONFIG>
+                     -DEXPECT=fails "-DDIAGNOSTIC=holds more than kJobBytes"
+                     -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_outcome.cmake)
+    add_test(NAME WorkerPoolJob.AJobWithADestructorDoesNotCompile
+             COMMAND ${CMAKE_COMMAND} -DBINARY_DIR=${CMAKE_BINARY_DIR}
+                     -DTARGET=compile_job_with_a_destructor -DCONFIG=$<CONFIG>
+                     -DEXPECT=fails "-DDIAGNOSTIC=must be trivially destructible"
+                     -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_outcome.cmake)
+    add_test(NAME WorkerPoolJob.AJobCapturingReferencesCompiles
+             COMMAND ${CMAKE_COMMAND} -DBINARY_DIR=${CMAKE_BINARY_DIR}
+                     -DTARGET=compile_job_capturing_references -DCONFIG=$<CONFIG>
+                     -DEXPECT=builds
+                     -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile_outcome.cmake)
+    set_tests_properties(WorkerPoolJob.AMutableJobDoesNotCompile
+                         WorkerPoolJob.AJobPastTheStorageDoesNotCompile
+                         WorkerPoolJob.AJobWithADestructorDoesNotCompile
+                         WorkerPoolJob.AJobCapturingReferencesCompiles
+                         PROPERTIES RESOURCE_LOCK retropp_build_tree)
+
+    # A warm pool allocates nothing on the thread that submits and collects. Its own executable, because
+    # it replaces the global operator new and operator delete to count each thread's allocations.
+    add_executable(worker_pool_allocation tests/worker_pool_allocation.cpp)
+    target_compile_features(worker_pool_allocation PRIVATE cxx_std_20)
+    target_include_directories(worker_pool_allocation PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests)
+    target_link_libraries(worker_pool_allocation PRIVATE retropp::engine)
+    retropp_set_warnings(worker_pool_allocation)
+    add_test(NAME WorkerPoolAllocation.AWarmPoolAllocatesNothing COMMAND worker_pool_allocation)
 endif()
 
 # ── Runnable example hosts (mode 1 only by default) ──────────────────────────────
@@ -2762,6 +2810,24 @@ if(RETROPP_BUILD_EXAMPLES)
     # is self-contained. Dev-run only; the live full-surface path is the CI compile signal.
     retropp_add_example(vantium)
     retropp_add_example(vm_threads)
+
+    # ── Worker pool — two rooms of actors from one seed, side by side: the left stepped through
+    # WorkerPool{platform} while the frame renders, the right through a pool with no workers, so its
+    # steps run when the batch is collected; the readout shows each collect's time and whether the two
+    # rooms match. The font and palettes are embedded (examples/worker_pool/assets/).
+    retropp_add_example(worker_pool)
+
+    # The worker pool's results, against a plain loop: 256 actors for 600 ticks stepped through
+    # WorkerPool{platform}, {platform, 0} and {platform, 3}, each pool's room compared with the loop's
+    # after every tick, and WorkerPool{platform}.workers() against the count the platform's cores give;
+    # it prints submit's and a finished collect's cost and exits nonzero on any mismatch. The platform
+    # is brought up with its window and input alone (src/sdl_platform_testing.h), so the case needs no
+    # GPU device; where SDL cannot open a window the demo prints the reason and exits 77, reported as
+    # skipped.
+    target_include_directories(retropp-worker_pool-demo PRIVATE "${RETROPP_ENGINE_SOURCE_DIR}")
+    add_test(NAME WorkerPoolExample.Verify
+             COMMAND retropp-worker_pool-demo --verify)
+    set_tests_properties(WorkerPoolExample.Verify PROPERTIES SKIP_RETURN_CODE 77)
 
     # ── Ferryman — a hybrid arcade game (open-sea rescue-and-carry × a toned-down bullet hell):
     # collect stranded souls from the islets and sail them home — every soul aboard slows the
