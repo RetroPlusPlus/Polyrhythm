@@ -3,8 +3,10 @@
 //
 // Both cases reach real hosts on the public internet, so they run outside the regression sweep, in the
 // TLS step every CI job carries: an outage then shows as that step's failure, with the status it met.
-// Nothing here skips, and a refusal is asserted as Untrusted exactly, so a dead network never passes
-// for a refused certificate.
+// Nothing here skips. An open that answers TimedOut — its connection or its handshake ran past kOpen — is
+// the network's answer, and the case opens again, up to kAttempts in all, printing each retry. Every other
+// answer, a verdict included, is judged as it first comes back. A refusal is asserted as Untrusted
+// exactly, so a dead network never passes for a refused certificate.
 //
 // Every case runs on every platform, against whichever stack that platform's TLS is built on.
 
@@ -15,6 +17,7 @@
 #include <array>
 #include <chrono>
 #include <cstddef>
+#include <iostream>
 #include <span>
 #include <string_view>
 
@@ -26,6 +29,7 @@ namespace net = retropp::net;
 
 constexpr auto kOpen     = 10000ms;
 constexpr auto kLiveness = 60000ms;
+constexpr int  kAttempts = 3;  // how many times a case opens a host whose open answers TimedOut
 
 const char* name(net::Status s) {
     switch (s) {
@@ -42,9 +46,20 @@ const char* name(net::Status s) {
     return "?";
 }
 
+// Opens `host` on 443 over TLS with nothing pinned and no name in the config, up to kAttempts times while
+// the open answers TimedOut. Any other answer ends it at once.
+net::Opened openTrusting(const char* host) {
+    for (int attempt = 1;; ++attempt) {
+        net::Opened opened =
+            net::open(net::Tcp{.host = host, .port = 443, .timeout = kOpen}, net::TlsClientConfig{});
+        if (opened.status != net::Status::TimedOut || attempt == kAttempts) return opened;
+        std::cout << host << ": attempt " << attempt << " of " << kAttempts
+                  << " — open answered TimedOut; opening again" << std::endl;
+    }
+}
+
 TEST(NetTlsTrustRootsOpen, OpenTrustsAPublicHostUnderTheRowsName) {
-    net::Opened opened = net::open(net::Tcp{.host = "github.com", .port = 443, .timeout = kOpen},
-                                   net::TlsClientConfig{});
+    net::Opened opened = openTrusting("github.com");
     ASSERT_EQ(opened.status, net::Status::Ok) << "github.com: open answered " << name(opened.status);
     ASSERT_NE(opened.stream, nullptr);
 
@@ -78,9 +93,7 @@ TEST(NetTlsTrustRootsOpen, OpenTrustsAPublicHostUnderTheRowsName) {
 
 TEST(NetTlsTrustRootsOpen, OpenRefusesACertificateForAnotherName) {
     // The config names no host, so the name checked is the row's.
-    const net::Opened opened =
-        net::open(net::Tcp{.host = "wrong.host.badssl.com", .port = 443, .timeout = kOpen},
-                  net::TlsClientConfig{});
+    const net::Opened opened = openTrusting("wrong.host.badssl.com");
     EXPECT_EQ(opened.status, net::Status::Untrusted)
         << "wrong.host.badssl.com: open answered " << name(opened.status);
     EXPECT_EQ(opened.stream, nullptr);
