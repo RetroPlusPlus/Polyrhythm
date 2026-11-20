@@ -2,6 +2,9 @@
 
 #include <array>
 #include <chrono>
+#include <cstddef>
+#include <functional>
+#include <thread>
 
 #include "retropp/analog_input.h"
 #include "retropp/geometry.h"
@@ -34,9 +37,9 @@ private:
     int       player_;
 };
 
-// The host-OS boundary: window + GPU present + input + lifecycle, expressed as an
-// abstract seam so the platform's scheduling and input-translation logic never depends
-// on a live device. The production implementation is SdlPlatform; tests drive a
+// The host-OS boundary: window + GPU present + input + lifecycle + the machine's cores and the start
+// of a thread, expressed as an abstract seam so the platform's scheduling and input-translation logic
+// never depends on a live device. The production implementation is SdlPlatform; tests drive a
 // MockPlatform, keeping the windowed-host driver verifiable headlessly. It is to the
 // platform what the run loop's injectable Clock is to time — the same seam discipline.
 //
@@ -202,6 +205,21 @@ public:
     // platform uses a high-resolution sleep; a test platform records the request and does not wait, so
     // the host suite stays instant and deterministic.
     virtual void sleepPrecise(std::chrono::nanoseconds duration) = 0;
+
+    // ── Threads ─────────────────────────────────────────────────────────────────
+    // What a WorkerPool (worker_pool.h) asks of the host when it is made: how many cores the machine
+    // has, and a thread to run each worker on. Both have a body here, so a backend overrides either
+    // one only to answer differently; a test platform overrides coreCount() to fix the count.
+
+    // The machine's logical cores, or 0 when the count is unknown. The base answers
+    // std::thread::hardware_concurrency().
+    [[nodiscard]] virtual std::size_t coreCount() const { return std::thread::hardware_concurrency(); }
+
+    // A thread running `body`, started now. The base answers std::thread(std::move(body)); the caller
+    // owns the thread and joins it.
+    [[nodiscard]] virtual std::thread startThread(std::function<void()> body) {
+        return std::thread(std::move(body));
+    }
 
     // ── Gamepad output ──────────────────────────────────────────────────────────
     // Output to the pad. Input is read via input.player(n); output is declared through this

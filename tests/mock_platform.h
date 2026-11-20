@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <functional>
 #include <span>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -142,6 +143,17 @@ public:
     [[nodiscard]] std::chrono::nanoseconds lastSleep() const noexcept { return lastSleep_; }
     [[nodiscard]] std::chrono::nanoseconds totalSlept() const noexcept { return totalSlept_; }
 
+    // ── Threads ──
+    // A scripted core count (default 1), so a pool's worker count is the same on every machine the
+    // suite runs on; threads start through the base Platform::startThread, counted.
+    void setCoreCount(std::size_t cores) noexcept { cores_ = cores; }
+    [[nodiscard]] std::size_t coreCount() const override { return cores_; }
+    [[nodiscard]] std::thread startThread(std::function<void()> body) override {
+        ++threadStarts_;
+        return Platform::startThread(std::move(body));
+    }
+    [[nodiscard]] int threadStarts() const noexcept { return threadStarts_; }
+
     // ── Vibration output capture ──
     // Records the CHANGED motor states the base Platform's flush emits (post-diff), so a test observes
     // exactly what would reach the device. Mark a slot absent to model a slot with no pad — its
@@ -183,6 +195,10 @@ private:
     std::chrono::nanoseconds lastSleep_{};                 // most recent sleepPrecise request
     std::chrono::nanoseconds totalSlept_{};                // sum of positive sleeps
     int sleepCount_ = 0;                                   // number of sleepPrecise calls
+
+    // Thread seam state.
+    std::size_t cores_        = 1;  // the scripted logical-core count
+    int         threadStarts_ = 0;  // number of startThread calls
 
     // Vibration capture: which slots have a pad (default all present) + the flushed motor states.
     std::array<bool, kMaxPlayers> padPresent_{{true, true, true, true}};

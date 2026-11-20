@@ -727,4 +727,11 @@ void SdlPlatform::sleepPrecise(std::chrono::nanoseconds duration) {
     }
 }
 
+// ── Threads ─────────────────────────────────────────────────────────────────────────
+
+std::size_t SdlPlatform::coreCount() const {
+    const int cores = SDL_GetNumLogicalCPUCores();
+    return cores > 0 ? static_cast<std::size_t>(cores) : 0;
+}
+
 }  // namespace retropp

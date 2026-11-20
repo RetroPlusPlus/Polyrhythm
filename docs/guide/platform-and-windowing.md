@@ -65,6 +65,10 @@ public:
     virtual std::chrono::nanoseconds nowMonotonic()         const = 0;
     virtual std::chrono::nanoseconds displayRefreshPeriod() const = 0;
     virtual void                     sleepPrecise(std::chrono::nanoseconds) = 0;
+
+    // Threads (used by WorkerPool — see "Threads" below). Both have a body on the base.
+    virtual std::size_t coreCount() const;                          // logical cores; 0 when unknown
+    virtual std::thread startThread(std::function<void()> body);    // a thread running body
 };
 ```
 
@@ -88,6 +92,23 @@ device last produced input. `pointerCaptured(true)` switches the pointer to rela
 deltas; there is no meaningful absolute cursor while captured. `cursorVisible(false)` hides the OS
 cursor **without** capturing (for a game that draws its own reticle while keeping absolute tracking
 live) — an orthogonal knob. Full analog surface in [input.md](input.md).
+
+**Threads.** A `WorkerPool` asks the platform two things when it is made: how many logical cores the
+machine has (`coreCount()`, 0 when the host cannot tell), and a thread for each of its workers
+(`startThread(body)`, a running thread the pool owns and joins). Both have a body on `Platform` —
+`std::thread::hardware_concurrency()` and `std::thread(std::move(body))` — so a backend overrides
+either one only to answer differently. `SdlPlatform` answers `coreCount()` from
+`SDL_GetNumLogicalCPUCores()`; a test platform overrides it to fix the count:
+
+```cpp
+struct FourCores final : MyTestPlatform {    // the game's own Platform for its tests
+    std::size_t coreCount() const override { return 4; }
+};
+FourCores  platform;
+WorkerPool pool{platform};                   // 3 workers on any machine the test runs on
+```
+
+The pool is described in [worker-pool.md](worker-pool.md).
 
 ## The production platform: `SdlPlatform`
 
@@ -353,6 +374,8 @@ struct EngineConfig {
     std::filesystem::path assetRoot{};                            // runtime base for LoadFromPath assets;
                                                                   // empty = the executable directory
                                                                   // (assets-and-embedding.md)
+    std::optional<std::size_t> workers{};                         // a WorkerPool's worker count; unset =
+                                                                  // the machine decides (worker-pool.md)
 
     static EngineConfig active;                          // the set-once active config
     static void setActive(const EngineConfig& config);   // store it + seed the platform defaults
@@ -362,8 +385,8 @@ struct EngineConfig {
 `EngineConfig` is the single value bundle a host hands the platform at startup — window + internal
 viewport + render timing + enhancement toggles + the application identity. It holds
 **platform-agnostic value types only** (no live device handles): the platform reads `window`, the
-renderer reads `viewport`, the run loop reads `timing`, and a default-constructed `SaveStore` reads
-the identity ([persistence.md](persistence.md)). Input carries no config field — the game's
+renderer reads `viewport`, the run loop reads `timing`, a worker pool reads `workers`, and a
+default-constructed `SaveStore` reads the identity ([persistence.md](persistence.md)). Input carries no config field — the game's
 `ActionMap` is a value handed to the platform directly (`SdlPlatform::actions`; see
 [input.md](input.md)).
 
@@ -403,12 +426,17 @@ Concretely, `setActive` seeds these process-wide defaults from the config (what 
 - **`config.assetRoot`** → the asset root, resolved to an absolute path once (a relative/empty root joins
   onto the executable directory, an absolute one is used as-is) so every LoadFromPath asset resolves the
   same way ([assets-and-embedding.md](assets-and-embedding.md)).
+- **`config.workers`** → `WorkerPool::defaultWorkers`, the worker count of a `WorkerPool` made without
+  one. Unset, the pool takes its count from the machine; a value is used as given, zero included, and
+  at zero every batch runs on the thread that collects it ([worker-pool.md](worker-pool.md)).
 
 Threading the fields explicitly still works and overrides the defaults per object —
-`SdlPlatform{config}`, `RunLoop{clock, config.timing}`, `Renderer{dev, win, config.viewport}` — so a
-program that needs two differently-configured objects can still construct them directly.
+`SdlPlatform{config}`, `RunLoop{clock, config.timing}`, `Renderer{dev, win, config.viewport}`,
+`WorkerPool{platform, count}` — so a program that needs two differently-configured objects can still
+construct them directly.
 
-**Dynamic vs startup.** `viewport` and `timing` are consumed once at construction (startup-only).
+**Dynamic vs startup.** `viewport`, `timing` and `workers` are consumed once at construction
+(startup-only).
 The action map is runtime-dynamic (`SdlPlatform::actions`). The `enhancements`
 toggles are read at startup (`windowScale` sizes the initial window in the platform ctor; `sampling`
 seeds `Renderer::defaultSamplingMode`, a per-type default the renderer reads at construction — not a

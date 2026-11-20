@@ -1,5 +1,7 @@
 #include "src/vm/vm_runner.h"
 
+#include "src/vm/machine_threads.h"
+
 #include <algorithm>
 #include <span>
 #include <stdexcept>
@@ -85,6 +87,7 @@ void VmRunner::start(std::function<std::size_t()> backlog, std::size_t highWater
     untilNext_ = std::move(untilNext);
     highWater_ = highWater;
     finished_.store(false, std::memory_order_relaxed);
+    ++machineThreads;  // counted from before its thread exists until its loop leaves
     thread_ = std::thread([this] { loop(); });
 }
 
@@ -133,6 +136,7 @@ void VmRunner::loop() {
                    wakes_.load(std::memory_order_relaxed) != seen;
         });
     }
+    --machineThreads;
     finished_.store(true, std::memory_order_release);
 }
 

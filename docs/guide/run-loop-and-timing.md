@@ -136,6 +136,10 @@ The render callback should only read state and draw it. If you find yourself wri
 or any assignment to game or animation state inside `renderLoop`, it belongs in `simTick`. (`RunLoop`
 also exposes `tickCount()` if the render wants the current tick number without keeping its own counter.)
 
+A tick whose work splits into independent steps can hand them to a `WorkerPool` at its end and collect
+them at the start of the next, so the workers step while the main thread renders and paces — see
+[worker-pool.md](worker-pool.md).
+
 ### Input each tick
 
 Push the platform's `InputSample` every host frame (`setRawInput(platform.input())`); the loop

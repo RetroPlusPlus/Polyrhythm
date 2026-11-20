@@ -7,6 +7,8 @@
 // deterministic, so a placed routine's effect on RAM is reproducible without a device.
 #include "src/vm/vm_runner.h"
 
+#include "src/vm/machine_threads.h"
+
 #include "retropp/driver_binding.h"
 #include "retropp/vm.h"
 
@@ -276,6 +278,31 @@ TEST(VmRunner, AThreadedRunnerLeavesWhenAskedAndSaysSo) {
 TEST(VmRunner, AnInlineRunnerHasAlwaysFinished) {
     vm::VmRunner runner{Vm{VMPlatform::GameBoyColor}, vm::VmRunner::StepKind::Resident, kFrame};
     EXPECT_TRUE(runner.finished());
+}
+
+// ── The machine count ─────────────────────────────────────────────────────────────────────────
+
+// A threaded runner counts among the machines on their own thread from its start until it is gone, which
+// is what a worker pool made in that span leaves a core for. An inline runner is never counted.
+TEST(VmRunner, AThreadedRunnerIsCountedWhileItsThreadRuns) {
+    const std::size_t before = vm::machineThreads.load();
+    {
+        vm::VmRunner runner{Vm{VMPlatform::GameBoyColor}, vm::VmRunner::StepKind::Resident, kFrame,
+                            vm::VmRunner::Mode::Threaded};
+        runner.beforeFirstStep([&] { runner.machine().hostDriver(doublingDriver()); });
+        EXPECT_EQ(vm::machineThreads.load(), before);
+        runner.start([] { return std::size_t{1}; }, 1);
+        EXPECT_EQ(vm::machineThreads.load(), before + 1);
+    }
+    EXPECT_EQ(vm::machineThreads.load(), before);
+
+    {
+        vm::VmRunner runner{Vm{VMPlatform::GameBoyColor}, vm::VmRunner::StepKind::Resident, kFrame};
+        runner.machine().hostDriver(doublingDriver());
+        runner.stepOnce();
+        EXPECT_EQ(vm::machineThreads.load(), before);
+    }
+    EXPECT_EQ(vm::machineThreads.load(), before);
 }
 
 }  // namespace
