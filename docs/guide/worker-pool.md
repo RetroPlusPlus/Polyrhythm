@@ -96,7 +96,7 @@ Between batches a worker waits on a condition variable. An idle pool uses no CPU
 
 ```cpp
 const EngineConfig config{
-    .identity = {.organization = "Zorlduh", .application = "Zorlduh"}};
+    .identity = {.organization = "MyStudio", .application = "My Game"}};
 EngineConfig::setActive(config);
 
 SteadyClock clock;
@@ -125,7 +125,7 @@ A catch-up burst, where one `RunLoop::advance()` runs several ticks, needs nothi
 
 ```cpp
 const EngineConfig config{
-    .identity = {.organization = "Zorlduh", .application = "Zorlduh"},
+    .identity = {.organization = "MyStudio", .application = "My Game"},
     .workers  = 0};                          // every pool made without a count runs its batches at collect()
 
 WorkerPool inlinePool{platform, 0};          // or for one pool only
@@ -218,8 +218,8 @@ A pool given a count has that count, zero included. A pool made without one take
 | 2 or more | `cores − 1 − machines`, never fewer than 1 |
 
 `machines` is the number of machines running on a thread of their own at the moment the pool is made;
-the pool reads it once, at construction. On eight cores with one
-machine running, a pool gets six workers. On two cores it gets one, whatever is running.
+the pool reads it once, at construction. On eight cores with one machine running, a pool gets six
+workers. On two cores it gets one, whatever is running.
 
 Every worker starts through `platform.startThread`, and the platform is used during construction only
 ([platform-and-windowing.md](platform-and-windowing.md) § The seam).
@@ -229,4 +229,8 @@ Every worker starts through `platform.startThread`, and the platform is used dur
 - [run-loop-and-timing.md](run-loop-and-timing.md) — the tick a batch is collected and submitted in.
 - [platform-and-windowing.md](platform-and-windowing.md) — `coreCount()` and `startThread()` on the
   `Platform` seam, and `EngineConfig::workers` under the startup configuration.
+- [`examples/worker_pool/`](../../examples/worker_pool/main.cpp) — two rooms of actors from one seed,
+  one stepped through the pool while the frame renders and one through a pool with no workers, with
+  each collect's time and whether the two rooms match; its `--verify` checks the pool's results against
+  a plain loop at several worker counts.
 - The public header is `include/retropp/worker_pool.h`; the implementation is `src/worker_pool.cpp`.

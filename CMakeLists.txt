@@ -2811,6 +2811,24 @@ if(RETROPP_BUILD_EXAMPLES)
     retropp_add_example(vantium)
     retropp_add_example(vm_threads)
 
+    # ── Worker pool — two rooms of actors from one seed, side by side: the left stepped through
+    # WorkerPool{platform} while the frame renders, the right through a pool with no workers, so its
+    # steps run when the batch is collected; the readout shows each collect's time and whether the two
+    # rooms match. The font and palettes are embedded (examples/worker_pool/assets/).
+    retropp_add_example(worker_pool)
+
+    # The worker pool's results, against a plain loop: 256 actors for 600 ticks stepped through
+    # WorkerPool{platform}, {platform, 0} and {platform, 3}, each pool's room compared with the loop's
+    # after every tick, and WorkerPool{platform}.workers() against the count the platform's cores give;
+    # it prints submit's and a finished collect's cost and exits nonzero on any mismatch. The platform
+    # is brought up with its window and input alone (src/sdl_platform_testing.h), so the case needs no
+    # GPU device; where SDL cannot open a window the demo prints the reason and exits 77, reported as
+    # skipped.
+    target_include_directories(retropp-worker_pool-demo PRIVATE "${RETROPP_ENGINE_SOURCE_DIR}")
+    add_test(NAME WorkerPoolExample.Verify
+             COMMAND retropp-worker_pool-demo --verify)
+    set_tests_properties(WorkerPoolExample.Verify PROPERTIES SKIP_RETURN_CODE 77)
+
     # ── Ferryman — a hybrid arcade game (open-sea rescue-and-carry × a toned-down bullet hell):
     # collect stranded souls from the islets and sail them home — every soul aboard slows the
     # ferry, pays escalating on delivery, AND occasionally fires back (there is no fire button;
