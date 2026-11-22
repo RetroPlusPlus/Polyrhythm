@@ -82,7 +82,8 @@ Three forms of pacing, one value type:
 
 - **`Speed`** — constant speed, in **viewport pixels per second** (wall time). The same value means the
   same on-screen speed on any cadence, because it resolves to pixels-per-tick through the walker's timing
-  profile.
+  profile; the distance at a tick is measured in double precision, so a length that is a whole number of
+  per-tick steps is reached on that step.
 - **`Eased`** — one full traversal takes `duration`, shaped by an [`Easing`](tween.md#easing--the-curve-set)
   curve: `distance = length × ease(easing, t / duration)`. Slow-in / slow-out motion along the path.
 - **`DistanceTween`** — a game-owned [`Tween<float>`](tween.md) *is* the distance-versus-time function. A

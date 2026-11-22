@@ -212,10 +212,12 @@ nothing extra to type. Assign it directly at any time, or override one path via 
 
 ### Lazy bake and re-pathing
 
-The base sequence is baked to per-node [`ArcLengthTable`](curve.md#reusing-the-arc-length-table)s **lazily on the first
-`advance()`** (and re-baked by `stop()` / `restart()`), because designated initialization cannot run a bake
-and the chain start is only known then. To send a mover down a different route, assign a new `nodes` list and
-`restart()`:
+The base sequence is baked to per-node [`ArcLengthTable`](curve.md#reusing-the-arc-length-table)s on the
+first `advance()`, `interrupt()` or `seek()` (and re-baked by `stop()` / `restart()`), because designated
+initialization cannot run a bake and the chain start is only known then. Before that first call the getters
+answer the route's beginning — `position()` is `start` — and the bake resolves tick 0, so a path that has
+not been advanced departs from its start whichever call comes first: an `interrupt()` on it leaves from
+`start`. To send a mover down a different route, assign a new `nodes` list and `restart()`:
 
 ```cpp
 mover.nodes = {SpritePathNode{.move = SpritePathMove::to({120.0f, 40.0f}), .facing = FacingPolicy::RotateToFacing}};
@@ -253,7 +255,9 @@ pass per entry, and every entry (including re-entry when the sequence loops) res
 is a **self-contained scene that replays whole**: an animation on a looping patrol leg restarts each lap, a
 `single()` rotation track on a leg runs fresh each time that leg is entered. The node's movement duration —
 how long the leg holds the cursor before it rolls to the next — is the movement's own one-pass length (for
-`Speed`, the ticks to cover the leg; for `Eased`, its duration; for a `DistanceTween`, the tween's length). A
+`Speed`, the ticks to cover the leg — the first tick at which the distance traveled reaches the leg's length,
+so a leg whose length is a whole number of per-tick steps takes exactly that many; for `Eased`, its duration;
+for a `DistanceTween`, the tween's length). A
 track *longer* than the movement is simply cut off when the leg ends; a track *shorter* than the movement rests
 (or loops) at its own mode for the remainder of the leg.
 
@@ -287,6 +291,10 @@ but applied to the *route*, not a single track:
 
 `finished()` tracks the *movement* finishing under the mode — a rested route's current node keeps resolving
 its tracks, so a finished path is not a frozen one.
+
+A lap covers the ticks `[0, length)`: on the tick a lap completes the path is at the start of the next one,
+so an open looping route is at its start on that tick and its last position is the tick before. A looping
+route that should hold its end for a moment ends with a [wait node](#the-wait-node-and-the-sentinel-node).
 
 ## The interrupt stack
 
@@ -322,7 +330,9 @@ enum class ResumePolicy : std::uint8_t {
     route resumes there unchanged. A guard who glances at a noise and returns to his post.
 - **Auto-pop.** When the interrupt's sequence finishes under its mode, it pops **within the same
   `advance()`**, and the leftover ticks of that batch flow into the resumed content (drifted under `Continue`,
-  restored under `Return`). Progress and clock are preserved either way — only the position anchor differs.
+  restored under `Return`). Under `Continue` the path's position on that tick is the detour's end, and the
+  route carries the detour's whole displacement from then on, whether the detour ran one tick per `advance()`
+  or inside one batched call. Progress and clock are preserved either way — only the position anchor differs.
 - **`popInterrupt()`** ends the current interrupt immediately and resumes under the frame's `ResumePolicy`. It
   is the **only** exit from a `loopIndefinitely()` interrupt (a chase loop the game ends explicitly), which
   never auto-pops.
@@ -417,6 +427,9 @@ struct SpritePathSample {
 - **Ride a pre-built curve:** `SpritePathMove::onCurve(myCurve)`.
 - **Pace it — constant speed, eased, or a reversing profile:** the node's
   [`PathPacing`](path-walker.md#pathpacing--the-time--distance-driver), exactly as a path walker.
+- **Make a leg take an exact number of ticks:** pace it `PathPacing::eased(n * profile.tickPeriod(),
+  Easing::Linear)` — a duration counts in ticks, where a `speed` is pixels per second of wall time and covers
+  its length in whatever whole number of ticks that takes.
 - **Face travel:** set `FacingPolicy::FlipX` (mirror) or `RotateToFacing` (rotate).
 - **Spin or scale it while it moves:** give the node a `rotationDegrees` and/or `scale`
   [`Tween`](tween.md) track, each with its own `PlaybackMode`; pick the pivot with `node.pivot` (default is

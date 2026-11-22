@@ -1726,6 +1726,7 @@ if(RETROPP_BUILD_TESTS)
         tests/curve_test.cpp
         tests/path_walker_test.cpp
         tests/sprite_path_test.cpp
+        tests/sprite_path_exactness_test.cpp
         tests/vm_machine_test.cpp
         tests/vm_host_test.cpp
         tests/return_landing_test.cpp

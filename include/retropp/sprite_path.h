@@ -33,7 +33,8 @@ struct Sprite;  // draw_state.h — applyTo() writes into one; only a reference 
 // from node i−1's end — a patrol route is a chain of legs. A sequence-level PlaybackMode (passed to
 // advance()) decides what happens after the last node: loop, rest, N laps, or play-for-a-duration. On top of
 // the base sequence sits the interrupt stack — suspend the whole current playback, run a detour departing
-// from where the sprite stands, and resume EXACTLY where it left off when the detour finishes.
+// from where the sprite stands, and when the detour finishes carry the route on from where it ended, or snap
+// back to where it began.
 
 // ── SpritePathMove: where a node travels ────────────────────────────────────────────────────────────
 
@@ -167,9 +168,11 @@ struct SpritePathInterrupt {
 // The "just play it" cursor over a node SEQUENCE. STATE LIVES HERE, IN THE GAME'S OBJECT — not in the
 // platform. The same shape as TweenPlayer / AnimationPlayer / PathWalker: elapsed-tick bookkeeping + play /
 // pause / seek over the composed resolve. The game constructs it, calls advance() each tick, and either
-// reads the getters or calls applyTo(sprite). The base sequence bakes to a per-node pass lazily on the first
-// advance() (and re-bakes on stop() / restart()), because designated initialization cannot run a bake and
-// the chain start is only known then. Re-path a mover by assigning a new `nodes` and calling restart().
+// reads the getters or calls applyTo(sprite). The base sequence bakes to a per-node pass on the first
+// advance(), interrupt() or seek() (and re-bakes on stop() / restart()), because designated initialization
+// cannot run a bake and the chain start is only known then; the bake resolves the clock where it stands —
+// tick 0 on a fresh path — so every entry point departs from a real sample, and before any call the getters
+// answer `start`. Re-path a mover by assigning a new `nodes` and calling restart().
 struct SpritePath {
     // The cadence a bare-constructed path resolves pacing and track durations against. EngineConfig::setActive
     // fans the configured cadence into it at startup (alongside the other players' defaultTiming), or assign
@@ -182,7 +185,9 @@ struct SpritePath {
     TimingProfile               profile = defaultTiming;
     std::uint64_t               elapsedTicks = 0;  // the ACTIVE content's clock (base, or the top interrupt)
     bool                        playing = true;
-    SpritePathSample            sample{};          // cached by advance() so the getters need no arguments
+    SpritePathSample            sample{.position = start};  // cached by advance(); position starts at `start`, so
+                                                            //   the getters answer the route's beginning before
+                                                            //   any call
 
     // Private-by-convention runtime. `pass`, `chainStart`, `nodeIndex`, and `elapsedTicks` always describe
     // the ACTIVE content (the top of the interrupt stack, or the base when the stack is empty).
