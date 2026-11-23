@@ -1,17 +1,17 @@
 # Persistence — the save store and the user's files
 
-`save_store.h` · `user_files.h` · `app_identity.h` · `engine_config.h`
+`save_store.h` · `user_files.h` · `app_identity.h` · `portable_install.h` · `engine_config.h`
 
 `SaveStore` is the platform's durable storage primitive: a store of named **byte documents**,
-each tagged with a schema version, written atomically to the platform-correct per-user
-directory. Game saves and settings both persist through it. The payload is opaque bytes end
+each tagged with a schema version, written atomically to the player's directory — the
+platform's per-user one, or one beside the application under a portable install. Game saves and settings both persist through it. The payload is opaque bytes end
 to end — the store never interprets a document's contents; what a save *contains* is
 entirely yours.
 
 ```cpp
 #include "retropp/save_store.h"
 
-retropp::SaveStore store;                       // resolves the platform save directory
+retropp::SaveStore store;                       // resolves the player's save directory
 store.write("slot1", 1, bytes);                 // atomic: never leaves a partial file
 if (auto doc = store.read("slot1")) {           // nullopt = no such document
     load(doc->payload);                         // std::vector<std::byte>, exactly as written
@@ -21,6 +21,7 @@ if (auto doc = store.read("slot1")) {           // nullopt = no such document
 ## Contents
 
 - [Where documents live](#where-documents-live)
+- [A portable install](#a-portable-install)
 - [Other files in the same directory](#other-files-in-the-same-directory)
   - [Which store to reach for](#which-store-to-reach-for)
 - [Document names](#document-names)
@@ -72,8 +73,8 @@ saves would collide, so an unset identity refuses loudly on first run instead. S
 fields once, and never change them after players have saves: a changed identity is a
 different directory, and the players' documents stay stranded under the old one.
 
-To root a store somewhere else entirely — a test fixture, a portable-install layout, a
-second profile — bypass the platform resolution with an explicit base:
+To root a store somewhere else entirely — a test fixture, a second profile — bypass the
+platform resolution with an explicit base:
 
 ```cpp
 auto store = retropp::SaveStore::atPath("/some/explicit/directory");
@@ -84,10 +85,69 @@ directory does not need to exist yet — it is created on first write. This is a
 stay hermetic: every store test roots at a unique directory under the system temp path and
 removes it afterward, so nothing touches real save data and no test sees another's files.
 
+## A portable install
+
+A portable install keeps the player's files beside the application — on the stick or in the folder the game
+was unpacked to — so the whole game travels as one directory. It is one switch on the startup config, and
+every store rooted by default follows it: a `SaveStore`, a `UserFiles`, a hosted machine's battery saves
+([vm/vm-and-routines.md](vm/vm-and-routines.md#keeping-what-the-guest-writes)), and `userDataDir()` itself.
+
+```cpp
+retropp::EngineConfig config;
+config.identity = {.organization = "MyStudio", .application = "MyGame"};
+config.portable = {.enabled = true};     // the switch
+retropp::EngineConfig::setActive(config);
+
+retropp::SaveStore store;                // beside the application
+retropp::UserFiles files;                // the same directory
+```
+
+`PortableInstall` (`portable_install.h`) has two fields. `enabled` puts the files beside the application on
+every machine. `allowFile` lets a file named `portable.txt` beside the application do the same — the player
+decides by placing the file, and a release ships without it. `allowFile` is on by default; set
+`.allowFile = false` to ignore the file. The file's contents are never read; the engine never writes it.
+
+Beside the application is a directory named for the application:
+
+| Platform | Directory |
+|---|---|
+| Windows, Linux | `<the executable's directory>/MyGame/` |
+| macOS, a bundle | `<the directory that holds MyGame.app>/MyGame/` |
+| macOS, a plain executable | `<the executable's directory>/MyGame/` |
+
+`portable.txt` goes in the application's directory itself — beside the executable, or beside the bundle. A
+bundle is signed as a whole, which is why the files sit beside it and never inside it.
+
+The switch is read at each resolution: a store resolves its directory once, when it is constructed, so a
+program that writes or removes the file sees the change in the next store it constructs. A portable
+resolution never asks the platform for the per-user directory, so a run from a stick creates nothing on the
+machine it visits. The operating system keeps files of its own for any application — saved window state,
+for one — so say where the game writes its files, not that a portable run writes nothing else.
+
+Resolving the portable directory creates it. A location that cannot take it — a read-only stick, a protected
+folder, a file standing where the directory would go — throws `SaveStoreError` naming the directory, the
+same refusal as a platform that supplies no per-user directory; a directory that exists but cannot be written
+shows at the first `write`, which returns `false`. There is no fallback to the per-user directory: the files
+go where the switch says or the call refuses.
+
+The two-argument `userDataDir(identity, placement)` names either location on demand — `{.allowFile = false}`
+is the per-user directory and `{.enabled = true}` the portable one, whatever is active — and is the form for a
+program that resolves before `setActive()`; the default placement `{}` follows a `portable.txt` as the
+config's does:
+
+```cpp
+auto settings = retropp::SaveStore::atPath(retropp::userDataDir(identity, {}));
+```
+
+A settings screen that offers the move composes from the same calls: compare `userDataDir()` with the two
+named locations to show which is in effect, try a write where the player wants to go, and copy the directory
+with `std::filesystem::copy`. The engine moves nothing between the two: what to do when both hold files is
+the game's to decide.
+
 ## Other files in the same directory
 
 Not everything a game keeps for a player is a save. Extracted assets, screenshots, a cache, a log — they
-belong in the same per-user directory, and `UserFiles` (`user_files.h`) is the surface for them. It is the
+belong in the same directory, and `UserFiles` (`user_files.h`) is the surface for them. It is the
 same directory a `SaveStore` resolves, obtained the same way, so a game's other files cannot end up beside
 a different directory than its saves.
 
@@ -138,8 +198,9 @@ const std::filesystem::path tools = retropp::userDataDir({.organization = "MyStu
                                                           .application = "MyTools"});
 ```
 
-Both throw `SaveStoreError` on an unset identity or a platform that supplies no directory — the same
-refusal, for the same reason, as a default-constructed `SaveStore`. Resolving the directory creates it if
+Both throw `SaveStoreError` on an unset identity, a platform that supplies no directory, or a portable
+directory that cannot be created — the same refusal, for the same reason, as a default-constructed
+`SaveStore`. Resolving the directory creates it if
 absent; nothing inside it is created until you write.
 
 `UserFiles::atPath(base)` roots at an explicit directory, exactly as `SaveStore::atPath` does, and is how
@@ -246,7 +307,7 @@ handed back untouched.
 
 | Call | Does |
 |---|---|
-| `SaveStore()` | Store at the platform directory resolved from the application identity (`setActive()` seeds `SaveStore::defaultIdentity` from `EngineConfig::identity`); throws `SaveStoreError` if the identity is unset or the platform supplies no directory |
+| `SaveStore()` | Store at the player's directory resolved from the application identity and the placement (`setActive()` seeds `SaveStore::defaultIdentity` from `EngineConfig::identity` and `PortableInstall::active` from `EngineConfig::portable`); throws `SaveStoreError` if the identity is unset, the platform supplies no directory, or the portable directory cannot be created |
 | `SaveStore::defaultIdentity` | The `AppIdentity` a default-constructed store resolves against — normally seeded by `setActive()`; assign directly only when bypassing the config bundle |
 | `SaveStore::atPath(dir)` | Store rooted at an explicit directory |
 | `write(name, version, bytes)` | Atomic write/replace; `false` on failure with the prior document intact |
@@ -263,8 +324,9 @@ steps ran) and `payload` (`std::vector<std::byte>`).
 
 | Call | Does |
 |---|---|
-| `userDataDir(identity)` / `userDataDir()` | The platform's per-user directory for an identity, or for the active one; throws `SaveStoreError` on an unset identity or a platform that supplies none. Resolving creates the directory |
-| `UserFiles()` | Store at that directory for the active identity |
+| `userDataDir(identity, placement)` / `userDataDir(identity)` / `userDataDir()` | The player's directory for an identity under a placement, under the active placement, or for the active identity and placement; `{.allowFile = false}` names the per-user directory and `{.enabled = true}` the portable one; throws `SaveStoreError` on an unset identity, a platform that supplies none, or a portable directory that cannot be created. Resolving creates the directory |
+| `PortableInstall::active` | The placement a default-rooted store resolves with — seeded by `setActive()` from `EngineConfig::portable`; assign directly only when bypassing the config bundle |
+| `UserFiles()` | Store at that directory for the active identity and placement |
 | `UserFiles::atPath(dir)` | Store rooted at an explicit directory |
 | `root()` | The store's directory — assign it, or a subdirectory, to `EngineConfig::assetRoot` |
 | `pathFor(relative)` | Where a file lives, without touching the disk |
@@ -277,7 +339,7 @@ rather than a file throws `std::invalid_argument` — a file can never land outs
 
 ## Try it
 
-Three headless console programs, all against the real platform directory, all worth running twice — the
+Four headless console programs, all against the real platform directory, all worth running twice — the
 second run finding the first run's files is the point of the whole subsystem.
 
 `examples/save_store_demo/` covers the document surface: it writes a v1 document, reads it back, then
@@ -293,14 +355,19 @@ points the asset root at it, registers the file as a data asset, and decodes the
 back. It is the composition the two features exist for — one directory, one resolution, whatever content
 a game derives from what the player supplied.
 
+`examples/portable_install/` allows a portable install and then writes a save through a default `SaveStore`
+and a file through a default `UserFiles`, printing where both landed. Run as it is, they go in the per-user
+directory; put an empty `portable.txt` beside the executable and they go in a directory beside it instead.
+
 ## Related pages & where to change things
 
 - [platform-and-windowing.md](platform-and-windowing.md) — the `EngineConfig` startup
-  bundle and `setActive()`, which carries the identity to the store's default.
+  bundle and `setActive()`, which carries the identity to the store's default, and the portable placement.
 - [assets-and-embedding.md](assets-and-embedding.md) — `EngineConfig::assetRoot`, which a game
   points at `UserFiles::root()` when its assets live in the player's own directory.
 - The platform write path (temp + flush + atomic rename, per-OS) lives in `src/durable_file.cpp`,
   shared by both stores so there is one durability implementation rather than a copy each. The
   envelope layout and migration walk live in `src/save_store.cpp`, which also owns the directory
   resolution both stores root against. The public contracts are `include/retropp/save_store.h` and
-  `include/retropp/user_files.h`; the identity type is `include/retropp/app_identity.h`.
+  `include/retropp/user_files.h`; the identity type is `include/retropp/app_identity.h`; the placement type is
+  `include/retropp/portable_install.h`.

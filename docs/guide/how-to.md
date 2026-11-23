@@ -567,7 +567,7 @@ it refuses. See [persistence.md](persistence.md).
 ## Keep the player's other files <a id="user-files"></a>
 
 For content that is not a save document — an extracted asset tree, an exported screenshot, a log —
-`UserFiles` puts bytes in the same per-user directory without the document machinery:
+`UserFiles` puts bytes in the same directory without the document machinery:
 
 ```cpp
 UserFiles files;

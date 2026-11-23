@@ -533,8 +533,11 @@ A keyed machine keeps the cartridge's battery-backed save RAM — how many bytes
 image's own answer — and the file is the `.srm` every other program that reads a SNES save expects:
 
 ```
-<your game's per-user data directory>/VM/<key>/battery.srm
+<your game's data directory>/VM/<key>/battery.srm
 ```
+
+Your game's data directory is the one `userDataDir()` answers: the per-user one, or the one beside the application
+under a portable install ([persistence.md](../persistence.md#a-portable-install)).
 
 The save survives `reset()` and `run()`, as a battery does through a power cycle. A stored file is put
 back into the machine only at the size the cartridge keeps. `batterySave(name)` names the file per

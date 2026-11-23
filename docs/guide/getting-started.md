@@ -147,7 +147,7 @@ bundle for startup: window, internal viewport, timing, and the application ident
 Every field defaults to the faithful Game Boy Color baseline and you override only what you mean to —
 with one exception: **`identity` is required.** `setActive` throws when either identity field is
 empty, the same way no platform lets a project exist without one; the identity also names the
-per-user save directory ([persistence.md](persistence.md)).
+player's save directory ([persistence.md](persistence.md)).
 `EngineConfig::setActive(config)` then makes it the active config *once* — it stores the config and
 fans its fields out into per-type defaults so the bare core objects in step 2 inherit them, instead of
 you threading `config.viewport` / `config.timing` into every constructor. (You still *can* thread them

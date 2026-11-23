@@ -406,8 +406,11 @@ after the guest changes it — so a player who saves inside the game finds that 
 not your code thought to ask. The file lands beside everything else you keep for that player:
 
 ```
-<your game's per-user data directory>/VM/adventure/battery.sav
+<your game's data directory>/VM/adventure/battery.sav
 ```
+
+Your game's data directory is the one `userDataDir()` answers: the per-user one, or the one beside the application
+under a portable install ([persistence.md](../persistence.md#a-portable-install)).
 
 The extension is the **core's**, and it always ends the file. The bytes are the console's own format, so
 what a file of them is called is that console's answer — a Game Boy machine's data lands as the `.sav`

@@ -222,7 +222,7 @@ constexpr std::size_t kMaxContextInstructions = 1'000'000;
 // times, and a player who is interrupted loses at most this much of what they had just done.
 constexpr std::chrono::milliseconds kSaveInterval{1000};
 
-// Where a keyed machine's files live, inside the game's own per-user data directory:
+// Where a keyed machine's files live, inside the directory userDataDir() answers:
 //
 //     VM/<the machine's key>/<the save's name>
 //

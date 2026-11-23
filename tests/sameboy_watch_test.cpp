@@ -267,7 +267,7 @@ TEST(SameBoyWatches, InsteadOnAGuestWriteLandsTheEnginesValueWithoutRecursing) {
 
 TEST(SameBoyWatches, ADroppedWatchLeavesTheCartridgeToItsOwnBehaviour) {
     Vm machine{VMPlatform::GameBoyColor};
-    machine.hostRom(makeCellRom());
+    machine.hostRom(makeMirroredCellRom());
 
     machine.registerWatches(retropp::watches(
         GuestWatch{.key     = "cell",
@@ -279,7 +279,14 @@ TEST(SameBoyWatches, ADroppedWatchLeavesTheCartridgeToItsOwnBehaviour) {
 
     runOneStep(machine);
 
-    EXPECT_NE(machine.read(one(kCell)).at(0), 0x5A);
+    // Power-on work RAM is PRNG-seeded and a step's loop count is not fixed, so no value of the cell says the
+    // cartridge's own stores landed; its distance from the mirror does. A live watch would hold the cell at 0x5A
+    // while the mirror takes what the cartridge stored (cell − mirror = 255); with the watch dropped the two are
+    // equal, or the mirror is one behind when the step ended between the two stores.
+    const auto cell   = machine.read(one(kCell)).at(0);
+    const auto mirror = machine.read(one(kCellMirror)).at(0);
+    const auto apart  = static_cast<std::uint8_t>(cell - mirror);
+    EXPECT_TRUE(apart == 0 || apart == 1) << "cell " << int{cell} << ", mirror " << int{mirror};
 }
 
 // ── The engine's own stores are not accesses anyone declared ────────────────────────────────────
