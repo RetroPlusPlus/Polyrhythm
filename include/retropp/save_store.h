@@ -41,9 +41,13 @@ public:
 // asks.
 //
 // Throws SaveStoreError when either identity field is empty (an unconfigured identity has no correct directory,
-// and a fallback would collide every unconfigured game into one), when the platform cannot supply the directory
-// asked for, or when the portable directory cannot be created where the application is — a read-only location,
-// a file standing in its place. The error type is the persistence one because this IS the persistence directory.
+// and a fallback would collide every unconfigured game into one) or when the platform cannot supply the per-user
+// directory. The error type is the persistence one because this IS the persistence directory.
+//
+// When the portable directory cannot be created where the application is — a read-only location, a file standing
+// in its place — or the platform does not report where the application is, the run ends: the player is shown an
+// error box, "<application> cannot start: The portable installation directory (<directory>) cannot be created:
+// <reason>", and the process exits with a failure status.
 //
 // Resolving the directory creates it if absent — the platform call does that for the per-user one and this
 // function for the portable one — and it is what makes the path immediately writable. Nothing inside it is
@@ -106,8 +110,9 @@ public:
     // Resolves the save directory from `defaultIdentity` and PortableInstall::active (both
     // seeded by setActive(), like the other per-type defaults). Throws
     // SaveStoreError when the identity is not set (an unconfigured identity has no correct
-    // directory — a fallback would collide every unconfigured game into one), when the
-    // platform cannot supply a directory, or when the portable directory cannot be created.
+    // directory — a fallback would collide every unconfigured game into one), or when the
+    // platform cannot supply a directory. A portable directory that cannot be created ends the
+    // run — see userDataDir().
     SaveStore();
 
     // The application identity a default-constructed store resolves its directory from.

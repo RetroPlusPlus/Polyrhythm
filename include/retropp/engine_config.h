@@ -53,7 +53,9 @@ struct EnhancementToggles {
 // platform directly (SdlPlatform::actions) — an unconfigured platform simply reports no actions.
 //
 // Dynamic vs startup:
-//   * STARTUP-ONLY (consumed once at construction): window title, viewport, timing, workers, portable.
+//   * STARTUP-ONLY (consumed once at construction): window title, viewport, timing, workers.
+//   * PER RESOLUTION: portable — setActive() publishes it, and every store resolving its directory and every
+//     userDataDir() call reads it, so a store constructed after setActive() follows the placement it publishes.
 //   * RUNTIME-DYNAMIC: the action map (actions on the platform); enhancements — windowScale
 //     seeds the initial window size and is then re-applied live via window().size(),
 //     fullscreen via window().fullscreen(), sampling seeded from config by setActive() (so the call

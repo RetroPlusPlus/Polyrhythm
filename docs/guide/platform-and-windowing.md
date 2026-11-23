@@ -438,8 +438,9 @@ Threading the fields explicitly still works and overrides the defaults per objec
 `WorkerPool{platform, count}` — so a program that needs two differently-configured objects can still
 construct them directly.
 
-**Dynamic vs startup.** `viewport`, `timing`, `workers` and `portable` are consumed once at construction
-(startup-only).
+**Dynamic vs startup.** `viewport`, `timing` and `workers` are consumed once at construction
+(startup-only). `portable` is read each time a store or `userDataDir()` resolves its directory, so every store
+constructed after `setActive()` follows the placement it published.
 The action map is runtime-dynamic (`SdlPlatform::actions`). The `enhancements`
 toggles are read at startup (`windowScale` sizes the initial window in the platform ctor; `sampling`
 seeds `Renderer::defaultSamplingMode`, a per-type default the renderer reads at construction — not a

@@ -6,8 +6,9 @@
 //     files beside the application; portable.txt does the same only when `allowFile` is set, which it is by
 //     default, and it is looked for at every resolution.
 //   * The portable directory — exactly `<application's directory>/<application>`, created by the resolution,
-//     refused with SaveStoreError when it cannot be made or there is no application directory, and reached without
-//     asking the platform for the per-user directory.
+//     refused with SaveStoreError when it cannot be made or there is no application directory (the public forms
+//     end the run there, with an error box naming the directory and why), and reached without asking the platform
+//     for the per-user directory.
 //   * The bundle rule — on macOS the application's directory is the one that holds the .app bundle.
 //   * The fan-out — setActive() seeds PortableInstall::active, the one- and no-argument forms read it, and a
 //     default SaveStore and UserFiles follow while a store rooted at an explicit path stays where it is put.
@@ -155,6 +156,13 @@ TEST_F(PortableInstallTest, AnUnmakeablePortableDirectoryIsRefused) {
 
     // The per-user resolution never reads the application directory, so its absence costs it nothing.
     EXPECT_NO_THROW((void)detail::userDataDirAt({}, kId, {}));
+}
+
+TEST_F(PortableInstallTest, ThePlayerIsToldWhichDirectoryAndWhy) {
+    // The text of the error box the public forms show before a portable refusal ends the run.
+    EXPECT_EQ(detail::portableRefusalMessage("MyGame", fs::path("/Volumes/Stick/MyGame"), "Read-only file system"),
+              "MyGame cannot start: The portable installation directory (/Volumes/Stick/MyGame) cannot be created: "
+              "Read-only file system");
 }
 
 // ── The bundle rule ─────────────────────────────────────────────────────────────────────────────

@@ -1,37 +1,22 @@
 # Polyrhythm
 
-A platform for building, porting, and extending retro games and applications built on the
-tile-based, indexed-color (CLUT) paradigm — revive and enhance existing titles without the
-original source. Native, cross-platform declarative rendering, virtualization, and co-execution
-for retro software (Game Boy, SNES, and beyond).
+A platform for building, porting, and extending retro games and applications built on the tile-based, indexed-color (CLUT) paradigm — revive and enhance existing titles without the original source. Native, cross-platform declarative rendering, virtualization, and co-execution for retro software (Game Boy, SNES, and beyond).
 
-It covers the **8-bit / 16-bit, tile-based** idiom — the Game Boy / Game Boy Color / NES / SNES /
-Genesis / Master System family, and original games made in that style. Each consuming game supplies
-its own logic, data, and assets; Polyrhythm supplies the infrastructure such a game needs:
+It covers the **8-bit / 16-bit, tile-based** idiom — the Game Boy / Game Boy Color / NES / SNES / Genesis / Master System family, and original games made in that style. Each consuming game supplies its own logic, data, and assets; Polyrhythm supplies the infrastructure such a game needs:
 
 - a fixed-step run loop and a window/GPU boundary
 - an `SDL_GPU` render pipeline with layered compositing and a built-in effect library
-- a system-agnostic VM for the narrow set of routines that must run as original hardware code
-  (RNG, audio driver), and co-execution of whole cartridges
-- an audio chain over three sound sources — the Game Boy's sound chip, the SNES's sound chip, and
-  PCM files
+- a system-agnostic VM for the narrow set of routines that must run as original hardware code (RNG, audio driver), and co-execution of whole cartridges
+- an audio chain over three sound sources — the Game Boy's sound chip, the SNES's sound chip, and PCM files
 - persistent storage for saves and player files
 
 In code the namespace and include paths are `retropp`: `#include "retropp/vm.h"`.
 
-**Every surface is console-parameterized.** The viewport, palette, timing, and input surfaces
-ship presets across the whole console family (`ViewportResolution::Snes`, `PaletteSize::Genesis`,
-`TickPeriodNs::Hz60`, …) and accept arbitrary values; the VM selects its core per target system.
-The defaults are Game-Boy-flavored; they are defaults, not constraints.
+**Every surface is console-parameterized.** The viewport, palette, timing, and input surfaces ship presets across the whole console family (`ViewportResolution::Snes`, `PaletteSize::Genesis`, `TickPeriodNs::Hz60`, …) and accept arbitrary values; the VM selects its core per target system. The defaults are Game-Boy-flavored; they are defaults, not constraints.
 
-Out of the box, with no enhancements enabled, Polyrhythm reproduces the consuming game's original
-behavior faithfully. Enhancements (output scaling, world zoom, audio packs, display filters) are
-opt-in and off by default.
+Out of the box, with no enhancements enabled, Polyrhythm reproduces the consuming game's original behavior faithfully. Enhancements (output scaling, world zoom, audio packs, display filters) are opt-in and off by default.
 
-**The platform is lean.** Everything it depends on — SDL3, the image and audio decoders, any VM
-cores a game uses — links statically alongside it, so a game ships as one file with nothing to
-install beside it. Release builds dead-strip at link, so these are shipped sizes, measured on
-macOS arm64:
+**The platform is lean.** Everything it depends on — SDL3, the image and audio decoders, any VM cores a game uses — links statically alongside it, so a game ships as one file with nothing to install beside it. Release builds dead-strip at link, so these are shipped sizes, measured on macOS arm64:
 
 | Artifact | Size |
 |---|---|
@@ -46,30 +31,16 @@ A floor is the smallest binary that links the platform, before a game adds its o
 
 Active development. The core is in place and exercised end to end by a real consumer.
 
-- **Run loop & timing** — fixed-step simulation with sim/render decoupling, frame interpolation
-  across the ticks a frame actually ran, a per-layer declaration of how often a world advances (a
-  simulation on a divider eases across the ticks it takes), and a host-selected timing profile.
-- **Worker pool** — one pool of worker threads sized from the machine's cores, that a tick hands a
-  batch of independent jobs at its end and collects at the start of the next: the workers step
-  while the main thread renders, and the result is a plain loop's at every worker count.
-- **Platform & input** — SDL3 window, `SDL_GPU` device and event pump; native fullscreen and
-  high-DPI; an action-based input surface — a game declares its own actions, binds each to any
-  number of sources, and the input surface resolves them per controller family; a controls screen
-  captures the player's next press as a source to bind.
-- **Rendering** — an `SDL_GPU` pipeline with an internal viewport, a window-filling
-  integer/letterbox blit (nearest/bilinear), and a layered compositor:
+- **Run loop & timing** — fixed-step simulation with sim/render decoupling, frame interpolation across the ticks a frame actually ran, a per-layer declaration of how often a world advances (a simulation on a divider eases across the ticks it takes), and a host-selected timing profile.
+- **Worker pool** — one pool of worker threads sized from the machine's cores, that a tick hands a batch of independent jobs at its end and collects at the start of the next: the workers step while the main thread renders, and the result is a plain loop's at every worker count.
+- **Platform & input** — SDL3 window, `SDL_GPU` device and event pump; native fullscreen and high-DPI; an action-based input surface — a game declares its own actions, binds each to any number of sources, and the input surface resolves them per controller family; a controls screen captures the player's next press as a source to bind.
+- **Rendering** — an `SDL_GPU` pipeline with an internal viewport, a window-filling integer/letterbox blit (nearest/bilinear), and a layered compositor:
   - arbitrary Z-sorted tile and sprite layers, indexed atlases with runtime palettes
-  - per-layer and per-sprite alpha, geometric transforms (scale/rotate/skew/perspective), tilemap
-    wrap modes, PNG image ingestion — indexed sheets, and truecolor images shown as layers
-  - blend modes, a frame-level color modifier/blend, and region-confined effects with analytic
-    and mask-based shapes
+  - per-layer and per-sprite alpha, geometric transforms (scale/rotate/skew/perspective), tilemap wrap modes, PNG image ingestion — indexed sheets, and truecolor images shown as layers
+  - blend modes, a frame-level color modifier/blend, and region-confined effects with analytic and mask-based shapes
   - shaders generated at build time per platform — no runtime shader compiler, no committed bytecode
-- **Effects** — a built-in screen-space library (ripple, swirl, row displacement, color fill,
-  gleam, saturation, transparency, stencil, glow, bloom) applied uniformly at frame, layer, region
-  and sprite scope, plus a game-registered custom shader stage that can join the renderer's own
-  emission grammar and obtain a blur by declaration rather than by gathering.
-- **Motion** — value tweening, curve primitives with arc-length parameterization, and sprite
-  paths with sequencing and interrupt policies.
+- **Effects** — a built-in screen-space library (ripple, swirl, row displacement, color fill, gleam, saturation, transparency, stencil, glow, bloom) applied uniformly at frame, layer, region and sprite scope, plus a game-registered custom shader stage that can join the renderer's own emission grammar and obtain a blur by declaration rather than by gathering.
+- **Motion** — value tweening, curve primitives with arc-length parameterization, and sprite paths with sequencing and interrupt policies.
 - **Audio** — one audio system, three sound sources, the same two verbs for all of them:
 
   | Source | What plays on it |
@@ -78,62 +49,29 @@ Active development. The core is in place and exercised end to end by a real cons
   | **The SNES's sound chip** | a 65816 sound driver hosted the way an SNES game carries one; audio files of any length played through the S-DSP's eight voices — converted to its sample format by the engine, streamed through the chip as the voice plays when they outrun its RAM, cued by voice, play mode (once, round until stopped, struck again at a tempo) and effect, and changed as they play |
   | **PCM** | audio files decoded and streamed as they are |
 
-  Under all three: a mixed multi-voice chain with per-type levels, production off the game's
-  thread with a thread per sounding machine, and the `AudioEffect` vocabulary — pitch, volume,
-  pan, and a per-voice send into the system's one effect path (an echo or a reverb) — realized by
-  whichever hardware plays the sound.
-- **VM host** — a system-agnostic VM that runs surgically-extracted original-hardware routines
-  (authored as `.asm`, assembled in-process) as ordinary typed C++ functions, on the Game Boy family
-  and the SNES. Two cores back it — SameBoy for the Game Boy / Game Boy Color and Snaggletooth for the
-  SNES — each behind the same seam; a game's binary carries only the cores it names.
-- **Co-execution** — a game hosts a whole cartridge and **runs it**. The image is never modified,
-  and every verb runs on the Game Boy family and the SNES alike:
-  - the image boots as the hardware would boot it and runs continuously on its own thread, at
-    the platform's own speed or any fraction or multiple of it, adjustable live, with the places
-    the game declares inside it readable and writable while it runs
-  - **guest escapes** hand control the other way — native code runs at declared places in the
-    cartridge's own program, observing a spot as the guest reaches it or replacing one of the
-    cartridge's routines outright, in the routine's own calling convention
-  - **access watches** do the same for its memory — a declared place's reads and writes are
-    decided by native code as they happen: a read answered with a byte the cartridge does not
-    contain, a write refused or replaced
-  - native code **calls back into the guest** — a routine the cartridge already has is bound
-    where it sits and called like a typed C++ function, in the guest's own context and to any
-    depth; a parked machine's own decoders reach content the game never played its way to
-  - a hosted SNES cartridge draws, sounds, takes both controller ports and keeps its battery save
-    through the same verbs a Game Boy cartridge does; its audio unit is places too — the
-    communication ports, its RAM and the S-DSP's registers — driven directly, the way the
-    console's own CPU does, on an audio system that hosts the unit alone on its own clock
+  Under all three: a mixed multi-voice chain with per-type levels, production off the game's thread with a thread per sounding machine, and the `AudioEffect` vocabulary — pitch, volume, pan, and a per-voice send into the system's one effect path (an echo or a reverb) — realized by whichever hardware plays the sound.
+- **VM host** — a system-agnostic VM that runs surgically-extracted original-hardware routines (authored as `.asm`, assembled in-process) as ordinary typed C++ functions, on the Game Boy family and the SNES. Two cores back it — SameBoy for the Game Boy / Game Boy Color and Snaggletooth for the SNES — each behind the same seam; a game's binary carries only the cores it names.
+- **Co-execution** — a game hosts a whole cartridge and **runs it**. The image is never modified, and every verb runs on the Game Boy family and the SNES alike:
+  - the image boots as the hardware would boot it and runs continuously on its own thread, at the platform's own speed or any fraction or multiple of it, adjustable live, with the places the game declares inside it readable and writable while it runs
+  - **guest escapes** hand control the other way — native code runs at declared places in the cartridge's own program, observing a spot as the guest reaches it or replacing one of the cartridge's routines outright, in the routine's own calling convention
+  - **access watches** do the same for its memory — a declared place's reads and writes are decided by native code as they happen: a read answered with a byte the cartridge does not contain, a write refused or replaced
+  - native code **calls back into the guest** — a routine the cartridge already has is bound where it sits and called like a typed C++ function, in the guest's own context and to any depth; a parked machine's own decoders reach content the game never played its way to
+  - a hosted SNES cartridge draws, sounds, takes both controller ports and keeps its battery save through the same verbs a Game Boy cartridge does; its audio unit is places too — the communication ports, its RAM and the S-DSP's registers — driven directly, the way the console's own CPU does, on an audio system that hosts the unit alone on its own clock
   - a machine's **whole state** is taken as bytes and put back, and the machine carries on from that moment — the frames it draws and the samples it sounds are the ones it would have
-- **A hosted machine's video** — ask a machine for video and the frames it finishes become a
-  layer's content, composited by z among native tile and sprite layers: a game's own art over a
-  running cartridge's picture, a transform or a screen-space effect on it, several machines on one
-  screen at once.
-  - either clock drives it — a machine on the game's tick answers from the tick boundary, one on
-    a thread of its own hands each finished frame across — and what a game reads is always a
-    completed frame
-  - a console core provides a completion, a buffer, dimensions, a pixel layout and, for an
-    interlaced picture, which field this is — never how fast it runs — so a core of another
-    resolution implements the same seam
-  - a picture of any size fits the slot a layer gives it, and the fields of an interlaced picture
-    are woven when the game asks
+- **A hosted machine's video** — ask a machine for video and the frames it finishes become a layer's content, composited by z among native tile and sprite layers: a game's own art over a running cartridge's picture, a transform or a screen-space effect on it, several machines on one screen at once.
+  - either clock drives it — a machine on the game's tick answers from the tick boundary, one on a thread of its own hands each finished frame across — and what a game reads is always a completed frame
+  - a console core provides a completion, a buffer, dimensions, a pixel layout and, for an interlaced picture, which field this is — never how fast it runs — so a core of another resolution implements the same seam
+  - a picture of any size fits the slot a layer gives it, and the fields of an interlaced picture are woven when the game asks
   - off unless a machine is asked for it, because a raster costs cycles
-- **Persistence** — versioned, atomically-written save documents; a separate store for a
-  player's other files; registration for arbitrary byte assets that are never interpreted.
+- **Persistence** — versioned, atomically-written save documents; a separate store for a player's other files; one switch that puts them all beside the application for a portable install; registration for arbitrary byte assets that are never interpreted.
 
-For the full per-subsystem surface and current status, see the
-[developer guide](docs/guide/README.md).
+For the full per-subsystem surface and current status, see the [developer guide](docs/guide/README.md).
 
 ## How it's consumed
 
-Each consuming game attaches this repository as a git submodule in its own tree
-(e.g. `<game>/engine/`). The game's build brings it in with `add_subdirectory(engine)` and links
-the target. Polyrhythm ships as source — there is no precompiled-binary distribution. Fork only
-if you need to carry your own changes; the submodule points at your fork instead, and nothing
-else differs.
+Each consuming game attaches this repository as a git submodule in its own tree (e.g. `<game>/engine/`). The game's build brings it in with `add_subdirectory(engine)` and links the target. Polyrhythm ships as source — there is no precompiled-binary distribution. Fork only if you need to carry your own changes; the submodule points at your fork instead, and nothing else differs.
 
-The reference consumer is [Kirpich](https://github.com/etroimcasso/Kirpich), a native Game Boy
-(DMG) port, which exercises the v1 API surface end to end.
+The reference consumer is [Kirpich](https://github.com/etroimcasso/Kirpich), a native Game Boy (DMG) port, which exercises the v1 API surface end to end.
 
 ## Build
 
@@ -153,9 +91,7 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
-Building Polyrhythm as the top-level project (above) enables its own tests. When it is consumed
-via `add_subdirectory`, those tests are off by default; a consumer that wants the test tooling
-links the `retropp::testkit` target.
+Building Polyrhythm as the top-level project (above) enables its own tests. When it is consumed via `add_subdirectory`, those tests are off by default; a consumer that wants the test tooling links the `retropp::testkit` target.
 
 ### Targets
 
@@ -175,13 +111,8 @@ links the `retropp::testkit` target.
 | [dr_libs](https://github.com/mackron/dr_libs) (`dr_wav`), [stb](https://github.com/nothings/stb) (`stb_vorbis`) | in-tree, `third_party/dr_libs/` and `third_party/stb/`, a small static lib linked privately | the audio-file decoders | public domain or MIT-0 / MIT, the consumer's choice |
 | [GoogleTest](https://github.com/google/googletest) | fetched at configure time | Polyrhythm's own tests only | BSD-3 |
 
-The submodules come with `--recurse-submodules`. Every dependency links **statically** into the
-consuming game's binary — the sizes above. A game ships as one file, with nothing to install beside
-it.
+The submodules come with `--recurse-submodules`. Every dependency links **statically** into the consuming game's binary — the sizes above. A game ships as one file, with nothing to install beside it.
 
 ## License
 
-Polyrhythm is source-available commercial software, licensed two ways: **PolyForm Noncommercial
-1.0.0** for noncommercial use, and a separate **commercial license** for any commercial use. See
-[`LICENSING.md`](LICENSING.md) and [`LICENSE`](LICENSE). Vendored dependencies retain their own
-licenses.
+Polyrhythm is source-available commercial software, licensed two ways: **PolyForm Noncommercial 1.0.0** for noncommercial use, and a separate **commercial license** for any commercial use. See [`LICENSING.md`](LICENSING.md) and [`LICENSE`](LICENSE). Vendored dependencies retain their own licenses.

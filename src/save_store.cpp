@@ -2,6 +2,7 @@
 
 // SDL_GetPrefPath — the platform per-user data directory; SDL_GetBasePath — the application's
 #include <SDL3/SDL_filesystem.h>
+#include <SDL3/SDL_messagebox.h>  // SDL_ShowSimpleMessageBox — the player is told why a portable run ends
 #include <SDL3/SDL_stdinc.h>      // SDL_free
 
 #include "durable_file.h"  // detail::writeFileDurably / atomicReplace / syncDirectoryEntry
@@ -11,6 +12,7 @@
 #include <array>
 #include <atomic>
 #include <cerrno>
+#include <cstdlib>
 #include <fstream>
 #include <string>
 #include <system_error>
@@ -75,6 +77,21 @@ std::filesystem::path withoutTrailingSeparator(const std::filesystem::path& path
     return path.filename().empty() ? path.parent_path() : path;
 }
 
+// A portable directory that cannot be created: the SaveStoreError the resolution throws, carrying what the player
+// is shown — the directory and the reason.
+class PortableRefusal : public SaveStoreError {
+public:
+    PortableRefusal(std::filesystem::path directory, std::string reason, const std::string& what)
+        : SaveStoreError(what), directory_(std::move(directory)), reason_(std::move(reason)) {}
+
+    const std::filesystem::path& directory() const { return directory_; }
+    const std::string& reason() const { return reason_; }
+
+private:
+    std::filesystem::path directory_;
+    std::string reason_;
+};
+
 // The application's directory as the platform reports it: SDL's base path (cached by SDL3, not freed), run through
 // the bundle rule on Apple platforms. Empty when the platform supplies none.
 std::filesystem::path applicationDir() {
@@ -124,14 +141,21 @@ std::filesystem::path detail::userDataDirAt(const std::filesystem::path& applica
 
     if (portable) {
         if (applicationDir.empty()) {
-            throw SaveStoreError("retropp: the platform did not supply the application's directory, so there "
-                                 "is nowhere beside it for \"" + app + "\"");
+            throw PortableRefusal(app, "the platform did not report where the application is",
+                                  "retropp: the platform did not supply the application's directory, so there "
+                                  "is nowhere beside it for \"" + app + "\"");
         }
         const std::filesystem::path dir = applicationDir / app;
-        std::filesystem::create_directories(dir, ec);
-        if (ec || !std::filesystem::is_directory(dir, ec)) {
-            throw SaveStoreError("retropp: the portable directory \"" + dir.string() +
-                                 "\" could not be created beside the application");
+        std::error_code made;
+        std::filesystem::create_directories(dir, made);
+        std::error_code checked;
+        if (!made && !std::filesystem::is_directory(dir, checked)) {
+            made = checked ? checked : std::make_error_code(std::errc::not_a_directory);
+        }
+        if (made) {
+            throw PortableRefusal(dir, made.message(),
+                                  "retropp: the portable directory \"" + dir.string() +
+                                      "\" could not be created beside the application: " + made.message());
         }
         return dir;
     }
@@ -146,8 +170,23 @@ std::filesystem::path detail::userDataDirAt(const std::filesystem::path& applica
     return dir;
 }
 
+std::string detail::portableRefusalMessage(std::string_view application, const std::filesystem::path& directory,
+                                           std::string_view reason) {
+    return std::string(application) + " cannot start: The portable installation directory (" + directory.string() +
+           ") cannot be created: " + std::string(reason);
+}
+
 std::filesystem::path userDataDir(const AppIdentity& identity, const PortableInstall& placement) {
-    return detail::userDataDirAt(applicationDir(), identity, placement);
+    try {
+        return detail::userDataDirAt(applicationDir(), identity, placement);
+    } catch (const PortableRefusal& refusal) {
+        // A program that cannot write where it is told to ends: the player is shown why, and the process exits
+        // with a failure status. A platform that cannot show the box still ends the run.
+        const std::string message =
+            detail::portableRefusalMessage(identity.application, refusal.directory(), refusal.reason());
+        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, identity.application.c_str(), message.c_str(), nullptr);
+        std::exit(EXIT_FAILURE);
+    }
 }
 
 std::filesystem::path userDataDir(const AppIdentity& identity) {

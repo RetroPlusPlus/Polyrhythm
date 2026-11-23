@@ -124,11 +124,17 @@ resolution never asks the platform for the per-user directory, so a run from a s
 machine it visits. The operating system keeps files of its own for any application — saved window state,
 for one — so say where the game writes its files, not that a portable run writes nothing else.
 
-Resolving the portable directory creates it. A location that cannot take it — a read-only stick, a protected
-folder, a file standing where the directory would go — throws `SaveStoreError` naming the directory, the
-same refusal as a platform that supplies no per-user directory; a directory that exists but cannot be written
-shows at the first `write`, which returns `false`. There is no fallback to the per-user directory: the files
-go where the switch says or the call refuses.
+Resolving the portable directory creates it. When a location cannot take it — a read-only stick, a protected
+folder, a file standing where the directory would go — the run ends: the player is shown an error box with the
+reason the operating system gave, and the process exits with a failure status.
+
+```
+MyGame cannot start: The portable installation directory (/Volumes/Stick/MyGame) cannot be created: Read-only file system
+```
+
+The box needs no window of the game's own, so it shows however early the first store is made. A directory that
+exists but cannot be written shows at the first `write`, which returns `false`. There is no fallback to the
+per-user directory: the files go where the switch says or the run ends.
 
 The two-argument `userDataDir(identity, placement)` names either location on demand — `{.allowFile = false}`
 is the per-user directory and `{.enabled = true}` the portable one, whatever is active — and is the form for a
@@ -198,9 +204,9 @@ const std::filesystem::path tools = retropp::userDataDir({.organization = "MyStu
                                                           .application = "MyTools"});
 ```
 
-Both throw `SaveStoreError` on an unset identity, a platform that supplies no directory, or a portable
-directory that cannot be created — the same refusal, for the same reason, as a default-constructed
-`SaveStore`. Resolving the directory creates it if
+Both throw `SaveStoreError` on an unset identity or a platform that supplies no directory — the same
+refusal, for the same reason, as a default-constructed `SaveStore` — and a portable directory that cannot be
+created ends the run. Resolving the directory creates it if
 absent; nothing inside it is created until you write.
 
 `UserFiles::atPath(base)` roots at an explicit directory, exactly as `SaveStore::atPath` does, and is how
@@ -307,7 +313,7 @@ handed back untouched.
 
 | Call | Does |
 |---|---|
-| `SaveStore()` | Store at the player's directory resolved from the application identity and the placement (`setActive()` seeds `SaveStore::defaultIdentity` from `EngineConfig::identity` and `PortableInstall::active` from `EngineConfig::portable`); throws `SaveStoreError` if the identity is unset, the platform supplies no directory, or the portable directory cannot be created |
+| `SaveStore()` | Store at the player's directory resolved from the application identity and the placement (`setActive()` seeds `SaveStore::defaultIdentity` from `EngineConfig::identity` and `PortableInstall::active` from `EngineConfig::portable`); throws `SaveStoreError` if the identity is unset or the platform supplies no directory; a portable directory that cannot be created ends the run |
 | `SaveStore::defaultIdentity` | The `AppIdentity` a default-constructed store resolves against — normally seeded by `setActive()`; assign directly only when bypassing the config bundle |
 | `SaveStore::atPath(dir)` | Store rooted at an explicit directory |
 | `write(name, version, bytes)` | Atomic write/replace; `false` on failure with the prior document intact |
@@ -324,7 +330,7 @@ steps ran) and `payload` (`std::vector<std::byte>`).
 
 | Call | Does |
 |---|---|
-| `userDataDir(identity, placement)` / `userDataDir(identity)` / `userDataDir()` | The player's directory for an identity under a placement, under the active placement, or for the active identity and placement; `{.allowFile = false}` names the per-user directory and `{.enabled = true}` the portable one; throws `SaveStoreError` on an unset identity, a platform that supplies none, or a portable directory that cannot be created. Resolving creates the directory |
+| `userDataDir(identity, placement)` / `userDataDir(identity)` / `userDataDir()` | The player's directory for an identity under a placement, under the active placement, or for the active identity and placement; `{.allowFile = false}` names the per-user directory and `{.enabled = true}` the portable one; throws `SaveStoreError` on an unset identity or a platform that supplies none; a portable directory that cannot be created ends the run with an error box. Resolving creates the directory |
 | `PortableInstall::active` | The placement a default-rooted store resolves with — seeded by `setActive()` from `EngineConfig::portable`; assign directly only when bypassing the config bundle |
 | `UserFiles()` | Store at that directory for the active identity and placement |
 | `UserFiles::atPath(dir)` | Store rooted at an explicit directory |
