@@ -2,9 +2,9 @@
 // the application's directory through detail::userDataDirAt, so portable.txt and a portable directory land under
 // the system temp path, never beside a real binary; the cases that go through the public forms with a portable
 // placement resolve beside the test binary and remove what they made. Four layers:
-//   * The decision — the default placement is the per-user directory; `enabled` puts the files beside the
-//     application; portable.txt does the same only when `allowFile` is set, and it is looked for at every
-//     resolution.
+//   * The decision — with no portable.txt the default placement is the per-user directory; `enabled` puts the
+//     files beside the application; portable.txt does the same only when `allowFile` is set, which it is by
+//     default, and it is looked for at every resolution.
 //   * The portable directory — exactly `<application's directory>/<application>`, created by the resolution,
 //     refused with SaveStoreError when it cannot be made or there is no application directory, and reached without
 //     asking the platform for the per-user directory.
@@ -77,6 +77,7 @@ protected:
 // ── The decision ────────────────────────────────────────────────────────────────────────────────
 
 TEST_F(PortableInstallTest, TheDefaultPlacementIsThePerUserDirectory) {
+    // No portable.txt beside the application.
     PortableInstall::active = {};
     const fs::path perUser = detail::userDataDirAt(app_, kId, {});
     EXPECT_TRUE(outside(perUser, app_)) << perUser;
@@ -95,12 +96,20 @@ TEST_F(PortableInstallTest, EnabledPutsTheFilesBesideTheApplication) {
 
 TEST_F(PortableInstallTest, TheFileTurnsTheSwitchOnOnlyWhenAllowed) {
     const PortableInstall allow{.allowFile = true};
-    EXPECT_EQ(detail::userDataDirAt(app_, kId, allow), detail::userDataDirAt(app_, kId, {}));
+    const PortableInstall ignore{.allowFile = false};
+    EXPECT_EQ(detail::userDataDirAt(app_, kId, allow), detail::userDataDirAt(app_, kId, ignore));
 
     writeMarker();
     EXPECT_EQ(detail::userDataDirAt(app_, kId, allow), app_ / "PortableApp");
     // The file is present, but a placement that does not allow it resolves per-user all the same.
-    EXPECT_TRUE(outside(detail::userDataDirAt(app_, kId, {}), app_));
+    EXPECT_TRUE(outside(detail::userDataDirAt(app_, kId, ignore), app_));
+}
+
+TEST_F(PortableInstallTest, TheFileIsAllowedByDefault) {
+    EXPECT_TRUE(PortableInstall{}.allowFile);
+    EXPECT_FALSE(PortableInstall{}.enabled);
+    writeMarker();
+    EXPECT_EQ(detail::userDataDirAt(app_, kId, {}), app_ / "PortableApp");
 }
 
 TEST_F(PortableInstallTest, EnabledWinsWithoutTheFile) {
@@ -123,7 +132,8 @@ TEST_F(PortableInstallTest, APortableResolutionLeavesNoPerUserDirectoryBehind) {
     // The per-user layout is `<base>/<organization>/<application>` on every platform, so a sibling of a probe's
     // directory is where the per-user directory for another application of the same organization would be made.
     const fs::path probe = withoutTrailingSeparator(
-        detail::userDataDirAt(app_, {.organization = "RetroppTest", .application = "PortableProbe"}, {}));
+        detail::userDataDirAt(app_, {.organization = "RetroppTest", .application = "PortableProbe"},
+                              {.allowFile = false}));
     const fs::path wouldBe = probe.parent_path() / "PortableNever";
     removeQuietly(wouldBe);
 
@@ -178,7 +188,7 @@ TEST_F(PortableInstallTest, DefaultStoresFollowTheActivePlacement) {
     ASSERT_TRUE(saves.write("slot1", 1, payload));
     EXPECT_TRUE(fs::is_regular_file(dir / "slot1"));
 
-    const fs::path perUser = withoutTrailingSeparator(userDataDir(SaveStore::defaultIdentity, {}));
+    const fs::path perUser = withoutTrailingSeparator(userDataDir(SaveStore::defaultIdentity, {.allowFile = false}));
     EXPECT_TRUE(outside(dir, perUser.parent_path())) << dir;
 
     removeQuietly(dir);
@@ -201,9 +211,14 @@ TEST_F(PortableInstallTest, SetActiveSeedsThePlacement) {
 
     EngineConfig defaults;
     defaults.identity = config.identity;
-    EngineConfig::setActive(defaults);
+    config.portable = {.enabled = false, .allowFile = false};
+    EngineConfig::setActive(config);
     EXPECT_FALSE(PortableInstall::active.enabled);
     EXPECT_FALSE(PortableInstall::active.allowFile);
+
+    EngineConfig::setActive(defaults);
+    EXPECT_FALSE(PortableInstall::active.enabled);
+    EXPECT_TRUE(PortableInstall::active.allowFile);
 }
 
 TEST_F(PortableInstallTest, TheOneArgumentFormReadsTheActivePlacement) {

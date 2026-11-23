@@ -104,8 +104,8 @@ retropp::UserFiles files;                // the same directory
 
 `PortableInstall` (`portable_install.h`) has two fields. `enabled` puts the files beside the application on
 every machine. `allowFile` lets a file named `portable.txt` beside the application do the same — the player
-decides by placing the file, and a release ships without it. The file's contents are never read; the engine
-never writes it.
+decides by placing the file, and a release ships without it. `allowFile` is on by default; set
+`.allowFile = false` to ignore the file. The file's contents are never read; the engine never writes it.
 
 Beside the application is a directory named for the application:
 
@@ -130,12 +130,13 @@ same refusal as a platform that supplies no per-user directory; a directory that
 shows at the first `write`, which returns `false`. There is no fallback to the per-user directory: the files
 go where the switch says or the call refuses.
 
-The two-argument `userDataDir(identity, placement)` names either location on demand — `{}` is the per-user
-directory and `{.enabled = true}` the portable one, whatever is active — and is the form for a program that
-resolves before `setActive()`:
+The two-argument `userDataDir(identity, placement)` names either location on demand — `{.allowFile = false}`
+is the per-user directory and `{.enabled = true}` the portable one, whatever is active — and is the form for a
+program that resolves before `setActive()`; the default placement `{}` follows a `portable.txt` as the
+config's does:
 
 ```cpp
-auto settings = retropp::SaveStore::atPath(retropp::userDataDir(identity, {.allowFile = true}));
+auto settings = retropp::SaveStore::atPath(retropp::userDataDir(identity, {}));
 ```
 
 A settings screen that offers the move composes from the same calls: compare `userDataDir()` with the two
@@ -323,7 +324,7 @@ steps ran) and `payload` (`std::vector<std::byte>`).
 
 | Call | Does |
 |---|---|
-| `userDataDir(identity, placement)` / `userDataDir(identity)` / `userDataDir()` | The player's directory for an identity under a placement, under the active placement, or for the active identity and placement; `{}` names the per-user directory and `{.enabled = true}` the portable one; throws `SaveStoreError` on an unset identity, a platform that supplies none, or a portable directory that cannot be created. Resolving creates the directory |
+| `userDataDir(identity, placement)` / `userDataDir(identity)` / `userDataDir()` | The player's directory for an identity under a placement, under the active placement, or for the active identity and placement; `{.allowFile = false}` names the per-user directory and `{.enabled = true}` the portable one; throws `SaveStoreError` on an unset identity, a platform that supplies none, or a portable directory that cannot be created. Resolving creates the directory |
 | `PortableInstall::active` | The placement a default-rooted store resolves with — seeded by `setActive()` from `EngineConfig::portable`; assign directly only when bypassing the config bundle |
 | `UserFiles()` | Store at that directory for the active identity and placement |
 | `UserFiles::atPath(dir)` | Store rooted at an explicit directory |

@@ -35,9 +35,10 @@ public:
 // otherwise the platform's per-user data directory — `%APPDATA%\<org>\<app>` on Windows,
 // `~/Library/Application Support/<org>/<app>` on macOS, `$XDG_DATA_HOME/<org>/<app>` on Linux. This is the
 // directory a default-constructed SaveStore and a default-constructed UserFiles write into, named so a game can
-// place its other files beside its saves instead of resolving a second directory of its own. A placement of `{}`
-// names the per-user directory whatever is active, and `{.enabled = true}` the portable one, which is how a
-// program that resolves before EngineConfig::setActive(), or one that needs both locations by name, asks.
+// place its other files beside its saves instead of resolving a second directory of its own. A placement of
+// `{.allowFile = false}` names the per-user directory whatever is active, and `{.enabled = true}` the portable one,
+// which is how a program that resolves before EngineConfig::setActive(), or one that needs both locations by name,
+// asks.
 //
 // Throws SaveStoreError when either identity field is empty (an unconfigured identity has no correct directory,
 // and a fallback would collide every unconfigured game into one), when the platform cannot supply the directory

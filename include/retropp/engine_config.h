@@ -110,9 +110,9 @@ struct EngineConfig {
     std::optional<std::size_t> workers{};
 
     // Where the player's files go (portable_install.h): the platform's per-user directory, or a directory named for
-    // the application beside the application — `enabled` puts them there, `allowFile` lets a portable.txt beside the
-    // application put them there. Every store rooted by default and userDataDir() follow it. Seeds
-    // PortableInstall::active via setActive(); the two-argument userDataDir takes a placement by hand.
+    // the application beside the application — `enabled` puts them there, `allowFile` (on by default) lets a
+    // portable.txt beside the application put them there. Every store rooted by default and userDataDir() follow
+    // it. Seeds PortableInstall::active via setActive(); the two-argument userDataDir takes a placement by hand.
     PortableInstall    portable{};
 
     // The set-once active config: the host assigns it once via setActive() (below), and bare

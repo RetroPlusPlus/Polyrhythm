@@ -115,11 +115,12 @@ std::filesystem::path detail::userDataDirAt(const std::filesystem::path& applica
     const std::string& org = identity.organization;
     const std::string& app = identity.application;
 
-    // An application directory that cannot be read holds no file.
+    // The file is looked for only in an application directory the platform supplied; one that cannot be read
+    // holds no file.
     std::error_code ec;
     const bool portable =
-        placement.enabled ||
-        (placement.allowFile && std::filesystem::is_regular_file(applicationDir / kPortableFile, ec));
+        placement.enabled || (placement.allowFile && !applicationDir.empty() &&
+                              std::filesystem::is_regular_file(applicationDir / kPortableFile, ec));
 
     if (portable) {
         if (applicationDir.empty()) {
