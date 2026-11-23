@@ -49,8 +49,8 @@ namespace retropp {
 class UserFiles {
 public:
     // Roots at the directory userDataDir() answers for the active identity and placement. Throws
-    // SaveStoreError when the identity is unset, the platform cannot supply a directory, or the portable
-    // directory cannot be created — see userDataDir().
+    // SaveStoreError when the identity is unset or the platform cannot supply a directory; a portable directory
+    // that cannot be created ends the run — see userDataDir().
     UserFiles();
 
     // Roots at `base` explicitly, bypassing platform resolution — the seam tests use to stay hermetic,
