@@ -212,8 +212,11 @@ A keyed machine keeps the cartridge's battery-backed memory — what the image's
 has — and the file is the `.sav` every other program that reads one expects:
 
 ```
-<your game's per-user data directory>/VM/<key>/battery.sav
+<your game's data directory>/VM/<key>/battery.sav
 ```
+
+Your game's data directory is the one `userDataDir()` answers: the per-user one, or the one beside the application
+under a portable install ([persistence.md](../persistence.md#a-portable-install)).
 
 `batterySave(name)` names the file per cartridge for a machine that plays whatever it is handed
 (`VM/<key>/<name>.sav`). The mechanism — read back as the image is hosted, written after the guest

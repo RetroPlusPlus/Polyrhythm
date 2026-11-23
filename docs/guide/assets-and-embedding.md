@@ -176,7 +176,7 @@ explicit `AssetPolicy::Embed` token at the call site, so nothing can end up insi
 because a policy argument was left off.
 
 **Reading a player's own files.** When the data was extracted onto the player's machine rather than
-shipped, it lives in the per-user directory `UserFiles` manages. Point the asset root at that directory
+shipped, it lives in the player's directory `UserFiles` manages. Point the asset root at that directory
 and a logical path resolves into it:
 
 ```cpp
@@ -301,4 +301,4 @@ bytes and interpreted by the game.
 - [tilemaps.md](tilemaps.md) — the map-PNG → `TileCatalog` → tile-layer pipeline.
 - [vm-and-routines.md](vm/vm-and-routines.md) — the `registerRoutine` / `uploadRoutine` API and the VM.
 - [audio.md](audio.md) — registering and cueing audio (`registerAudio`, `AudioLibrary`, `AudioSystem`).
-- [persistence.md](persistence.md) — `UserFiles` and the per-user directory a data asset is extracted into.
+- [persistence.md](persistence.md) — `UserFiles` and the player's directory a data asset is extracted into.

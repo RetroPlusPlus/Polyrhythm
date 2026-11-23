@@ -452,7 +452,7 @@ public:
 
     // What to call the file this machine's data is kept in. The whole path is
     //
-    //     <the game's own per-user data directory>/VM/<the machine's key>/<this name>.<extension>
+    //     <the game's data directory, the one userDataDir() answers>/VM/<the machine's key>/<this name>.<extension>
     //
     // and this names the file alone. It is "battery" until this says otherwise, which is all a machine
     // that plays one cartridge ever needs.

@@ -6,6 +6,7 @@
 #include <string>
 
 #include "retropp/app_identity.h"  // AppIdentity — the program's identity to the host platform
+#include "retropp/portable_install.h"  // PortableInstall — where the player's files go
 #include "retropp/output.h"     // SamplingMode
 #include "retropp/timing.h"     // TimingProfile
 #include "retropp/viewport.h"   // ViewportResolution
@@ -44,14 +45,15 @@ struct EnhancementToggles {
 // The single startup configuration the host hands the platform: window + internal viewport + render
 // timing + forward enhancement toggles. Platform-agnostic VALUE types only (no live device
 // handles): the platform layer reads `window`; the renderer reads `viewport`; the run loop reads
-// `timing`; a worker pool reads `workers`. Every field defaults to the faithful Game Boy Color baseline, so a default-constructed
-// EngineConfig reproduces the original behavior.
+// `timing`; a worker pool reads `workers`; the user-files resolution reads `portable`. Every field
+// defaults to the faithful Game Boy Color baseline, so a default-constructed EngineConfig reproduces
+// the original behavior.
 //
 // Input carries NO config field: the game's action map (input_actions.h) is a value handed to the
 // platform directly (SdlPlatform::actions) — an unconfigured platform simply reports no actions.
 //
 // Dynamic vs startup:
-//   * STARTUP-ONLY (consumed once at construction): window title, viewport, timing, workers.
+//   * STARTUP-ONLY (consumed once at construction): window title, viewport, timing, workers, portable.
 //   * RUNTIME-DYNAMIC: the action map (actions on the platform); enhancements — windowScale
 //     seeds the initial window size and is then re-applied live via window().size(),
 //     fullscreen via window().fullscreen(), sampling seeded from config by setActive() (so the call
@@ -61,10 +63,11 @@ struct EngineConfig {
     // typed, first-class field and leads the aggregate, the same law as ObjectKey on every drawable.
     // setActive() throws std::invalid_argument when either field is empty: every program declares
     // who it is before it starts, exactly as every major platform demands of a project.
-    // SDL_GetPrefPath resolves the per-user save/settings directory from it (%APPDATA%\<org>\<app>
-    // on Windows, ~/Library/Application Support/<org>/<app> on macOS, $XDG_DATA_HOME/<org>/<app>
-    // on Linux), and setActive() fans it out to SaveStore::defaultIdentity like the other per-type
-    // defaults (see app_identity.h for why no fallback exists).
+    // userDataDir() resolves the per-user save/settings directory from it (`%APPDATA%\<org>\<app>` on
+    // Windows, `~/Library/Application Support/<org>/<app>` on macOS, `$XDG_DATA_HOME/<org>/<app>` on
+    // Linux — or, under `portable`, a directory named for the application beside the application), and
+    // setActive() fans it out to SaveStore::defaultIdentity like the other per-type defaults (see
+    // app_identity.h for why no fallback exists).
     AppIdentity        identity{};
 
     WindowConfig       window{};
@@ -106,6 +109,12 @@ struct EngineConfig {
     // WorkerPool::defaultWorkers via setActive(); a count passed to the pool's constructor overrides it.
     std::optional<std::size_t> workers{};
 
+    // Where the player's files go (portable_install.h): the platform's per-user directory, or a directory named for
+    // the application beside the application — `enabled` puts them there, `allowFile` lets a portable.txt beside the
+    // application put them there. Every store rooted by default and userDataDir() follow it. Seeds
+    // PortableInstall::active via setActive(); the two-argument userDataDir takes a placement by hand.
+    PortableInstall    portable{};
+
     // The set-once active config: the host assigns it once via setActive() (below), and bare
     // ctors then inherit from it instead of every field being threaded to every ctor — RunLoop and
     // Renderer read the per-type static defaults setActive() fans the config out into, and SdlPlatform
@@ -120,11 +129,12 @@ struct EngineConfig {
     // bare ctors inherit them: config.timing → RunLoop / AnimationPlayer / every interpolable
     // TweenPlayer<T> / PathWalker / SpritePath / VibrationPlayer ::defaultTiming; the renderer fields →
     // Renderer::defaultViewport / defaultSamplingMode / defaultInterpolation / defaultEvaluationGrid;
-    // config.identity → SaveStore::defaultIdentity; config.assetRoot → the asset root (resolved absolute
-    // once); config.workers → WorkerPool::defaultWorkers. One call at startup. Defined in src/engine_config.cpp — keeping the definition out of
-    // this header avoids pulling renderer.h (SDL_gpu) / run_loop.h / animation.h in, so this header stays
-    // light and SDL/GPU-free, and it quarantines the one point where the SDL-coupled config layer and the
-    // locked SDL-free core loop meet (data flows downward only).
+    // config.identity → SaveStore::defaultIdentity; config.portable → PortableInstall::active;
+    // config.assetRoot → the asset root (resolved absolute once); config.workers →
+    // WorkerPool::defaultWorkers. One call at startup. Defined in src/engine_config.cpp — keeping the
+    // definition out of this header avoids pulling renderer.h (SDL_gpu) / run_loop.h / animation.h in, so
+    // this header stays light and SDL/GPU-free, and it quarantines the one point where the SDL-coupled
+    // config layer and the locked SDL-free core loop meet (data flows downward only).
     static void setActive(const EngineConfig& config);
 };
 

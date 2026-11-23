@@ -1727,6 +1727,7 @@ if(RETROPP_BUILD_TESTS)
         tests/path_walker_test.cpp
         tests/sprite_path_test.cpp
         tests/sprite_path_exactness_test.cpp
+        tests/portable_install_test.cpp
         tests/vm_machine_test.cpp
         tests/vm_host_test.cpp
         tests/return_landing_test.cpp
@@ -2862,6 +2863,13 @@ if(RETROPP_BUILD_EXAMPLES)
     # SDL_GetPrefPath + atomic-write path is the CI compile signal (the behavior is proven
     # headlessly in user_files_test).
     retropp_add_example(user_files_demo)
+
+    # ── Portable install demo — the player decides where the game's files go: a console program whose
+    # config allows a portable install (EngineConfig::portable, allowFile), then writes a save through a default
+    # SaveStore and a file through a default UserFiles and prints where both landed — the per-user directory, or,
+    # with a portable.txt beside the executable, a directory beside it. Headless (no window, no GPU, no audio
+    # device); dev-run only.
+    retropp_add_example(portable_install)
 
     # ── Data-assets demo — the third ingestible family: bytes the engine stores and never interprets.
     # A console program registering the same corpus three ways — an Embed character table baked into the

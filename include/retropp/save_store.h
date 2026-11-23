@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "retropp/app_identity.h"
+#include "retropp/portable_install.h"
 
 namespace retropp {
 
@@ -29,21 +30,29 @@ public:
     using std::runtime_error::runtime_error;
 };
 
-// The platform's per-user data directory for `identity` — `%APPDATA%\<org>\<app>` on Windows,
-// `~/Library/Application Support/<org>/<app>` on macOS, `$XDG_DATA_HOME/<org>/<app>` on Linux. This is
-// the directory a default-constructed SaveStore writes into, named so a game can place its OTHER
-// per-user files beside its saves instead of resolving a second directory of its own.
+// Where the player's files go for `identity` under `placement`: beside the application —
+// `<the application's directory>/<application>/` — when the placement puts them there (portable_install.h), and
+// otherwise the platform's per-user data directory — `%APPDATA%\<org>\<app>` on Windows,
+// `~/Library/Application Support/<org>/<app>` on macOS, `$XDG_DATA_HOME/<org>/<app>` on Linux. This is the
+// directory a default-constructed SaveStore and a default-constructed UserFiles write into, named so a game can
+// place its other files beside its saves instead of resolving a second directory of its own. A placement of `{}`
+// names the per-user directory whatever is active, and `{.enabled = true}` the portable one, which is how a
+// program that resolves before EngineConfig::setActive(), or one that needs both locations by name, asks.
 //
-// Throws SaveStoreError when either identity field is empty (an unconfigured identity has no correct
-// directory, and a fallback would collide every unconfigured game into one) or when the platform cannot
-// supply a directory. The error type is the persistence one because this IS the persistence directory;
-// the two cannot disagree about where a player's files live, since SaveStore resolves through here.
+// Throws SaveStoreError when either identity field is empty (an unconfigured identity has no correct directory,
+// and a fallback would collide every unconfigured game into one), when the platform cannot supply the directory
+// asked for, or when the portable directory cannot be created where the application is — a read-only location,
+// a file standing in its place. The error type is the persistence one because this IS the persistence directory.
 //
-// Resolving the directory creates it if absent — the platform call does that, and it is what makes the
-// path immediately writable. Nothing inside it is created.
+// Resolving the directory creates it if absent — the platform call does that for the per-user one and this
+// function for the portable one — and it is what makes the path immediately writable. Nothing inside it is
+// created. A portable resolution never asks the platform for the per-user directory.
+[[nodiscard]] std::filesystem::path userDataDir(const AppIdentity& identity, const PortableInstall& placement);
+
+// The same, under the placement EngineConfig::setActive() published (PortableInstall::active).
 [[nodiscard]] std::filesystem::path userDataDir(const AppIdentity& identity);
 
-// The same, for the identity EngineConfig::setActive() published — the common case.
+// The same, for the identity and the placement EngineConfig::setActive() published — the common case.
 [[nodiscard]] std::filesystem::path userDataDir();
 
 // A durable, versioned store of named byte documents — the persistence primitive beneath
@@ -51,10 +60,11 @@ public:
 // consumer-defined schema version; the store never interprets the payload. What the store
 // owns is everything around the bytes:
 //
-//   * WHERE — a default-constructed store resolves the platform-correct per-user data
-//     directory from EngineConfig::active.identity (%APPDATA%\<org>\<app> on Windows,
+//   * WHERE — a default-constructed store resolves the player's directory — the platform-correct
+//     per-user one for EngineConfig::active.identity (%APPDATA%\<org>\<app> on Windows,
 //     ~/Library/Application Support/<org>/<app> on macOS, $XDG_DATA_HOME/<org>/<app> on
-//     Linux), once, at construction. SaveStore::atPath roots a store at an explicit
+//     Linux), or a directory named for the application beside the application under
+//     EngineConfig::portable — once, at construction. SaveStore::atPath roots a store at an explicit
 //     directory instead — the seam tests use to stay hermetic, and the way to place
 //     documents anywhere else deliberately.
 //
@@ -92,11 +102,11 @@ public:
     // transform is plain consumer code; the store never looks inside either buffer.
     using MigrationStep = std::function<std::vector<std::byte>(std::vector<std::byte>)>;
 
-    // Resolves the per-user save directory from `defaultIdentity` (seeded from
-    // EngineConfig::identity by setActive(), like the other per-type defaults). Throws
+    // Resolves the save directory from `defaultIdentity` and PortableInstall::active (both
+    // seeded by setActive(), like the other per-type defaults). Throws
     // SaveStoreError when the identity is not set (an unconfigured identity has no correct
-    // directory — a fallback would collide every unconfigured game into one), or when the
-    // platform cannot supply a directory.
+    // directory — a fallback would collide every unconfigured game into one), when the
+    // platform cannot supply a directory, or when the portable directory cannot be created.
     SaveStore();
 
     // The application identity a default-constructed store resolves its directory from.

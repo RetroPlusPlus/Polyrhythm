@@ -1,9 +1,11 @@
 #include "retropp/save_store.h"
 
-#include <SDL3/SDL_filesystem.h>  // SDL_GetPrefPath — the platform per-user data directory
+// SDL_GetPrefPath — the platform per-user data directory; SDL_GetBasePath — the application's
+#include <SDL3/SDL_filesystem.h>
 #include <SDL3/SDL_stdinc.h>      // SDL_free
 
 #include "durable_file.h"  // detail::writeFileDurably / atomicReplace / syncDirectoryEntry
+#include "save_store_testing.h"
 
 #include <algorithm>
 #include <array>
@@ -11,6 +13,7 @@
 #include <cerrno>
 #include <fstream>
 #include <string>
+#include <system_error>
 #include <utility>
 
 namespace retropp {
@@ -63,9 +66,44 @@ void validateName(std::string_view name) {
     }
 }
 
+// The file beside the application that turns the switch on when the placement allows it. Presence is the signal;
+// the contents are never read.
+constexpr const char* kPortableFile = "portable.txt";
+
+// A directory path with any trailing separator dropped, so its last component is the directory's own name.
+std::filesystem::path withoutTrailingSeparator(const std::filesystem::path& path) {
+    return path.filename().empty() ? path.parent_path() : path;
+}
+
+// The application's directory as the platform reports it: SDL's base path (cached by SDL3, not freed), run through
+// the bundle rule on Apple platforms. Empty when the platform supplies none.
+std::filesystem::path applicationDir() {
+    const char* base = SDL_GetBasePath();
+    if (base == nullptr) return {};
+#if defined(__APPLE__)
+    return detail::applicationDirFrom(base);
+#else
+    return withoutTrailingSeparator(base);
+#endif
+}
+
 }  // namespace
 
-std::filesystem::path userDataDir(const AppIdentity& identity) {
+std::filesystem::path detail::applicationDirFrom(const std::filesystem::path& basePath) {
+    const std::filesystem::path dir = withoutTrailingSeparator(basePath);
+    // Walk up from the last component. `below` is the component under `here`, empty at the deepest one.
+    std::filesystem::path below;
+    for (std::filesystem::path here = dir; here.has_relative_path(); here = here.parent_path()) {
+        if (here.filename().extension() == ".app") {
+            return below.empty() || below == "Contents" ? here.parent_path() : dir;
+        }
+        below = here.filename();
+    }
+    return dir;
+}
+
+std::filesystem::path detail::userDataDirAt(const std::filesystem::path& applicationDir,
+                                            const AppIdentity& identity, const PortableInstall& placement) {
     // No fallback name: a fallback would give every unconfigured game the same directory,
     // and their saves would collide. An unset identity is refused, loudly, on first run.
     if (identity.organization.empty() || identity.application.empty()) {
@@ -76,6 +114,27 @@ std::filesystem::path userDataDir(const AppIdentity& identity) {
     }
     const std::string& org = identity.organization;
     const std::string& app = identity.application;
+
+    // An application directory that cannot be read holds no file.
+    std::error_code ec;
+    const bool portable =
+        placement.enabled ||
+        (placement.allowFile && std::filesystem::is_regular_file(applicationDir / kPortableFile, ec));
+
+    if (portable) {
+        if (applicationDir.empty()) {
+            throw SaveStoreError("retropp: the platform did not supply the application's directory, so there "
+                                 "is nowhere beside it for \"" + app + "\"");
+        }
+        const std::filesystem::path dir = applicationDir / app;
+        std::filesystem::create_directories(dir, ec);
+        if (ec || !std::filesystem::is_directory(dir, ec)) {
+            throw SaveStoreError("retropp: the portable directory \"" + dir.string() +
+                                 "\" could not be created beside the application");
+        }
+        return dir;
+    }
+
     char* pref = SDL_GetPrefPath(org.c_str(), app.c_str());
     if (pref == nullptr) {
         throw SaveStoreError("retropp: the platform did not supply a user data directory for \"" +
@@ -86,7 +145,15 @@ std::filesystem::path userDataDir(const AppIdentity& identity) {
     return dir;
 }
 
-std::filesystem::path userDataDir() { return userDataDir(SaveStore::defaultIdentity); }
+std::filesystem::path userDataDir(const AppIdentity& identity, const PortableInstall& placement) {
+    return detail::userDataDirAt(applicationDir(), identity, placement);
+}
+
+std::filesystem::path userDataDir(const AppIdentity& identity) {
+    return userDataDir(identity, PortableInstall::active);
+}
+
+std::filesystem::path userDataDir() { return userDataDir(SaveStore::defaultIdentity, PortableInstall::active); }
 
 // One resolution, one owner: the store roots itself where userDataDir says, so a game placing files
 // beside its saves cannot end up beside a different directory than the saves themselves.

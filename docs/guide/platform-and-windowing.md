@@ -429,13 +429,16 @@ Concretely, `setActive` seeds these process-wide defaults from the config (what 
 - **`config.workers`** → `WorkerPool::defaultWorkers`, the worker count of a `WorkerPool` made without
   one. Unset, the pool takes its count from the machine; a value is used as given, zero included, and
   at zero every batch runs on the thread that collects it ([worker-pool.md](worker-pool.md)).
+- **`config.portable`** → `PortableInstall::active`, the placement every store rooted by default resolves
+  under: the per-user directory, or a directory named for the application beside it
+  ([persistence.md](persistence.md#a-portable-install)).
 
 Threading the fields explicitly still works and overrides the defaults per object —
 `SdlPlatform{config}`, `RunLoop{clock, config.timing}`, `Renderer{dev, win, config.viewport}`,
 `WorkerPool{platform, count}` — so a program that needs two differently-configured objects can still
 construct them directly.
 
-**Dynamic vs startup.** `viewport`, `timing` and `workers` are consumed once at construction
+**Dynamic vs startup.** `viewport`, `timing`, `workers` and `portable` are consumed once at construction
 (startup-only).
 The action map is runtime-dynamic (`SdlPlatform::actions`). The `enhancements`
 toggles are read at startup (`windowScale` sizes the initial window in the platform ctor; `sampling`

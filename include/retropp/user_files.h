@@ -12,8 +12,8 @@
 
 namespace retropp {
 
-// Files a game keeps for one player, in the platform's per-user data directory — the same directory
-// SaveStore writes into (userDataDir(), save_store.h). Extracted assets, screenshots, a cache, a log:
+// Files a game keeps for one player, in the player's directory — the one `userDataDir()` answers, which a
+// SaveStore writes into too (save_store.h). Extracted assets, screenshots, a cache, a log:
 // anything that belongs to this player on this machine and is not a save document.
 //
 // SaveStore is the surface for documents the game must be able to READ BACK ACROSS VERSIONS — it wraps
@@ -26,8 +26,8 @@ namespace retropp {
 //
 // What it keeps from SaveStore:
 //
-//   * WHERE — a default-constructed store roots at userDataDir(), resolved from the identity
-//     EngineConfig::setActive() published. UserFiles::atPath roots at an explicit directory instead.
+//   * WHERE — a default-constructed store roots at userDataDir(), resolved from the identity and the
+//     placement EngineConfig::setActive() published. UserFiles::atPath roots at an explicit directory instead.
 //     root() is the directory itself, which is what a game assigns to EngineConfig::assetRoot when its
 //     assets live here.
 //
@@ -48,8 +48,9 @@ namespace retropp {
 // rest of the platform surface, these are synchronous main-thread calls.
 class UserFiles {
 public:
-    // Roots at the per-user data directory for the active identity. Throws SaveStoreError when the
-    // identity is unset or the platform cannot supply a directory — see userDataDir().
+    // Roots at the directory userDataDir() answers for the active identity and placement. Throws
+    // SaveStoreError when the identity is unset, the platform cannot supply a directory, or the portable
+    // directory cannot be created — see userDataDir().
     UserFiles();
 
     // Roots at `base` explicitly, bypassing platform resolution — the seam tests use to stay hermetic,
