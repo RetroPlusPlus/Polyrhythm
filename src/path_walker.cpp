@@ -23,31 +23,34 @@ PathPacing PathPacing::distanceTween(const Tween<float>& distance) {
 
 namespace {
 
-// The arc-length for the Speed driver under `mode`, given the raw distance traveled at constant speed and
-// the per-tick step (so PlayForDuration can re-derive the distance at the cutoff tick). Sets `finished`.
-float speedDistance(float raw, float pxPerTick, float length, std::uint64_t elapsedTicks,
-                    const TimingProfile& profile, PlaybackMode mode, bool& finished) noexcept {
+// The arc-length for the Speed driver under `mode` at `elapsedTicks`. Every distance it compares is
+// detail::speedDistanceAt's, in double — the raw distance at `elapsedTicks`, and at the cutoff tick for
+// PlayForDuration — and the result is rounded to float once, on return. Sets `finished`.
+float speedDistance(float pxPerSecond, float length, std::uint64_t elapsedTicks, const TimingProfile& profile,
+                    PlaybackMode mode, bool& finished) noexcept {
+    const double raw  = detail::speedDistanceAt(pxPerSecond, profile, elapsedTicks);
+    const double span = static_cast<double>(length);
     switch (mode.kind) {
         case PlaybackMode::Kind::LoopIndefinitely:
             finished = false;
-            return std::fmod(raw, length);  // sawtooth wrap; continuous on a closed curve
+            return static_cast<float>(std::fmod(raw, span));  // sawtooth wrap; continuous on a closed curve
 
         case PlaybackMode::Kind::Single:
-            finished = raw >= length;
-            return std::min(raw, length);   // hold the endpoint once past it
+            finished = raw >= span;
+            return static_cast<float>(std::min(raw, span));   // hold the endpoint once past it
 
         case PlaybackMode::Kind::LoopNTimes: {
             if (mode.loopCount == 0) {       // never played → rests at the start
                 finished = true;
                 return 0.0f;
             }
-            const float endRaw = length * static_cast<float>(mode.loopCount);
+            const double endRaw = span * static_cast<double>(mode.loopCount);
             if (raw >= endRaw) {
                 finished = true;
                 return length;               // hold the endpoint after n passes
             }
             finished = false;
-            return std::fmod(raw, length);
+            return static_cast<float>(std::fmod(raw, span));
         }
 
         case PlaybackMode::Kind::PlayForDuration: {
@@ -55,11 +58,11 @@ float speedDistance(float raw, float pxPerTick, float length, std::uint64_t elap
             if (cut == 0 || elapsedTicks >= cut) {
                 finished = true;
                 // Hold the distance shown at the cutoff — the last tick that played was cut - 1.
-                const float rawAt = cut == 0 ? 0.0f : pxPerTick * static_cast<float>(cut - 1);
-                return std::fmod(rawAt, length);
+                const double rawAt = cut == 0 ? 0.0 : detail::speedDistanceAt(pxPerSecond, profile, cut - 1);
+                return static_cast<float>(std::fmod(rawAt, span));
             }
             finished = false;
-            return std::fmod(raw, length);
+            return static_cast<float>(std::fmod(raw, span));
         }
     }
     finished = true;  // unreachable — every kind handled
@@ -118,6 +121,11 @@ float easedDistance(float length, std::uint64_t elapsedTicks, std::uint64_t durT
 
 }  // namespace
 
+double detail::speedDistanceAt(float pxPerSecond, const TimingProfile& profile, std::uint64_t ticks) noexcept {
+    return static_cast<double>(pxPerSecond) * static_cast<double>(profile.tickPeriod().count())
+         * static_cast<double>(ticks) / 1e9;
+}
+
 WalkSample sampleWalk(const ArcLengthTable& table, const PathPacing& pacing, std::uint64_t elapsedTicks,
                   const TimingProfile& profile, PlaybackMode mode) noexcept {
     const float length = table.length();
@@ -134,13 +142,9 @@ WalkSample sampleWalk(const ArcLengthTable& table, const PathPacing& pacing, std
     bool  finished = false;
 
     switch (pacing.kind) {
-        case PathPacing::Kind::Speed: {
-            const float secondsPerTick = static_cast<float>(profile.tickPeriod().count()) * 1e-9f;
-            const float pxPerTick      = pacing.pxPerSecond * secondsPerTick;
-            const float raw            = pxPerTick * static_cast<float>(elapsedTicks);
-            s = speedDistance(raw, pxPerTick, length, elapsedTicks, profile, mode, finished);
+        case PathPacing::Kind::Speed:
+            s = speedDistance(pacing.pxPerSecond, length, elapsedTicks, profile, mode, finished);
             break;
-        }
         case PathPacing::Kind::Eased: {
             const std::uint64_t durTicks = profile.ticksForDuration(pacing.duration);
             if (durTicks == 0) {

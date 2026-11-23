@@ -27,10 +27,10 @@ const TimingProfile gbc = TimingProfile::GameBoyColor;
 // so the arc-length is exact and every expected point / heading is trivial.
 ArcLengthTable line100() { return Curve::line(Vec2{0, 0}, Vec2{100, 0}).arcTable(); }
 
-// The per-tick step the Speed driver takes on a cadence — the exact float math sampleWalk uses, so expected
-// distances are computed the same way and compared with EXPECT_FLOAT_EQ.
+// The per-tick step the Speed driver takes on a cadence — detail::speedDistanceAt over one tick, the measure
+// sampleWalk reads, so expected distances come from the same measure and compare with EXPECT_FLOAT_EQ.
 float pxPerTick(float pxPerSecond, const TimingProfile& p) {
-    return pxPerSecond * (static_cast<float>(p.tickPeriod().count()) * 1e-9f);
+    return static_cast<float>(detail::speedDistanceAt(pxPerSecond, p, 1));
 }
 
 }  // namespace

@@ -98,8 +98,9 @@ Curve buildCurve(const SpritePathMove& m, Vec2 origin) {
 
 // One node's one-pass duration in WHOLE ticks, computed to match sampleWalk's single()-finish tick exactly, per
 // pacing kind:
-//   Speed         — the first tick t at which pxPerTick × t ≥ length (ceil), matching sampleWalk's `raw ≥ length`;
-//                   Speed 0 (or ≤ 0) on nonzero geometry never finishes (the sentinel). Degenerate geometry → 0.
+//   Speed         — the first tick t at which the distance a constant speed covers (detail::speedDistanceAt,
+//                   the measure sampleWalk uses) reaches the length; Speed 0 (or ≤ 0) on nonzero geometry never
+//                   finishes (the sentinel). Degenerate geometry → 0.
 //   Eased         — ticksForDuration(duration), INDEPENDENT of geometry: a zero-length Eased node is the WAIT
 //                   node (stands still for the duration).
 //   DistanceTween — totalTicks(*distance); a null distance-tween never finishes (the parked sentinel).
@@ -111,15 +112,16 @@ std::uint64_t nodeDuration(const SpritePathNode& node, const ArcLengthTable& arc
             if (length <= 0.0f) {
                 return 0;  // sampleWalk short-circuits a degenerate curve to finished — the pass carries no ticks
             }
-            const float secondsPerTick = static_cast<float>(profile.tickPeriod().count()) * 1e-9f;
-            const float pxPerTick       = node.pacing.pxPerSecond * secondsPerTick;
-            if (pxPerTick <= 0.0f) {
+            const float  v    = node.pacing.pxPerSecond;
+            const double step = detail::speedDistanceAt(v, profile, 1);
+            if (step <= 0.0) {
                 return kNeverFinishes;  // parked on nonzero geometry — rests here forever (the sentinel node)
             }
-            std::uint64_t t = static_cast<std::uint64_t>(std::ceil(length / pxPerTick));
-            // Float-correct so the boundary matches sampleWalk's `pxPerTick × t ≥ length` predicate exactly.
-            while (pxPerTick * static_cast<float>(t) < length) ++t;
-            while (t > 0 && pxPerTick * static_cast<float>(t - 1) >= length) --t;
+            std::uint64_t t = static_cast<std::uint64_t>(std::ceil(static_cast<double>(length) / step));
+            // Settle the boundary on the same measure sampleWalk reads, so the leg's last tick is the tick the
+            // walk reaches its length.
+            while (detail::speedDistanceAt(v, profile, t) < length) ++t;
+            while (t > 0 && detail::speedDistanceAt(v, profile, t - 1) >= length) --t;
             return t;
         }
         case PathPacing::Kind::Eased:
@@ -393,13 +395,23 @@ bool anyUsesFlipX(const SpritePath& p) noexcept {
     return false;
 }
 
-// Build the base pass once (lazily) — the chain start is only known then, and designated init cannot bake.
+// Bake the base sequence from `start` and resolve it where the clock stands — tick 0 on a fresh path or after a
+// rewind — so the sample is a real resolve of the route before any tick has passed: what advance(), interrupt()
+// and seek() depart from on a path that has not run, and what stop() and restart() rewind to.
+void bakeBase(SpritePath& p) {
+    p.chainStart = p.start;
+    p.pass       = bakePass(p.nodes, p.start, p.profile);
+    p.baked      = true;
+    const ActiveResolve r = resolveActive(p.nodes, p.pass, PlaybackMode::loopIndefinitely(), p.profile,
+                                          p.elapsedTicks, p.sample, p.start);
+    p.sample    = r.sample;
+    p.nodeIndex = r.nodeIndex;
+}
+
+// Build the base pass once — the chain start is only known then, and designated init cannot bake — and resolve
+// it, so the first call finds the route's beginning in the sample.
 void ensureBaked(SpritePath& p) {
-    if (!p.baked) {
-        p.chainStart = p.start;
-        p.pass       = bakePass(p.nodes, p.start, p.profile);
-        p.baked      = true;
-    }
+    if (!p.baked) bakeBase(p);
 }
 
 // Shift a baked pass's geometry by `delta` — its segment control points and each node's end position. The
@@ -418,12 +430,13 @@ void translatePass(std::vector<BakedPathNode>& pass, Vec2 delta) {
 }
 
 // Restore the runtime the top interrupt suspended — the suspended pass is baked, so nothing is recomputed.
-// Under ResumePolicy::Continue the resumed content carries on from where the sprite now stands: its geometry
-// shifts by the net displacement the interrupt introduced, so the route drifts on instead of snapping back.
-// Under Return the suspended state is restored verbatim. The active content becomes whatever sat beneath.
-void popFrameRestore(SpritePath& p) {
-    SpritePathInterrupt& f       = p.interrupts.back();
-    const Vec2           livePos = p.sample.position;  // where the interrupt left the sprite
+// `livePosition` is where the interrupt left the sprite: the position of the resolve that finished it, or the
+// cached sample's when popInterrupt() ends it now. Under ResumePolicy::Continue the resumed content carries on
+// from there — its geometry shifts by the net displacement the interrupt introduced, so the route drifts on
+// instead of snapping back. Under Return the suspended state is restored verbatim and `livePosition` is not
+// read. The active content becomes whatever sat beneath.
+void popFrameRestore(SpritePath& p, Vec2 livePosition) {
+    SpritePathInterrupt& f = p.interrupts.back();
 
     p.elapsedTicks = f.suspendedElapsedTicks;
     p.pass         = std::move(f.suspendedPass);
@@ -432,17 +445,18 @@ void popFrameRestore(SpritePath& p) {
     p.sample       = f.suspendedSample;
 
     if (f.resume == ResumePolicy::Continue) {
-        const Vec2 delta{livePos.x - p.sample.position.x, livePos.y - p.sample.position.y};
+        const Vec2 delta{livePosition.x - p.sample.position.x, livePosition.y - p.sample.position.y};
         translatePass(p.pass, delta);
         p.chainStart      = Vec2{p.chainStart.x + delta.x, p.chainStart.y + delta.y};
-        p.sample.position = livePos;  // the getters read the current position immediately (the next resolve agrees)
+        p.sample.position = livePosition;  // the getters read the current position at once (the next resolve agrees)
     }
 
     p.interrupts.pop_back();
 }
 
-// Resolve the active content and auto-pop any interrupt that finished — its leftover ticks (this batch's time
-// beyond the interrupt's end) flowing into the resumed content, cascading through nested pops.
+// Resolve the active content and auto-pop any interrupt that finished — its end position, from the resolve that
+// finished it, is where the content beneath resumes, and its leftover ticks (this batch's time beyond the
+// interrupt's end) flow into the resumed content, cascading through nested pops.
 void resolveAndAutoPop(SpritePath& p, PlaybackMode baseMode) {
     for (;;) {
         const bool                         onBase     = p.interrupts.empty();
@@ -453,7 +467,7 @@ void resolveAndAutoPop(SpritePath& p, PlaybackMode baseMode) {
                                               p.sample, p.chainStart);
         if (r.finished && !onBase) {  // an interrupt finished → pop and flow the leftover into the parent
             const std::uint64_t leftover = p.elapsedTicks - r.finishTick;
-            popFrameRestore(p);
+            popFrameRestore(p, r.sample.position);
             p.elapsedTicks += leftover;
             continue;
         }
@@ -551,7 +565,7 @@ void SpritePath::popInterrupt() {
     }
     // Restore the suspended runtime — the suspended sample already reflects the resumed content exactly where
     // it was suspended, so the next advance(mode) continues from there under the real base mode.
-    popFrameRestore(*this);
+    popFrameRestore(*this, sample.position);
 }
 
 void SpritePath::play() { playing = true; }
@@ -560,30 +574,18 @@ void SpritePath::pause() { playing = false; }
 
 void SpritePath::stop() {
     interrupts.clear();
-    chainStart   = start;
-    pass         = bakePass(nodes, start, profile);
-    baked        = true;
     playing      = false;
     elapsedTicks = 0;
     nodeIndex    = 0;
-    const ActiveResolve r =
-        resolveActive(nodes, pass, PlaybackMode::loopIndefinitely(), profile, 0, sample, start);
-    sample    = r.sample;
-    nodeIndex = r.nodeIndex;
+    bakeBase(*this);
 }
 
 void SpritePath::restart() {
     interrupts.clear();
-    chainStart   = start;
-    pass         = bakePass(nodes, start, profile);
-    baked        = true;
     playing      = true;
     elapsedTicks = 0;
     nodeIndex    = 0;
-    const ActiveResolve r =
-        resolveActive(nodes, pass, PlaybackMode::loopIndefinitely(), profile, 0, sample, start);
-    sample    = r.sample;
-    nodeIndex = r.nodeIndex;
+    bakeBase(*this);
 }
 
 void SpritePath::seek(std::chrono::nanoseconds at) {

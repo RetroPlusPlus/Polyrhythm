@@ -73,9 +73,11 @@ struct WalkSample {
 // Per pacing kind, under the reused PlaybackMode (loop = wrap the DISTANCE — continuous on a closed curve,
 // a sawtooth snap-back on an open one, the same wrap sampleTween has; a there-and-back is authored as a
 // DistanceTween yoyo, never a mode):
-//   Speed         — raw = pxPerTick × elapsedTicks; LoopIndefinitely wraps with fmod (never finished),
-//                   Single holds `length` once raw ≥ length, LoopNTimes(n) holds `length` after n passes,
-//                   PlayForDuration(d) holds the distance shown at the cutoff. Speed 0 stays parked at 0.
+//   Speed         — the distance at tick t is pxPerSecond × t × the tick period (detail::speedDistanceAt, in
+//                   double); LoopIndefinitely wraps it with fmod (never finished), Single holds `length` once
+//                   it reaches length — on the step that reaches it, when the length is a whole number of
+//                   steps — LoopNTimes(n) holds `length` after n passes, PlayForDuration(d) holds the distance
+//                   shown at the cutoff. Speed 0 stays parked at 0.
 //   Eased         — durTicks = one pass; the mode wraps/holds TICKS exactly as sampleTween does, then
 //                   s = length × ease(easing, posInPass / durTicks). The eased endpoints are pinned.
 //   DistanceTween — pass-through: s = clamp(sampleTween(*distance, …).value, 0, length); the tween's own
@@ -87,6 +89,17 @@ struct WalkSample {
 [[nodiscard]] WalkSample sampleWalk(const ArcLengthTable& table, const PathPacing& pacing,
                                 std::uint64_t elapsedTicks, const TimingProfile& profile,
                                 PlaybackMode mode) noexcept;
+
+namespace detail {
+
+// The distance a constant speed covers in `ticks` ticks of `profile`'s cadence: pxPerSecond × ticks × the tick
+// period, computed in double with the division by 1e9 last, so a count of ticks whose product is a whole number
+// of pixels is that number exactly. sampleWalk measures a Speed walk with it and a sprite path measures a Speed
+// leg's duration with it, so both see the same tick reach a length.
+[[nodiscard]] double speedDistanceAt(float pxPerSecond, const TimingProfile& profile,
+                                     std::uint64_t ticks) noexcept;
+
+}  // namespace detail
 
 // ── The game-owned cursor ─────────────────────────────────────────────────────────────────────────────
 
